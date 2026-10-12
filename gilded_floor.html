@@ -942,10 +942,18 @@ function updateHotelGuest(npc, dt){
     const p = qi === 0 ? deskGuestPoint(desk) : queueSpot(desk, qi);
     npc.target.set(p.x, 0, p.z);
     if(qi > 2 && Math.hypot(npc.pos.x - p.x, npc.pos.z - p.z) < 1.6) gripe('longQueue', dt * 0.08); // only once they are actually standing in the line, not still walking over
-    if(stepToward(npc, dt, desk) && qi === 0){ npc.state = 'checkingIn'; npc.stayT = isStaffed(desk) ? 2.5 / machinePower(desk) : 7; npc.hotelTravelT = 0; }
-    else { // walled off or the desk is otherwise unreachable - give up and wander rather than stand there forever
-      npc.hotelTravelT = (npc.hotelTravelT || 0) + dt;
-      if(npc.hotelTravelT > 30){ npc.hotelTravelT = 0; queueLeaveAll(npc); npc.state = 'wander'; npc.wantsRoom = false; gripe('stuckRoom'); pickWanderTarget(npc); return true; }
+    const arrived = stepToward(npc, dt, desk);
+    if(arrived && qi === 0){ npc.state = 'checkingIn'; npc.stayT = isStaffed(desk) ? 2.5 / machinePower(desk) : 7; npc.hotelTravelT = 0; npc.deskWaitT = 0; delete npc.toDeskDist; delete npc.toDeskStallT; }
+    else {
+      // Give up if walled off or the desk is otherwise unreachable - but not just because the walk is long. This used
+      // to be a flat 30 s of walking plus waiting, which is less than the walk from the door to a desk at the back of
+      // a fully expanded floor (about 90 units at 1.4 to 1.7 units a second), so nobody there ever checked in. Same
+      // idea as the walk to the room (see travelStalled): while walking, only a guest who has stopped getting closer
+      // gives up, with a long flat backstop underneath; once they are standing in the line, waiting keeps its own 30 s.
+      let giveUp;
+      if(arrived){ npc.deskWaitT = (npc.deskWaitT || 0) + dt; delete npc.toDeskDist; delete npc.toDeskStallT; giveUp = npc.deskWaitT > 30; }
+      else { npc.hotelTravelT = (npc.hotelTravelT || 0) + dt; giveUp = travelStalled(npc, dt, 'toDesk', 15) || npc.hotelTravelT > 150; }
+      if(giveUp){ npc.hotelTravelT = 0; npc.deskWaitT = 0; delete npc.toDeskDist; delete npc.toDeskStallT; queueLeaveAll(npc); npc.state = 'wander'; npc.wantsRoom = false; gripe('stuckRoom'); pickWanderTarget(npc); return true; }
     }
     npc.mesh.position.set(npc.pos.x, npc.pos.y, npc.pos.z);
     return true;
