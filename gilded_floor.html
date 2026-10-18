@@ -7480,9 +7480,19 @@ function celebrateWin(actor, m, mult, amount){
   if(bigWinNews(actor, amount, 0, jackpot)) logEvent(`${jackpot ? 'JACKPOT' : 'Big win'} at ${m.nick || m.name}: $${Math.round(amount).toLocaleString()} (${Math.round(mult)}x)`, col);
 }
 
+// Early protection: in the first days, guest wins cannot take the casino more than EARLY_LOSS_LIMIT below zero on gambling in one day
+// (a run of big wins on a few machines could otherwise wipe out a new casino before the house edge has time to work).
+const EARLY_LOSS_LIMIT = 1000, EARLY_LOSS_DAYS = 5;
+function earlyLossGuard(houseNet){
+  if(houseNet >= 0 || currentDay > EARLY_LOSS_DAYS) return houseNet;
+  const dayNet = ledger.slotWon + ledger.tableWon - ledger.slotPaid - ledger.tablePaid; // the house's gambling result so far today (your own play is not in these)
+  const room = Math.max(0, dayNet + EARLY_LOSS_LIMIT);
+  return -houseNet > room ? -room : houseNet;
+}
 function resolvePayout(actor, m, houseNet, pos, bet){
   const isManager = actor === null;
   if(!isManager && houseNet < 0){ const cap = payoutCap(); if(-houseNet > cap) houseNet = -cap; } // (bank-sized cap on any one payout)
+  if(!isManager) houseNet = earlyLossGuard(houseNet);
   if(bet > 0 && houseNet < 0 && -houseNet / bet >= 8) celebrateWin(actor, m, -houseNet / bet, -houseNet);
   if(houseNet < 0 && !isManager) houseNet *= (1 - Math.min(0.3, securityStrength()*0.02)); // security trims guests' winnings (never yours)
   if(isManager){
@@ -7491,7 +7501,7 @@ function resolvePayout(actor, m, houseNet, pos, bet){
     if(playerNet > 0) ledger.personalWon += playerNet;
     else if(playerNet < 0) ledger.personalLost += -playerNet;
   } else {
-    houseNet = cheaterSkim(actor, m, houseNet);
+    houseNet = earlyLossGuard(cheaterSkim(actor, m, houseNet));
     if(houseNet > 0) ledger[isSlotLike(m) ? 'slotWon' : 'tableWon'] += houseNet;
     else ledger[isSlotLike(m) ? 'slotPaid' : 'tablePaid'] += -houseNet;
     const ds = DS(); ds.rounds++; m.dayNet = (m.dayNet || 0) + houseNet;
