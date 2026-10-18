@@ -4843,18 +4843,23 @@ const staffListEl = document.getElementById('staffList');
 // ---------------- Staff: who they are, what they are worth, and how they feel about it ----------------
 // Everyone you hire is a person now: a name, time served, and an opinion of the job. They start Green
 // and get better at it while the doors are open. Seasoned is the level the rest of the game is
-// balanced around - Green is a little worse, Expert a little better and paid accordingly. What you
-// set the rate at, and whether there are enough of them to cover the posts, decides the mood.
+// balanced around - Green is a little worse, Expert a little better, all at the same wage (experience
+// is free upside, like a real hand who has done the job for years). What you set the rate at, and
+// whether there are enough of them to cover the posts, decides the mood.
+// XP is 1 per second at a post (0.55 off post) while the doors are open, so a day at a post is DAY_LENGTH XP:
+// Seasoned after a week of open days, Expert after two.
 const STAFF_LEVELS = [
-  { name:'Green',    at:0,   mult:0.80, wage:0.85, col:'#9fb3a8' },
-  { name:'Seasoned', at:180, mult:1.00, wage:1.00, col:'#cfd9d0' },
-  { name:'Expert',   at:800, mult:1.25, wage:1.25, col:'#e6c34a' }, // was 600 - reaching it felt too fast
+  { name:'Green',    at:0,              mult:0.80, col:'#9fb3a8' },
+  { name:'Seasoned', at:DAY_LENGTH*7,  mult:1.00, col:'#cfd9d0' },
+  { name:'Expert',   at:DAY_LENGTH*14, mult:1.25, col:'#e6c34a' },
 ];
-// Reaching Expert by XP alone still isn't enough for the performance bump it grants - per direct
-// request, it should also take real pay, not just time on the job. 1.2 = 75% of the wage slider's own
-// range (50%-160% of going rate; 0.75 of the 160% ceiling). XP still climbs and still counts toward
-// training cost/eligibility regardless of pay - this only gates the payoff, not the progress itself.
-const EXPERT_MIN_PAY_RATIO = 1.2;
+// Saves from before the longer levels stored XP against the old thresholds (180 and 800). Keep each worker on the same level with the same share of the way to the next one.
+function xpFromOldSave(xp){
+  const s1 = STAFF_LEVELS[1].at, s2 = STAFF_LEVELS[2].at;
+  if(xp < 180) return xp / 180 * s1;
+  if(xp < 800) return s1 + (xp - 180) / 620 * (s2 - s1);
+  return s2 + (xp - 800);
+}
 const roleWage = {};            // what you have chosen to pay each role
 function goingRate(role){ return STAFF_TYPES[role].wage; }
 function payRate(role){ return (roleWage[role] === undefined || !officeOn('hroffice')) ? goingRate(role) : roleWage[role]; }
@@ -4865,15 +4870,9 @@ function staffLevel(s){
   return lv;
 }
 function staffLevelIndex(s){ return STAFF_LEVELS.indexOf(staffLevel(s)); }
-// What their work actually reflects, as opposed to what XP alone earned - an Expert-XP worker paid
-// under the threshold performs (and displays) as Seasoned until the wage catches up, no cash or
-// retraining needed once it does. Training/XP bookkeeping (staffLevel/staffLevelIndex/trainCost) is
-// untouched by this - it only affects the payoff, so a training purchase never "fails" silently.
-function staffPerforms(s){
-  const lv = staffLevel(s);
-  return (lv.name === 'Expert' && payRatio(s.type) < EXPERT_MIN_PAY_RATIO) ? STAFF_LEVELS[1] : lv;
-}
-function staffWage(s){ return payRate(s.type) * staffLevel(s).wage; }
+// Level decides how well they work; pay only moves their mood (see moraleTarget), and the wage is the same at every level.
+function staffPerforms(s){ return staffLevel(s); }
+function staffWage(s){ return payRate(s.type); }
 function totalWageBill(){ return staffNPCs.reduce((sum, s) => sum + staffWage(s), 0); }
 // Mood turns work into results: a miserable expert is worth less than a cheerful novice.
 function moraleFactor(s){ return 0.65 + (s.morale === undefined ? 70 : s.morale) / 200; } // 70 is the level things are balanced at, so a fairly paid Seasoned hand is exactly 1.0
@@ -4954,7 +4953,7 @@ function gainStaffXp(s, dt){
 function renderStaffPanel(){
   const hr = officeOn('hroffice');
   const wageBill = totalWageBill();
-  let html = `<p style="color:#9fb3a8;font-size:11px;margin:0 0 8px;">Everyone starts Green and gets better while the doors are open. Set the rate for each job: pay under the going rate and the mood slides, pay over it and they stay sweet. Too few people for the posts wears them out.</p>${hr ? '' : `<div style="color:#9fb3a8;font-size:10px;margin:0 0 8px;">${officeHint('hroffice')}</div>`}
+  let html = `<p style="color:#9fb3a8;font-size:11px;margin:0 0 8px;">Everyone starts Green, turns Seasoned after a week on the job and Expert after two (same wage at every level). Set the rate for each job: pay under the going rate and the mood slides, pay over it and they stay sweet. Too few people for the posts wears them out.</p>${hr ? '' : `<div style="color:#9fb3a8;font-size:10px;margin:0 0 8px;">${officeHint('hroffice')}</div>`}
     <div style="margin-bottom:6px;">Wage bill: <b>$${Math.round(wageBill).toLocaleString()}</b> a day, paid when the day ends${staffNPCs.length ? ` &middot; ${staffNPCs.length} on the books` : ''}</div>
     <div style="display:grid;grid-template-columns:minmax(0,1fr);gap:8px;">`;
   Object.entries(STAFF_TYPES).forEach(([key, st])=>{
@@ -4977,11 +4976,10 @@ function renderStaffPanel(){
         <span id="wageStatus${key}" style="color:${ratio < 0.95 ? '#e08a8a' : ratio > 1.05 ? '#8fd6a8' : '#9fb3a8'};white-space:nowrap;">${ratio < 0.95 ? 'under' : ratio > 1.05 ? 'over' : 'going rate'}</span>
       </div>`;
     crew.forEach((s, i)=>{
-      const lv = staffLevel(s), performs = staffPerforms(s), next = STAFF_LEVELS[staffLevelIndex(s) + 1], mood = s.morale || 70;
-      const underpaidExpert = lv.name === 'Expert' && performs !== lv;
+      const lv = staffLevel(s), next = STAFF_LEVELS[staffLevelIndex(s) + 1], mood = s.morale || 70;
       const moodCol = mood >= 65 ? '#8fd6a8' : mood >= 35 ? '#ffb020' : '#e08a8a';
       html += `<div style="display:grid;grid-template-columns:minmax(0,1fr) 50px 44px 52px;gap:5px;align-items:center;font-size:11px;padding:2px 0 2px 6px;">
-        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.name} <span style="color:${underpaidExpert ? '#ffb347' : lv.col};font-size:10px;" ${underpaidExpert ? `title="Working as Seasoned - pay is below ${Math.round(EXPERT_MIN_PAY_RATIO*100)}% of going rate to actually perform as Expert"` : ''}>${underpaidExpert ? 'Expert*' : lv.name}</span></span>
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.name} <span style="color:${lv.col};font-size:10px;">${lv.name}</span></span>
         <span title="how they feel about the job"><span style="display:inline-block;width:42px;height:5px;background:#0d1a14;border-radius:3px;vertical-align:middle;"><span style="display:block;height:5px;width:${Math.round(mood*0.42)}px;background:${moodCol};border-radius:3px;"></span></span></span>
         <span style="color:#9fb3a8;">$${Math.round(staffWage(s))}</span>
         ${next && !hr ? '<span style="color:#9fb3a8;font-size:10px;text-align:center;">&#128274;</span>' : next ? `<button class="hotbarSlot sfTrain" data-i="${staffNPCs.indexOf(s)}" style="font-size:10px;padding:2px 4px;min-width:0;width:100%;box-sizing:border-box;${cash < trainCost(s) ? 'opacity:.45;' : ''}">$${trainCost(s)}</button>`
@@ -9838,7 +9836,7 @@ function saveGame(){
       unlockedAchievements: Array.from(unlockedAchievements),
       inspectionsSurvived, inspectionsCaught, everMachineBroken,
       staffCounts: {...staffCounts}, roleWage: {...roleWage},
-      staffRoster: staffNPCs.map(s => ({ type:s.type, name:s.name, xp:Math.round(s.xp||0), morale:Math.round(s.morale||70) })),
+      staffXpScheme: 2, staffRoster: staffNPCs.map(s => ({ type:s.type, name:s.name, xp:Math.round(s.xp||0), morale:Math.round(s.morale||70) })),
       machines: machines.map(machineState),
       autoMarketingEnabled, autoMarketingSmart, autoMarketingBudget, autoCompEnabled, autoCompSmart, autoCompThreshold, autoCompBudget,
     };
@@ -9984,7 +9982,7 @@ function loadGame(){
       };
       const saved = roster ? roster.filter(r => r.type === key)[i] : null;
       staffMember.name = saved ? saved.name : randomGuestName();
-      staffMember.xp = saved ? saved.xp : 0;
+      staffMember.xp = saved ? (data.staffXpScheme === 2 ? saved.xp : xpFromOldSave(saved.xp)) : 0;
       staffMember.morale = saved ? saved.morale : 72;
       staffMember.notedLevel = staffLevelIndex(staffMember);
       staffMember.mesh.position.copy(staffMember.pos);
@@ -10875,7 +10873,7 @@ function makeThrivingCasino(){
   assignStaffPosts();
   // a showcase floor is run by people who know the job, and paid a bit over the odds
   Object.keys(STAFF_TYPES).forEach(r => { roleWage[r] = goingRate(r) * 1.15; });
-  staffNPCs.forEach(s => { s.xp = Math.random() < 0.45 ? 700 + Math.random()*400 : 200 + Math.random()*350; s.morale = 78 + Math.random()*18; s.notedLevel = staffLevelIndex(s); });
+  staffNPCs.forEach(s => { s.xp = Math.random() < 0.45 ? STAFF_LEVELS[2].at + Math.random()*800 : STAFF_LEVELS[1].at + Math.random()*1000; s.morale = 78 + Math.random()*18; s.notedLevel = staffLevelIndex(s); });
 
   // ---- a book of regulars, and a floor full of people ----
   regularPool = [];
