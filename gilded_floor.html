@@ -2144,7 +2144,7 @@ const BUILD_ITEMS = {
   restroom:  { name:'Restrooms',        cost:500, income:0,  radius:1.1,  category:'amenity',
     desc:'Guests stick around and play longer per visit.' },
   lounge:    { name:'Lounge',           cost:700, income:0,  radius:1.4,  category:'amenity',
-    desc:'Eases overcrowding frustration and boosts reputation.' },
+    desc:'Guests linger and play longer per visit, and a crowded floor bothers them less.' },
   cashier:   { name:"Cashier's Cage", cost:900, income:0,  radius:1.7,  category:'amenity',
     desc:'Where guests turn their chips back into money on the way out. Click it to set the exchange fee. A clerk behind the glass keeps the line short.' },
   atm:       { name:'ATM',              cost:300, income:0,  radius:0.4,  category:'amenity',
@@ -7367,7 +7367,8 @@ function amenityDurationMultiplier(){
   const stages = machines.filter(m=>m.type==='stage').length;
   const staffedBars = machines.filter(m=>m.type==='bar' && isStaffed(m)).length; // free drinks keep guests seated
   const diners = diningQuality() * 3, spas = machines.filter(m=>m.type==='spa').length;
-  return 1 + Math.min(0.4, restrooms*0.08) + Math.min(0.3, stages*0.1) + Math.min(0.2, staffedBars*0.05) + Math.min(0.35, diners*0.12) + Math.min(0.3, spas*0.12); // guests stick around longer per visit
+  const lounges = machines.filter(m=>m.type==='lounge').length; // a lounge is where people linger: +10% each, up to +30%
+  return 1 + Math.min(0.4, restrooms*0.08) + Math.min(0.3, stages*0.1) + Math.min(0.2, staffedBars*0.05) + Math.min(0.35, diners*0.12) + Math.min(0.3, spas*0.12) + Math.min(0.3, lounges*0.1); // guests stick around longer per visit
 }
 function loungeOvercrowdRelief(){
   const lounges = machines.filter(m=>m.type==='lounge').length;
