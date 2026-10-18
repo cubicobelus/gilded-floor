@@ -2150,7 +2150,7 @@ const BUILD_ITEMS = {
   atm:       { name:'ATM',              cost:300, income:0,  radius:0.4,  category:'amenity',
     desc:'Broke guests can withdraw more cash instead of leaving. You collect a small fee per withdrawal.' },
   valet:     { name:'Valet Parking',    cost:600, income:0,  radius:0.6,  category:'amenity',
-    desc:'Adds a few extra effective parking spots.' },
+    desc:'Each valet adds 3 extra parking spots, up to 3 valets (9 spots). It does not make cars arrive faster.' },
   stage:     { name:'Live Entertainment', cost:1000, income:0, radius:1.8, category:'amenity',
     desc:'Guests stick around even longer with a show going.' },
   viplounge: { name:'VIP Lounge',       cost:5000, income:0,  radius:2.2,  category:'amenity',
@@ -5803,6 +5803,10 @@ function returnMovedMachine(){
 }
 // Offices and the hotel Front Desk are one-per-casino: a second one would just sit there redundant.
 function isSingleInstance(key){ return !!OFFICE_INFO[key] || key === 'frontdesk'; }
+// Valet parking stops helping after 3 (effectiveParkingCapacity counts at most 9 spots), so it is limited to 3.
+const VALET_LIMIT = 3;
+function buildLimit(key){ return key === 'valet' ? VALET_LIMIT : isSingleInstance(key) ? 1 : Infinity; }
+function atBuildLimit(key){ const lim = buildLimit(key); return lim !== Infinity && machines.filter(m => m.type === key).length >= lim; }
 function setBuildType(key){
   if(movingMachine && key !== movingMachine.type) returnMovedMachine(); // dropped out of move mode - put it back
   buildType = key;
@@ -6020,14 +6024,14 @@ function openCategoryPopup(category){
     // Every office is a real, single-instance purchase ("You only need one" in its own desc) - once
     // placed, the card itself should say so instead of still inviting a second purchase that would
     // just sit there redundant (nothing currently stops buying a second one otherwise).
-    const alreadyBuilt = isSingleInstance(key) && machines.some(m => m.type === key);
+    const alreadyBuilt = atBuildLimit(key);
     html += `<div class="itemCard${(unlocked && !alreadyBuilt) ? '' : ' locked'}${buildType===key ? ' selected' : ''}">
       ${(()=>{ const u = itemThumb(key); return u ? `<div class="thumb"><img src="${u}" alt=""></div>` : ''; })()}
       <div class="name">${item.name}</div>
       <div class="price">$${item.cost}</div>
       <div class="itemDesc">${item.desc || ''}</div>
       ${alreadyBuilt
-        ? `<div class="lockNote">Already built</div>`
+        ? `<div class="lockNote">${buildLimit(key) > 1 ? 'All ' + buildLimit(key) + ' built' : 'Already built'}</div>`
         : unlocked
           ? `<button class="hotbarSlot selectBtn" data-key="${key}" style="width:100%;">${buildType===key ? 'Selected' : 'Select'}</button>`
           : `<div class="lockNote">${unlockNoteFor(key)}</div>`}
@@ -6371,7 +6375,7 @@ document.addEventListener('mousedown', (e)=>{
         setBuildType(null);
         return;
       }
-      if(isSingleInstance(buildType) && machines.some(m => m.type === buildType)){ logEvent(`You only need one ${BUILD_ITEMS[buildType].name} - it's already built`, '#e08a8a'); setBuildType(null); return; }
+      if(atBuildLimit(buildType)){ const lim = buildLimit(buildType), nm = BUILD_ITEMS[buildType].name; logEvent(lim === 1 ? `You only need one ${nm} - it's already built` : `${nm} is limited to ${lim} - all built`, '#e08a8a'); setBuildType(null); return; }
       addCash(-BUILD_ITEMS[buildType].cost);
       lastPlacedKey = buildType; lastPlacedRot = ghost.rotation.y;
       placeMachine(buildType, ghost.position.x, ghost.position.z, ghost.rotation.y, undefined, ghost.userData.level || 0);
@@ -6978,7 +6982,7 @@ function maxOccupantsFor(m){
 }
 function effectiveParkingCapacity(){
   const valets = machines.filter(m=>m.type==='valet').length;
-  return parkingCapacity + Math.min(9, valets*3);
+  return parkingCapacity + Math.min(VALET_LIMIT, valets)*3;
 }
 // Guests only sit down where the stakes suit their wallet: cautious spenders skip
 // high-limit machines, whales skip penny slots, and nobody plays what they can't afford.
@@ -11150,7 +11154,7 @@ function guestHintText(n){
 let lastPlacedKey = null, lastPlacedRot = 0;
 window.addEventListener('keydown', (e)=>{
   if(!isBind(e, 'repeat') || managerCameraLock || photoMode || !lastPlacedKey) return;
-  if(!isUnlocked(lastPlacedKey) || cash < BUILD_ITEMS[lastPlacedKey].cost) return;
+  if(!isUnlocked(lastPlacedKey) || cash < BUILD_ITEMS[lastPlacedKey].cost || atBuildLimit(lastPlacedKey)) return;
   setBuildType(lastPlacedKey);
   ghostRotation = lastPlacedRot;
   if(!pointerLocked) requestPlay();
