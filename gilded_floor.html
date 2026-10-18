@@ -691,7 +691,7 @@ function rebuildUpper(){
 }
 function buildUpperFloor(){
   if(upperBuilt || cash < UPPER_FLOOR_COST) return false;
-  addCash(-UPPER_FLOOR_COST);
+  spendOn(UPPER_FLOOR_COST);
   upperBuilt = true;
   buildRoomShell();
   logEvent('Built an upper floor - place Staircases (Build tab, Decor) to reach it', '#8fd6a8');
@@ -1280,7 +1280,7 @@ function updateRoomPanel(){
     e.stopPropagation();
     const k = b.dataset.k, i = parseInt(b.dataset.i), o = ROOM_SLOTS[k].opts[i];
     if(m.room.opts[k] === i) return;
-    if(o.c > 0){ if(cash < o.c) return; addCash(-o.c); }
+    if(o.c > 0){ if(cash < o.c) return; spendOn(o.c); }
     m.room.opts[k] = i; rebuildRoomInterior(m); playSound('place'); updateRoomPanel();
   }));
   document.getElementById('rBack').addEventListener('click', (e)=>{ e.stopPropagation(); roomPanelEl.style.display = 'none'; hotelPanelEl.style.display = 'block'; updateHotelPanel(); });
@@ -1624,7 +1624,7 @@ function upgradeClub(){
   if(!officeOn('mktoffice')) return false;
   const next = clubNext();
   if(!next || cash < next.cost) return false;
-  addCash(-next.cost);
+  spendOn(next.cost);
   clubLevel++;
   logEvent(clubLevel === 1 ? "Player's Club launched" : `Player's Club upgraded to ${next.name}`, '#e6c34a');
   playSound('achievement');
@@ -3785,8 +3785,10 @@ function settleDayFinances(dayNet){
 addCash(0);
 
 // Running ledger for the end-of-day breakdown: where money came from and where it went.
-function newLedger(){ return { slotWon:0, slotPaid:0, tableWon:0, tablePaid:0, atmFees:0, wages:0, upkeep:0, bribes:0, theft:0, debtRepaid:0, personalWon:0, personalLost:0, rooms:0, food:0, drinks:0, cage:0 }; }
+function newLedger(){ return { slotWon:0, slotPaid:0, tableWon:0, tablePaid:0, atmFees:0, wages:0, upkeep:0, bribes:0, theft:0, debtRepaid:0, personalWon:0, personalLost:0, rooms:0, food:0, drinks:0, cage:0, purchases:0 }; }
 let ledger = newLedger();
+// Money spent buying things (machines, hires, training, upgrades, floor, parking, wallpaper, club tiers, room furnishing). Only used so the day report can say how much of a day's net went on purchases.
+function spendOn(amount){ addCash(-amount); ledger.purchases += amount; }
 // Everything else worth knowing about a day, for the "View more" report.
 let dayStats = null;
 function newDayStats(){
@@ -4153,10 +4155,10 @@ function showDaySummary(day, net, guests, L, S){
   const plain = (label, value)=> `<div style="display:flex;justify-content:space-between;gap:16px;"><span>${label}</span><span>${value}</span></div>`;
   const slotNet = L.slotWon - L.slotPaid, tableNet = L.tableWon - L.tablePaid;
   const personalNet = L.personalWon - L.personalLost; // your own bets come out of / go into your cash directly
-  const known = slotNet + tableNet + L.atmFees + L.rooms + L.food + L.drinks + L.cage - L.wages - L.upkeep - L.bribes - L.theft - L.debtRepaid + personalNet;
+  const known = slotNet + tableNet + L.atmFees + L.rooms + L.food + L.drinks + L.cage - L.wages - L.upkeep - L.bribes - L.theft - L.debtRepaid - L.purchases + personalNet;
   const other = net - known; // building, selling, expanding, ads, etc.
   const takenIn = L.slotWon + L.tableWon, paidOut = L.slotPaid + L.tablePaid;
-  const otherMinus = L.wages + L.upkeep + L.bribes + L.theft + L.debtRepaid + Math.max(0, -other) + Math.max(0, -personalNet);
+  const otherMinus = L.wages + L.upkeep + L.bribes + L.theft + L.debtRepaid + L.purchases + Math.max(0, -other) + Math.max(0, -personalNet);
   const otherPlus = L.atmFees + L.rooms + L.food + L.drinks + L.cage + Math.max(0, other) + Math.max(0, personalNet);
   const barBonus = (L.slotWon + L.tableWon) * (1 - 1/amenitySpendMultiplier());
   const repDelta = reputation - S.repStart;
@@ -4171,7 +4173,8 @@ function showDaySummary(day, net, guests, L, S){
       <div style="font-size:10px;min-height:13px;">${sub || ''}</div></div>`;
   const cashText = sandbox ? '&infin;' : (cash < 0 ? '-' : '') + money(cash);
   const simple = `${sh('Net profit')}
-    <div style="font-size:32px;font-weight:bold;line-height:1.15;margin-bottom:10px;color:${net >= 0 ? '#8fd6a8' : '#e08a8a'};">${net < 0 ? '-' : '+'}${money(net)}</div>
+    <div style="font-size:32px;font-weight:bold;line-height:1.15;margin-bottom:${L.purchases > 0 ? 2 : 10}px;color:${net >= 0 ? '#8fd6a8' : '#e08a8a'};">${net < 0 ? '-' : '+'}${money(net)}</div>
+    ${L.purchases > 0 ? `<div style="font-size:11px;color:#9fb3a8;margin-bottom:10px;">includes ${money(L.purchases)} spent on purchases</div>` : ''}
     <div style="display:flex;gap:8px;">
       ${tile('Guests', guests)}
       ${tile('Reputation', Math.round(reputation) + '<span style="font-size:11px;color:#9fb3a8;"> /100</span>', `<span style="color:${repCol};">${repDelta >= 0 ? '+' : ''}${repDelta.toFixed(1)}</span>`)}
@@ -4204,7 +4207,8 @@ function showDaySummary(day, net, guests, L, S){
       ${L.bribes > 0 ? row('Inspector fines', L.bribes, -1) : ''}
       ${L.theft > 0 ? row('Stolen by pickpockets', L.theft, -1) : ''}
       ${L.debtRepaid > 0 ? row('Investor repayment', L.debtRepaid, -1) : ''}
-      ${Math.abs(other) >= 1 ? row('Purchases &amp; other', other, other > 0 ? 1 : -1) : ''}
+      ${L.purchases > 0 ? row('Purchases', L.purchases, -1) : ''}
+      ${Math.abs(other) >= 1 ? row('Ads, comps, loans &amp; other', other, other > 0 ? 1 : -1) : ''}
     </div>
     <div style="${box}">${sh('By department')}${departmentTable(L)}</div>`;
   const floorPane = `<div style="${box}">
@@ -4288,7 +4292,7 @@ function expandFloor(dir = 'back'){
   if(expansionCounts[dir] >= EXPAND_LIMITS[dir]) return false;
   const cost = floorExpansionCost();
   if(cash < cost) return false;
-  addCash(-cost);
+  spendOn(cost);
   if(dir === 'back') ROOM_BACK_Z -= EXPAND_SIZE.back;
   else if(dir === 'left') ROOM_LEFT_X -= EXPAND_SIZE.left;
   else ROOM_RIGHT_X += EXPAND_SIZE.right;
@@ -4914,7 +4918,7 @@ function trainStaff(s){
   if(!officeOn('hroffice')) return false;
   const cost = trainCost(s);
   if(!cost || cash < cost) return false;
-  addCash(-cost);
+  spendOn(cost);
   s.xp = Math.max(s.xp || 0, STAFF_LEVELS[staffLevelIndex(s) + 1].at);
   s.morale = Math.min(100, (s.morale || 70) + 8);
   logEvent(`${s.name} trained up to ${staffLevel(s).name} (-$${cost.toLocaleString()})`, '#e6c34a');
@@ -5115,7 +5119,7 @@ function hireStaff(key){
   const s = STAFF_TYPES[key];
   if(cash < s.hireCost) return;
   if(key === 'mechanic' && !everMachineBroken) return; // mirrors the Staff panel's own gate on this row
-  addCash(-s.hireCost);
+  spendOn(s.hireCost);
   staffCounts[key]++;
   const mesh = makeStaffMesh(s.color);
   scene.add(mesh);
@@ -5569,7 +5573,7 @@ function buyUpgrade(m, key){
   if(lvl >= UPGRADE_MAX) return false;
   const c = upgradeCost(key, lvl, m);
   if(cash < c) return false;
-  addCash(-c);
+  spendOn(c);
   m.up = m.up || { speed:0, appeal:0, care:0 };
   m.up[key] = lvl + 1;
   logEvent(`${m.nick || m.name}: ${UPGRADES[key].name} level ${lvl + 1} (-$${c.toLocaleString()})`, '#e6c34a');
@@ -6376,7 +6380,7 @@ document.addEventListener('mousedown', (e)=>{
         return;
       }
       if(atBuildLimit(buildType)){ const lim = buildLimit(buildType), nm = BUILD_ITEMS[buildType].name; logEvent(lim === 1 ? `You only need one ${nm} - it's already built` : `${nm} is limited to ${lim} - all built`, '#e08a8a'); setBuildType(null); return; }
-      addCash(-BUILD_ITEMS[buildType].cost);
+      spendOn(BUILD_ITEMS[buildType].cost);
       lastPlacedKey = buildType; lastPlacedRot = ghost.rotation.y;
       placeMachine(buildType, ghost.position.x, ghost.position.z, ghost.rotation.y, undefined, ghost.userData.level || 0);
       playSound('place');
@@ -9613,7 +9617,7 @@ function applyOfficeGates(){
 }
 function expandParking(){
   if(cash < parkingUpgradeCost) return false;
-  addCash(-parkingUpgradeCost);
+  spendOn(parkingUpgradeCost);
   parkingCapacity += 5;
   parkingUpgradeCost = Math.round(parkingUpgradeCost * 1.3);
   logEvent(`Expanded parking to ${parkingCapacity} spots`, '#8fd6a8');
@@ -10424,7 +10428,7 @@ function updateBuildingPanel(){
     e.stopPropagation();
     const w = WALLPAPERS[b.dataset.key];
     if(cash < w.cost) return;
-    addCash(-w.cost); setWallpaper(b.dataset.key);
+    spendOn(w.cost); setWallpaper(b.dataset.key);
     logEvent(`Redecorated with ${w.name} wallpaper` + (w.cost ? ` (-$${w.cost})` : ''), '#e6c34a');
     updateBuildingPanel();
   }));
