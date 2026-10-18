@@ -1916,7 +1916,7 @@ function departmentTable(L){
 const GRIPES = {
   noLoo:      { text:'Nowhere to go - guests are hunting for a restroom', fix:'Put in Restrooms (Amenities)' },
   looQueue:   { text:'The restrooms are always full',                     fix:'Add another Restroom' },
-  noDrink:    { text:'Waiting around for a drink',                        fix:'Add a Bar, or put a waitress on the one you have' },
+  noDrink:    { text:'Waiting around for a drink',                        fix:'Add a Bar, or put a waiter on the one you have' },
   noFood:     { text:'Hungry, with nowhere to eat',                       fix:'Build a Kitchen and some Dining Tables' },
   noChef:     { text:'The kitchen is shut - no chef on it',               fix:'Hire a Chef (Staff)' },
   longQueue:  { text:'Queues at the desk and the cage',                   fix:'Hire a Clerk, or open a second cage' },
@@ -2136,7 +2136,7 @@ const BUILD_ITEMS = {
   restaurant:{ name:'Kitchen',          cost:2600, income:0,  radius:2.1,  category:'amenity',
     desc:'Cooks for the dining room. Needs a Chef on it, and Dining Tables for people to sit at. Click it to price the menu.' },
   dinertable:{ name:'Dining Table',     cost:450,  income:0,  radius:1.3,  category:'amenity',
-    desc:'Seats four for dinner. Put a waitress on it and the table turns around faster and gets tipped.' },
+    desc:'Seats four for dinner. Put a waiter on it and the table turns around faster and gets tipped.' },
   spa:       { name:'Spa',              cost:3400, income:0,  radius:2.0,  category:'amenity',
     desc:'Pool, loungers and steam. Guests relax and stay longer; hotel guests love it.' },
   bar:       { name:'Bar',              cost:800, income:0,  radius:1.5,  category:'amenity',
@@ -4820,7 +4820,7 @@ function simulateSlot(bet, payout, pWin=0.35){
 const STAFF_TYPES = {
   security: { name:'Security Guard', hireCost:200, wage:22, color:0x2b3a4a, desc:'Cuts down on scams — nudges the odds back your way.' },
   dealer:   { name:'Dealer',         hireCost:250, wage:25, color:0x1a1a1a, desc:'Works one table (extras wander): guests bet ~15% more there and are drawn to it.' },
-  waitress: { name:'Waitress',       hireCost:180, wage:18, color:0xb03a5b, desc:'Works one bar (extras walk the floor): staffed bars boost spending and keep guests seated.' },
+  waitress: { name:'Waiter',         hireCost:180, wage:18, color:0xb03a5b, desc:'Works one bar (extras walk the floor): staffed bars boost spending and keep guests seated.' },
   clerk:       { name:'Clerk',            hireCost:220, wage:22, color:0x2a4a6a, desc:'Works the front desk and the cashier cage - without one, the line crawls.' },
   chef:        { name:'Chef',             hireCost:300, wage:29, color:0xe8e4d8, desc:'Works a Kitchen. No chef on it, no food served.' },
   mechanic:    { name:'Mechanic',         hireCost:260, wage:25, color:0x7a6a3a, desc:'Services worn machines and fixes breakdowns before you notice them.' },
@@ -10219,8 +10219,8 @@ function openMachineConfig(m){
       <input type="range" id="cfgFee" min="0" max="8" value="${cageFee(m)}" style="width:100%;margin:6px 0;">`;
   }
   if(m.type === 'bar'){
-    html += `<p style="color:#9fb3a8;font-size:11px;margin:0 0 8px;">Thirsty guests come over for a drink and pay on the spot. A waitress behind the bar pours faster and picks up a tip.</p>
-      <div style="display:flex;justify-content:space-between;"><span>Waitress on this bar</span><span style="color:${isStaffed(m)?'#8fd6a8':'#e08a8a'};">${isStaffed(m) ? 'yes' : 'nobody'}</span></div>
+    html += `<p style="color:#9fb3a8;font-size:11px;margin:0 0 8px;">Thirsty guests come over for a drink and pay on the spot. A waiter behind the bar pours faster and picks up a tip.</p>
+      <div style="display:flex;justify-content:space-between;"><span>Waiter on this bar</span><span style="color:${isStaffed(m)?'#8fd6a8':'#e08a8a'};">${isStaffed(m) ? 'yes' : 'nobody'}</span></div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Drinks poured here</span><span>${m.covers || 0}</span></div>
       <label style="display:flex;justify-content:space-between;gap:10px;">Price of a drink <span id="cfgDrinkVal">$${drinkPrice(m)}</span></label>
       <input type="range" id="cfgDrink" min="2" max="40" value="${drinkPrice(m)}" style="width:100%;margin:6px 0;">`;
@@ -10414,7 +10414,7 @@ function updateBuildingPanel(){
     <p style="color:#9fb3a8;font-size:11px;margin:6px 0 0;">Interior walls (Build tab, Decor) use the same wallpaper.</p>
     <div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:12px 0 4px;">Upper floor</div>
     ${upperBuilt
-      ? '<p style="margin:0;color:#cfd9d0;">Built. Place <b>Staircases</b> from the Build tab (Decor section - both ends need room) to connect the floors; every machine works upstairs too. Dealers and waitresses stay on the ground floor.</p>'
+      ? '<p style="margin:0;color:#cfd9d0;">Built. Place <b>Staircases</b> from the Build tab (Decor section - both ends need room) to connect the floors; every machine works upstairs too. Dealers and waiters stay on the ground floor.</p>'
       : `<button class="hotbarSlot" id="bpUpper" style="width:100%;" ${cash < UPPER_FLOOR_COST ? 'disabled' : ''}>Build an upper floor ($${UPPER_FLOOR_COST.toLocaleString()})</button>`}
     <div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:12px 0 4px;">Parking lot</div>
     <button class="hotbarSlot" id="bpParking" style="width:100%;" ${cash < parkingUpgradeCost ? 'disabled style="width:100%;opacity:.45;"' : ''}>Expand parking: ${parkingCapacity} &rarr; ${parkingCapacity + 5} spots ($${parkingUpgradeCost})</button>
