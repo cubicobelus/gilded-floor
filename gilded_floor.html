@@ -4892,7 +4892,7 @@ function roleLoad(role){
     else if(role === 'waitress') posts = machines.filter(m => m.type === 'bar' || m.type === 'dinertable').length;
     else if(role === 'clerk') posts = machines.filter(m => m.type === 'frontdesk' || m.type === 'cashier' || m.type === 'mktoffice').length;
     else if(role === 'chef') posts = kitchens().length;
-    else if(role === 'housekeeper') posts = Math.ceil(hotelRooms().length / 6);
+    else if(role === 'housekeeper') posts = Math.ceil(hotelRooms().length / 15); // one housekeeper can turn about 15 rooms (cleaning takes ~6 s plus the walk, a room turns over about twice a day)
     else if(role === 'mechanic') posts = Math.ceil(machines.filter(m => m.category === 'gambling').length / 18);
     else if(role === 'security') posts = Math.ceil(npcs.length / 14);
   } catch(e) { posts = 0; }
