@@ -1209,7 +1209,7 @@ function updateHotelPanel(){
   }).join('');
   hotelPanelEl.innerHTML = `
     <h3 style="margin:0 0 4px 0;color:#e6c34a;font-weight:normal;font-size:13px;">Hotel</h3>
-    <p style="color:#9fb3a8;font-size:11px;margin:0 0 8px 0;">Build a front desk and guest rooms (on any floor). Guests check in at the desk, rest in a room, then play bigger. Housekeepers turn rooms around; a clerk keeps the desk moving. Walk up to any vacant room and press <b>F</b> to step inside any time - re-furnishing it still needs the casino closed first. Regulars in suites stay for free.</p>
+    <p style="color:#9fb3a8;font-size:11px;margin:0 0 8px 0;">Build a front desk and guest rooms (on any floor). Guests check in at the desk, rest in a room, then play bigger. Housekeepers turn rooms around; a clerk keeps the desk moving. Walk up to any vacant room and press <b>F</b> to step inside any time - re-furnishing it still needs the casino closed first.</p>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">${card('frontdesk')}${card('room_std')}${card('room_dlx')}${card('room_suite')}</div>
     <div style="margin:10px 0 4px;display:flex;gap:16px;flex-wrap:wrap;font-size:12px;">
       <span>Rooms: <b>${rooms.length}</b> (${occupied} occupied${dirty ? ', ' + dirty + ' dirty' : ''})</span>
@@ -2096,7 +2096,7 @@ const machines = []; // {mesh, label, x, z, radius, name, type, cost, income}
 
 const BUILD_ITEMS = {
   slot:      { name:'Slot Machine',     cost:150,  income:3,  radius:0.7,  category:'gambling',
-    desc:'Fully random - adjustable payout, no scandal risk.' },
+    desc:'Fully random - adjustable payout. Under 80% guests can tell, and that risks a scandal.' },
   megaslot:  { name:'Mega Slot',        cost:500,  income:8,  radius:0.85, category:'gambling',
     desc:'Bigger cabinet, bigger swings - rarer wins but much larger payouts.' },
   blackjack: { name:'Blackjack Table',  cost:600,  income:12, radius:1.55, category:'gambling',
@@ -2188,7 +2188,7 @@ const BUILD_ITEMS = {
   room_dlx:  { name:'Deluxe Room',      cost:3200, income:0,  radius:4.0,  category:'hotel', base:'room', tier:'dlx',
     desc:'An 8x6 room: bigger bed, room for a seating area.' },
   room_suite:{ name:'Suite',            cost:6000, income:0,  radius:4.0,  category:'hotel', base:'room', tier:'suite',
-    desc:'An 8x8 suite with a jacuzzi option. Regulars stay in suites for free.' },
+    desc:'An 8x8 suite with a jacuzzi option.' },
   lift:      { name:'Lift',             cost:4500, income:0,  radius:1.6,  category:'decoration', tab:'architecture',
     desc:'A 3x3 shaft opening on both floors. Step inside and press the interact key. Guests take it too, and prefer it to a long walk.' },
   stairs:    { name:'Staircase',        cost:600, income:0,  radius:1.6,  category:'decoration', tab:'architecture',
