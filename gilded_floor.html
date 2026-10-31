@@ -4605,7 +4605,8 @@ function computeTargetGuestCount(){
   const peak = getPeakPeriod();
   if(peak) target *= peak.guestBoost;
   target *= 0.8 + loyaltyScore/250; // regulars and word of mouth (or angry ex-guests) move the crowd
-  target *= 1 + Math.min(1.4, machines.filter(m => m.category === 'gambling').length / 55); // a bigger floor with more to play draws a bigger crowd
+  const seats = machines.filter(m => m.category === 'gambling').reduce((s, m) => s + (m.seatOwners ? m.seatOwners.length : 1), 0);
+  target *= Math.max(1 + seats / 110, seats * 0.027); // more seats draw a bigger crowd: gently on a small floor, in proportion past about 55 seats (parking caps it below)
   target *= today().crowd;                                    // and what day of the week it is
   return Math.min(Math.round(target), effectiveParkingCapacity());
 }
