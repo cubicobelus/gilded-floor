@@ -4826,7 +4826,7 @@ function simulateSlot(bet, payout, pWin=0.35){
 // ---------------- Staff ----------------
 const STAFF_TYPES = {
   security: { name:'Security Guard', hireCost:200, wage:22, color:0x2b3a4a, desc:'Cuts down on scams — nudges the odds back your way.' },
-  dealer:   { name:'Dealer',         hireCost:250, wage:25, color:0x1a1a1a, desc:'Works one table (extras wander): guests bet ~15% more there and are drawn to it.' },
+  dealer:   { name:'Dealer',         hireCost:250, wage:13, color:0x1a1a1a, desc:'Works one table (extras wander): guests bet ~15% more there and are drawn to it.' },
   waitress: { name:'Waiter',         hireCost:180, wage:18, color:0xb03a5b, desc:'Works one bar (extras walk the floor): staffed bars boost spending and keep guests seated.' },
   clerk:       { name:'Clerk',            hireCost:220, wage:22, color:0x2a4a6a, desc:'Works the front desk and the cashier cage - without one, the line crawls.' },
   chef:        { name:'Chef',             hireCost:300, wage:29, color:0xe8e4d8, desc:'Works a Kitchen. No chef on it, no food served.' },
@@ -7397,10 +7397,11 @@ function computeBet(actor, m, play){
     if(actor && bet > actor.wallet) bet = Math.floor(actor.wallet / unit) * unit; // can't afford a single credit -> 0
     return bet;
   }
-  let tableCap = Math.min(m.income * 6 * (m.limitMult || 1), (30 + 470 * stakeStage()) * (m.limitMult || 1)); // table limit, and a young casino's limits start low
+  const tableStake = (!isSlotLike(m) && !(m.limitMult > 1)) ? 2 : 1; // regular table games play for twice the stake (High Roller tables have their own)
+  let tableCap = Math.min(m.income * 6 * (m.limitMult || 1), (30 + 470 * stakeStage()) * (m.limitMult || 1)) * tableStake; // table limit, and a young casino's limits start low
   if(actor) tableCap = Math.min(tableCap, bankBetLimit());
   if(actor && actor.wantsMaxBet) return Math.min(tableCap, actor.wallet);
-  let bet = m.income * BET_SCALE * (m.stakeMult || 1) * (0.6 + Math.random()*0.9);
+  let bet = m.income * BET_SCALE * (m.stakeMult || 1) * tableStake * (0.6 + Math.random()*0.9);
   if(!isSlotLike(m)) bet *= 1 + (isStaffed(m) ? 0.15 * machinePower(m) : 0) + roamingStaff('dealer')*0.04; // a dealer at the table matters most
   bet *= (1 + roamingStaff('waitress')*0.04) * chaseFactor(actor);
   bet *= amenitySpendMultiplier();
