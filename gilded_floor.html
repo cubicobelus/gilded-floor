@@ -4826,7 +4826,7 @@ function simulateSlot(bet, payout, pWin=0.35){
 // ---------------- Staff ----------------
 const STAFF_TYPES = {
   security: { name:'Security Guard', hireCost:200, wage:22, color:0x2b3a4a, desc:'Cuts down on scams — nudges the odds back your way.' },
-  dealer:   { name:'Dealer',         hireCost:250, wage:13, color:0x1a1a1a, desc:'Works one table (extras wander): guests bet ~15% more there and are drawn to it.' },
+  dealer:   { name:'Dealer',         hireCost:250, wage:25, color:0x1a1a1a, desc:'Tables need one to open. Runs their own table and one neighbouring table (extras wander): guests bet ~15% more and are drawn to it.' },
   waitress: { name:'Waiter',         hireCost:180, wage:18, color:0xb03a5b, desc:'Works one bar (extras walk the floor): staffed bars boost spending and keep guests seated.' },
   clerk:       { name:'Clerk',            hireCost:220, wage:22, color:0x2a4a6a, desc:'Works the front desk and the cashier cage - without one, the line crawls.' },
   chef:        { name:'Chef',             hireCost:300, wage:29, color:0xe8e4d8, desc:'Works a Kitchen. No chef on it, no food served.' },
@@ -4890,7 +4890,7 @@ function roleLoad(role){
   let posts = 0;
   try { // called once at initial script load (renderStaffPanel's first draw), before every global
         // below is necessarily declared yet - same class of issue devUnlockActive() guards against.
-    if(role === 'dealer') posts = machines.filter(m => m.category === 'gambling' && !isSlotLike(m)).length;
+    if(role === 'dealer') posts = Math.ceil(machines.filter(m => m.category === 'gambling' && !isSlotLike(m)).length / 2); // one dealer covers two neighbouring tables
     else if(role === 'waitress') posts = machines.filter(m => m.type === 'bar' || m.type === 'dinertable').length;
     else if(role === 'clerk') posts = machines.filter(m => m.type === 'frontdesk' || m.type === 'cashier' || m.type === 'mktoffice').length;
     else if(role === 'chef') posts = kitchens().length;
@@ -5170,8 +5170,11 @@ function staffPostPos(m, type){
 function isStaffed(m){ return !!(m.staffer && m.staffer.atPost); }
 function roamingStaff(type){ return staffNPCs.filter(s => s.type === type && !s.postMachine).reduce((n,s)=> n + staffPower(s), 0); }
 function securityStrength(){ return staffNPCs.filter(s => s.type === 'security').reduce((n,s)=> n + staffPower(s), 0); }
+const DEALER_REACH = 9; // a dealer also runs one other table whose centre is within this distance of their own
+function needsDealer(m){ return m.category === 'gambling' && !isSlotLike(m); }
 function assignStaffPosts(){
   machines.forEach(m => { m.staffer = null; });
+  staffNPCs.forEach(s => { s.postMachine2 = null; });
   const assign = (type, posts)=>{
     const staff = staffNPCs.filter(s => s.type === type);
     const taken = new Set();
@@ -5190,7 +5193,27 @@ function assignStaffPosts(){
     });
   };
   const reachable = m => !m.level || connectors().length > 0; // upstairs posts need a staircase to get to
-  assign('dealer', machines.filter(m => m.category === 'gambling' && !isSlotLike(m) && reachable(m)));
+  const tableList = machines.filter(m => needsDealer(m) && reachable(m));
+  // pair each table with its nearest unpaired neighbour on the same floor; one dealer runs a pair from the first table
+  const partner = new Map(), paired = new Set();
+  tableList.forEach(a=>{
+    if(paired.has(a)) return;
+    paired.add(a); let best = null, bd = DEALER_REACH * DEALER_REACH;
+    tableList.forEach(t=>{
+      if(paired.has(t) || (t.level || 0) !== (a.level || 0)) return;
+      const d = (t.x-a.x)**2 + (t.z-a.z)**2;
+      if(d <= bd){ bd = d; best = t; }
+    });
+    if(best){ paired.add(best); partner.set(a, best); }
+    else partner.set(a, null);
+  });
+  assign('dealer', [...partner.keys()]);
+  staffNPCs.forEach(s=>{
+    if(s.type !== 'dealer' || !s.postMachine) return;
+    const b = partner.get(s.postMachine);
+    if(b){ b.staffer = s; s.postMachine2 = b; }
+  });
+  if(!casinoClosed && tableList.some(t => !t.staffer)) tip('noDealer', 'A table with no dealer stays closed. One dealer runs their own table and one neighbouring table, so set tables out in pairs.');
   assign('waitress', machines.filter(m => (m.type === 'bar' || m.type === 'dinertable') && reachable(m)));
   assign('chef', machines.filter(m => m.type === 'restaurant' && reachable(m)));
   assign('clerk', machines.filter(m => (m.type === 'frontdesk' || m.type === 'cashier' || m.type === 'mktoffice') && reachable(m)));
@@ -7022,7 +7045,7 @@ function superstitionFactor(npc, m){
   return (npc.archetype === 'superstitious' && m.hotTime > 0) ? 0.4 : 1;
 }
 function findGambleSpot(npc){
-  const candidates = machines.filter(m => m.category === 'gambling' && guestSuitsMachine(npc, m) && ((m.level || 0) === (npc.level || 0) || connectors().length > 0) && (isSeatedTable(m) ? freeSeatCount(m) > 0 : (m.occupants||0) < maxOccupantsFor(m)));
+  const candidates = machines.filter(m => m.category === 'gambling' && (!needsDealer(m) || m.staffer) && guestSuitsMachine(npc, m) && ((m.level || 0) === (npc.level || 0) || connectors().length > 0) && (isSeatedTable(m) ? freeSeatCount(m) > 0 : (m.occupants||0) < maxOccupantsFor(m)));
   if(candidates.length === 0){ gripe('nothingNew', 0.12); return null; }
   // a whale specifically seeks out High Roller tables and high-limit slots when there are any free -
   // falls back to the normal pool if the floor doesn't have one yet, rather than standing idle
@@ -10279,6 +10302,7 @@ function openMachineConfig(m){
   // branch below and got a nonsensical "Rig level" slider bound to m.edge, which isn't even a field
   // those machine types have.
   if(m.category === 'gambling'){
+    if(needsDealer(m)) html += `<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Dealer</span><span style="color:${m.staffer?'#8fd6a8':'#e08a8a'};">${m.staffer ? (m.staffer.postMachine === m ? 'at this table' : 'shared with the next table') : 'none - closed'}</span></div>`;
     const rigOK = tabUnlocked('tabRigging');
     if(!rigOK) html += '<p style="color:#9fb3a8;font-size:11px;">Payout and rigging controls unlock as your casino grows.</p>'; else
     if(isSlotLike(m)){
