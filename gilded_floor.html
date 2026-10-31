@@ -2259,6 +2259,8 @@ function stakeStage(){
 }
 // No single round can pay out more than a quarter of the bank (never less than $150).
 function payoutCap(){ return sandbox ? Infinity : Math.max(150, Math.max(0, cash) * 0.25); }
+// A guest's stake is limited by the bank: about 2% of the casino's cash (never under $100), so the payout cap above rarely has to cut a win.
+function bankBetLimit(){ return sandbox ? Infinity : Math.max(100, Math.max(0, cash) * 0.02); }
 function slotWinSpread(){
   const r = Math.random();
   if(Math.random() >= stakeStage()){ // a young casino sees gentle wins (same average, far smaller tail)
@@ -7390,11 +7392,13 @@ function computeBet(actor, m, play){
       credits *= amenitySpendMultiplier() * (1 + roamingStaff('waitress')*0.04) * (actor && actor.isMember ? clubTierOf(actor.points).bet : 1) * chaseFactor(actor);
       credits = Math.max(1, Math.min(capCredits, Math.round(credits)));
     }
+    if(actor) credits = Math.max(1, Math.min(credits, Math.floor(bankBetLimit() / unit)));
     let bet = unit * credits;
     if(actor && bet > actor.wallet) bet = Math.floor(actor.wallet / unit) * unit; // can't afford a single credit -> 0
     return bet;
   }
-  const tableCap = Math.min(m.income * 6 * (m.limitMult || 1), (30 + 470 * stakeStage()) * (m.limitMult || 1)); // table limit, and a young casino's limits start low
+  let tableCap = Math.min(m.income * 6 * (m.limitMult || 1), (30 + 470 * stakeStage()) * (m.limitMult || 1)); // table limit, and a young casino's limits start low
+  if(actor) tableCap = Math.min(tableCap, bankBetLimit());
   if(actor && actor.wantsMaxBet) return Math.min(tableCap, actor.wallet);
   let bet = m.income * BET_SCALE * (m.stakeMult || 1) * (0.6 + Math.random()*0.9);
   if(!isSlotLike(m)) bet *= 1 + (isStaffed(m) ? 0.15 * machinePower(m) : 0) + roamingStaff('dealer')*0.04; // a dealer at the table matters most
