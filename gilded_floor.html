@@ -109,7 +109,7 @@
 </div>
 
 <div id="hud">
-  Cash: <b id="cashDisp">$2,000</b> · Day <b id="dayVal">1</b> · <b id="clockLabel">8:00 AM</b> <span id="peakLabel" style="color:#e6c34a;"></span> <span id="inspectorLabel" style="color:#ffb347;"></span><br>
+  Cash: <b id="cashDisp">$2,000</b> · Day <b id="dayVal">1</b> · <b id="clockLabel">8:00 AM</b> <span id="peakLabel" style="color:#e6c34a;"></span> <span id="inspectorLabel" style="color:#ffb347;"></span> <span id="parkingLabel" style="color:#ff9f7a;"></span><br>
   Mode: <b id="modeIndicator">UI Mode</b><br>
   <span style="font-size:11px;color:#9fb3a8;">build, sell, and watch guests gamble</span>
 </div>
@@ -171,7 +171,7 @@
             <div class="statsCard">
               <div class="statsH">Right now</div>
               <p class="statsLine">Reputation <b id="repVal">50</b> / 100</p>
-              <p class="statsLine">Guests on the floor <b id="guestCountVal">0</b> of <b id="parkingVal">10</b> parking spots<span id="statsGuestNow" style="display:none;"></span></p>
+              <p class="statsLine">Guests on the floor <b id="guestCountVal">0</b>, cars <b id="carsVal">0</b> of <b id="parkingVal">10</b> parking spots<span id="statsGuestNow" style="display:none;"></span></p>
               <p class="statsLine">Served today <b id="statsGuestServed">0</b></p>
               <p class="statsLine">Regulars <b id="regCountVal">0</b> / <b id="regCapVal">0</b></p>
             </div>
@@ -2150,7 +2150,7 @@ const BUILD_ITEMS = {
   atm:       { name:'ATM',              cost:300, income:0,  radius:0.4,  category:'amenity',
     desc:'Broke guests can withdraw more cash instead of leaving. You collect a small fee per withdrawal.' },
   valet:     { name:'Valet Parking',    cost:600, income:0,  radius:0.6,  category:'amenity',
-    desc:'Each valet adds 3 extra parking spots, up to 3 valets (9 spots). It does not make cars arrive faster.' },
+    desc:'Each valet adds 3 extra parking spots, up to 3 valets (9 spots). Worth it once the HUD says parking is full. It does not make cars arrive faster.' },
   stage:     { name:'Live Entertainment', cost:1000, income:0, radius:1.8, category:'amenity',
     desc:'Guests stick around even longer with a show going.' },
   viplounge: { name:'VIP Lounge',       cost:5000, income:0,  radius:2.2,  category:'amenity',
@@ -4106,7 +4106,16 @@ function clockText(){
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
   return `${h12}:${String(min).padStart(2,'0')} ${h24 < 12 ? 'AM' : 'PM'}`;
 }
+const parkingLabelEl = document.getElementById('parkingLabel');
+let lastParkingFull = null, parkingCheckN = 0;
 function updatePeakLabel(){
+  const full = (parkingCheckN++ % 30) ? lastParkingFull : (!casinoClosed && parkingLimitsCrowd() && carsOnLot() >= effectiveParkingCapacity()); // checked about twice a second
+  if(full !== lastParkingFull){
+    lastParkingFull = full;
+    parkingLabelEl.textContent = full ? 'Parking full' : '';
+    parkingLabelEl.title = full ? 'More guests want to come than you can park. Expand parking (Build tab) or add Valet Parking; hotel guests do not need a spot.' : '';
+    if(full) tip('parkingFull', 'Parking is full: more guests want to come than you can park. Expand parking from the Build tab or add Valet Parking. Guests staying in your hotel do not take a spot.');
+  }
   const ct = today().name + ' ' + clockText();
   if(ct !== lastClockText){ lastClockText = ct; clockLabelEl.textContent = ct; }
   const peak = getPeakPeriod();
@@ -4599,7 +4608,10 @@ function updateAutoComp(dt){
   if(applyComp(worst, cheapest.key)) autoCompSpentToday += cheapest.cost;
 }
 
-function computeTargetGuestCount(){
+// Hotel guests who have checked in came for the night: their car is not taking a parking spot.
+function hotelGuestsIn(){ return npcs.filter(n => n.hotelGuest && n.room).length; }
+function carsOnLot(){ return npcs.length - hotelGuestsIn(); }
+function crowdDemand(){
   let target = 3 + (reputation/100) * 12;
   if(campaignTimeLeft > 0) target += campaignStrength;
   const { overall } = computeCasinoStars();
@@ -4610,8 +4622,10 @@ function computeTargetGuestCount(){
   const seats = machines.filter(m => m.category === 'gambling').reduce((s, m) => s + (m.seatOwners ? m.seatOwners.length : 1), 0);
   target *= Math.max(1 + seats / 110, seats * 0.027); // more seats draw a bigger crowd: gently on a small floor, in proportion past about 55 seats (parking caps it below)
   target *= today().crowd;                                    // and what day of the week it is
-  return Math.min(Math.round(target), effectiveParkingCapacity());
+  return Math.round(target);
 }
+function parkingLimitsCrowd(){ return crowdDemand() > effectiveParkingCapacity() + hotelGuestsIn(); }
+function computeTargetGuestCount(){ return Math.min(crowdDemand(), effectiveParkingCapacity() + hotelGuestsIn()); }
 
 let densityAvg = null, densityAt = 0;
 // Retail-Tycoon-style scoring: five categories, each 0-5 stars, averaged into an overall score.
@@ -8841,7 +8855,7 @@ function updatePopulation(dt){
   spawnTimer -= dt;
   { const ds = DS(); if(npcs.length > ds.peakGuests) ds.peakGuests = npcs.length; }
   const target = computeTargetGuestCount();
-  if(!casinoClosed && spawnTimer <= 0 && npcs.length < target && npcs.length < effectiveParkingCapacity()){
+  if(!casinoClosed && spawnTimer <= 0 && npcs.length < target && carsOnLot() < effectiveParkingCapacity()){
     // happy winners from earlier nights come back (richer), so a good reputation snowballs
     const returning = Math.random() < 0.3 * (0.5 + loyaltyScore/100) ? pickReturningRegular() : null;
     // A real story beat, not just a stat: someone who's been genuinely absent a while (same rough
@@ -9429,7 +9443,8 @@ document.getElementById('staffPanelClose').addEventListener('click', (e)=>{ e.st
 function updateBusinessPanel(){
   document.getElementById('repVal').textContent = Math.round(reputation);
   document.getElementById('guestCountVal').textContent = npcs.length;
-  document.getElementById('parkingVal').textContent = parkingCapacity;
+  document.getElementById('carsVal').textContent = carsOnLot();
+  document.getElementById('parkingVal').textContent = effectiveParkingCapacity() + (parkingLimitsCrowd() ? ' (full, turning guests away)' : '');
   document.getElementById('regCountVal').textContent = regularPool.length;
   document.getElementById('regCapVal').textContent = maxRegulars();
   { // guest personality mix, currently on the floor - reads npc.archetype, rolled once per guest in makeNPC
@@ -10948,7 +10963,7 @@ function updateDevDebugInfo(){
   el.innerHTML = `
     Day ${currentDay} — ${Math.round((dayTime/DAY_LENGTH)*100)}% through<br>
     Cash: $${Math.round(cash).toLocaleString()} · Reputation: ${reputation.toFixed(1)}<br>
-    Guests: ${npcs.length} / ${parkingCapacity} parking · Staff: ${staffNPCs.length}<br>
+    Guests: ${npcs.length} (cars ${carsOnLot()} / ${effectiveParkingCapacity()} parking) · Staff: ${staffNPCs.length}<br>
     Active games: ${activeGames.length} · Machines: ${machines.length}<br>
     Floor expansions: ${floorExpansions} · Room depth: ${roomDepth().toFixed(0)}
   `;
