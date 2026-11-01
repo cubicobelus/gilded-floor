@@ -4333,8 +4333,8 @@ function rebuildRoom(){
 // timed boost - a cooldown instead of a duration. None of these are one-time purchases and none of them
 // touch the Regulars system - regulars have their own return incentive via comping.
 const CAMPAIGNS = {
-  flyer: { name:'Flyer Drop',  cost:100, duration:30, strength:3, desc:'Cheap and short - a small, quick bump in foot traffic, and a few more Player’s Club sign-ups (+18%).' },
-  ad:    { name:'Ad Campaign', cost:300, duration:60, strength:6, desc:'The standard spot - a solid crowd bump for a minute, and noticeably more Player’s Club sign-ups (+36%).' },
+  flyer: { name:'Flyer Drop',  cost:35,  duration:DAY_LENGTH,     strength:3, desc:'Cheap - a small bump in foot traffic for a whole day, and a few more Player’s Club sign-ups (+18%). Only helps when you have parking to spare.' },
+  ad:    { name:'Ad Campaign', cost:100, duration:DAY_LENGTH * 2, strength:6, desc:'The standard spot - a solid crowd bump for two days, and noticeably more Player’s Club sign-ups (+36%). Only helps when you have parking to spare.' },
 };
 const HR_OUTREACH = { name:'High Roller Outreach', cost:900, duration:45, vipShift:0.25, desc:"Not more guests - richer ones. Skews who's walking in, for a while." };
 const PR_PUSH = { name:'PR Push', baseCost:150, costPerRepPoint:6, repair:10, cooldown:120, desc:'Immediate damage control: claws back some reputation right now. Costs more the worse things already are.' };
@@ -9636,7 +9636,7 @@ function updateMarketingPanel(){
     // number computeTargetGuestCount() adds to its target while this is live - not a separate
     // made-up stat, so it can never say something the crowd math itself doesn't back up.
     const desc = running ? `${c.desc} <span style="color:#8fd6a8;">Pulling in about +${c.strength} to tonight's target crowd right now.</span>` : c.desc;
-    html += row(c.name, `${c.duration}s`, desc, null, 'campaignBtn', disabled, running ? `Running (${Math.ceil(campaignTimeLeft)}s)` : `$${c.cost}`);
+    html += row(c.name, `${c.duration / DAY_LENGTH} day${c.duration === DAY_LENGTH ? '' : 's'}`, desc, null, 'campaignBtn', disabled, running ? `Running (${Math.ceil(campaignTimeLeft)}s)` : `$${c.cost}`);
   });
   { const running = hrOutreachTimeLeft > 0, disabled = cash < HR_OUTREACH.cost;
     const desc = running ? `${HR_OUTREACH.desc} <span style="color:#8fd6a8;">New arrivals are skewing richer while this runs.</span>` : HR_OUTREACH.desc;
