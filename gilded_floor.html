@@ -1209,7 +1209,7 @@ function updateHotelPanel(){
   }).join('');
   hotelPanelEl.innerHTML = `
     <h3 style="margin:0 0 4px 0;color:#e6c34a;font-weight:normal;font-size:13px;">Hotel</h3>
-    <p style="color:#9fb3a8;font-size:11px;margin:0 0 8px 0;">Build a front desk and guest rooms (on any floor). Guests check in at the desk, rest in a room, then play bigger. Housekeepers turn rooms around; a clerk keeps the desk moving. Walk up to any vacant room and press <b>F</b> to step inside any time - re-furnishing it still needs the casino closed first.</p>
+    <p style="color:#9fb3a8;font-size:11px;margin:0 0 8px 0;">Build a front desk and guest rooms (on any floor). Every room also brings visitors of its own (one per Standard Room, two per Deluxe, three and a half per Suite). Guests check in at the desk, rest in a room, then play bigger. Housekeepers turn rooms around; a clerk keeps the desk moving. Walk up to any vacant room and press <b>F</b> to step inside any time - re-furnishing it still needs the casino closed first.</p>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">${card('frontdesk')}${card('room_std')}${card('room_dlx')}${card('room_suite')}</div>
     <div style="margin:10px 0 4px;display:flex;gap:16px;flex-wrap:wrap;font-size:12px;">
       <span>Rooms: <b>${rooms.length}</b> (${occupied} occupied${dirty ? ', ' + dirty + ' dirty' : ''})</span>
@@ -4626,8 +4626,12 @@ function crowdDemand(campaignBoost = campaignTimeLeft > 0 ? campaignStrength : 0
   target *= Math.max(1 + seats / 110, seats * 0.027); // more seats draw a bigger crowd: gently on a small floor, in proportion past about 55 seats (parking caps it below)
   target *= today().crowd;                                    // and what day of the week it is
   target *= amenityCrowdMultiplier();                         // and a comfortable casino draws people in
+  target += hotelPull();                                      // plus people who come for the hotel
   return Math.round(target);
 }
+// An open hotel brings its own visitors: one per Standard Room, two per Deluxe, three and a half per Suite (the
+// rooms' size step). Once they check in they need no parking spot.
+function hotelPull(){ return hotelOpen() ? hotelRooms().reduce((s, m) => s + ((ROOM_TIERS[m.room && m.room.tier] || {}).base || 0), 0) : 0; }
 // Restrooms, lounges, a show and a spa make the casino a nicer night out, so a few more people come. (Their
 // longer stays alone added nothing: the floor holds a set number of guests, so longer stays just meant fewer
 // new arrivals.)
