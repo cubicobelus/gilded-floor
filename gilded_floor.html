@@ -4196,7 +4196,12 @@ function showDaySummary(day, net, guests, L, S){
       ${row('Paid out', paidOut, -1)}
       ${row('Other income', otherPlus, 1)}
       ${row('Other costs', otherMinus, -1)}
-    </div>`;
+    </div>
+    ${(S.mktSpent || 0) > 0 || (S.mktGuests || 0) > 0 ? `<div style="${box}">${sh('Marketing')}
+      ${row(S.mktAuto ? `Spent (Auto-Marketing ${money(S.mktAuto)})` : 'Spent', S.mktSpent || 0, -1)}
+      ${plain('Extra guests it brought in', S.mktGuests || 0)}
+      ${row('What they lost at your games', S.mktTake || 0, (S.mktTake || 0) >= 0 ? 1 : -1)}
+    </div>` : ''}`;
 
   // "View more": four tabs instead of one long wall
   const ranked = S.machines.filter(m => Math.abs(m.net) >= 1).sort((a,b)=>b.net-a.net);
@@ -4349,10 +4354,13 @@ function logMarketingEvent(label, auto){
   marketingEventLog.push({ t: absoluteTime(), label, auto });
   if(marketingEventLog.length > 80) marketingEventLog.shift();
 }
+// Marketing money for the day report: what was spent (and how much of it Auto-Marketing chose), plus the guests who
+// only came because a campaign raised the crowd (tagged at arrival) and what they lost at the games.
+function noteMarketingSpend(v, auto){ const ds = DS(); ds.mktSpent = (ds.mktSpent || 0) + v; if(auto) ds.mktAuto = (ds.mktAuto || 0) + v; }
 function runCampaign(key, auto=false){
   const c = CAMPAIGNS[key];
   if(!c || cash < c.cost || !officeOn('mktoffice')) return false;
-  addCash(-c.cost);
+  addCash(-c.cost); noteMarketingSpend(c.cost, auto);
   campaignTimeLeft = c.duration; campaignStrength = c.strength; campaignKey = key;
   logEvent(auto ? `Auto-Marketing: ${c.name} launched` : `${c.name} launched`, '#e6c34a');
   logMarketingEvent(c.name, auto);
@@ -4361,7 +4369,7 @@ function runCampaign(key, auto=false){
 }
 function runHrOutreach(auto=false){
   if(cash < HR_OUTREACH.cost || !officeOn('mktoffice')) return false;
-  addCash(-HR_OUTREACH.cost);
+  addCash(-HR_OUTREACH.cost); noteMarketingSpend(HR_OUTREACH.cost, auto);
   hrOutreachTimeLeft = HR_OUTREACH.duration;
   logEvent('High Roller Outreach launched - expect a richer crowd for a while', '#e6c34a');
   logMarketingEvent(HR_OUTREACH.name, auto);
@@ -4371,7 +4379,7 @@ function runHrOutreach(auto=false){
 function prPushCost(){ return Math.round(PR_PUSH.baseCost + (100 - reputation) * PR_PUSH.costPerRepPoint); }
 function runPrPush(auto=false){
   if(prPushCooldown > 0 || cash < prPushCost() || !officeOn('mktoffice')) return false;
-  addCash(-prPushCost());
+  noteMarketingSpend(prPushCost(), auto); addCash(-prPushCost());
   reputation = Math.min(100, reputation + PR_PUSH.repair);
   prPushCooldown = PR_PUSH.cooldown;
   logEvent(auto ? `Auto-Marketing: PR push smoothed things over - reputation +${PR_PUSH.repair}` : `PR push smoothed things over - reputation +${PR_PUSH.repair}`, '#e6c34a');
@@ -4392,7 +4400,7 @@ function winbackCost(){ return WINBACK_MAILER.baseCost + WINBACK_MAILER.costPerR
 function runWinbackMailer(auto=false){
   const at = atRiskRegulars();
   if(!at.length || winbackCooldown > 0 || cash < winbackCost() || !officeOn('mktoffice')) return false;
-  addCash(-winbackCost());
+  noteMarketingSpend(winbackCost(), auto); addCash(-winbackCost());
   at.forEach(e => { e.affinity = Math.min(100, e.affinity + WINBACK_MAILER.affinityBoost); });
   winbackCooldown = WINBACK_MAILER.cooldown;
   logEvent(`${auto ? 'Auto-Marketing: w' : 'W'}in-Back Mailer sent to ${at.length} regular${at.length===1?'':'s'} - loyalty topped up`, '#e6c34a');
@@ -4457,9 +4465,8 @@ function regularCompGain(e, boost){
 const TURNOUT_REALIZATION = 0.6; // a guest who arrives only lives up to part of a campaign's value before it ends anyway - conservative, flagged fudge factor, not derived
 function turnoutCampaignEV(key){
   const c = CAMPAIGNS[key];
-  const room = Math.max(0, computeTargetGuestCount() - npcs.length); // real headroom - a full floor gets nothing extra from a bigger target
-  if(room <= 0) return -c.cost;
-  const realized = Math.min(c.strength, room);
+  const realized = campaignGuestsGained(key); // real headroom - a full lot, or a floor already filling to its target, gets nothing extra
+  if(realized <= 0) return -c.cost;
   return avgHouseValuePerGuest() * realized * TURNOUT_REALIZATION - c.cost;
 }
 function winbackEV(){
@@ -4552,8 +4559,8 @@ function updateAutoMarketing(dt){
   if(autoMarketingSmart){ updateAutoMarketingSmart(); return; }
   const budgetLeft = autoMarketingBudget - autoMarketingSpentToday;
   if(budgetLeft <= 0.5) return;
-  // Turnout is the priority: an empty floor earns nothing at all, so fill it before chasing loyalty.
-  if(campaignTimeLeft <= 0 && npcs.length < computeTargetGuestCount() * 0.7){
+  // Turnout first, but only when a campaign can actually raise the crowd: a full lot or a floor still filling up gains nothing.
+  if(campaignTimeLeft <= 0 && campaignGuestsGained('flyer') >= 1){
     const order = ['flyer', 'ad']; // cheapest first
     for(const key of order){
       const c = CAMPAIGNS[key];
@@ -4611,9 +4618,9 @@ function updateAutoComp(dt){
 // Hotel guests who have checked in came for the night: their car is not taking a parking spot.
 function hotelGuestsIn(){ return npcs.filter(n => n.hotelGuest && n.room).length; }
 function carsOnLot(){ return npcs.length - hotelGuestsIn(); }
-function crowdDemand(){
+function crowdDemand(campaignBoost = campaignTimeLeft > 0 ? campaignStrength : 0){
   let target = 3 + (reputation/100) * 12;
-  if(campaignTimeLeft > 0) target += campaignStrength;
+  target += campaignBoost;
   const { overall } = computeCasinoStars();
   target *= 0.85 + (overall/5) * 0.3; // a well-rounded casino (per the star ratings) pulls a bit more foot traffic
   const peak = getPeakPeriod();
@@ -4626,6 +4633,12 @@ function crowdDemand(){
 }
 function parkingLimitsCrowd(){ return crowdDemand() > effectiveParkingCapacity() + hotelGuestsIn(); }
 function computeTargetGuestCount(){ return Math.min(crowdDemand(), effectiveParkingCapacity() + hotelGuestsIn()); }
+// How many more guests a campaign could really bring right now: the target it would set (still capped by parking)
+// minus whoever is already coming anyway. A full lot, or a floor still filling up to today's target, gains nothing.
+function campaignGuestsGained(key){
+  const cap = effectiveParkingCapacity() + hotelGuestsIn();
+  return Math.max(0, Math.min(cap, crowdDemand(CAMPAIGNS[key].strength)) - Math.max(npcs.length, Math.min(cap, crowdDemand(0))));
+}
 
 let densityAvg = null, densityAt = 0;
 // Retail-Tycoon-style scoring: five categories, each 0-5 stars, averaged into an overall score.
@@ -6884,7 +6897,7 @@ function pickArchetype(tier, isWhale){
 }
 // opts: { regular: {wallet, betStyle} } brings back a happy regular; { vip:true } makes a whale.
 function makeNPC(opts = {}){
-  // A clerk on the Player's Club Desk is optional, same as a dealer at a table or a waitress at a bar -
+  // A clerk on the Player's Club Desk is optional, same as a waitress at a bar -
   // no penalty for leaving it unstaffed, just a real bonus if you do: roughly doubles the sign-up
   // chance (capped at 100%), matching a clerk actually being there to sign someone up on the spot
   // instead of the desk just sitting there unattended.
@@ -6978,6 +6991,7 @@ function makeNPC(opts = {}){
   return npc;
 }
 function removeNPC(npc){
+  if(npc.viaCampaign){ const ds = DS(); ds.mktTake = (ds.mktTake || 0) - (npc.net || 0); }
   releaseRoom(npc); releaseDiner(npc); releaseService(npc); queueLeaveAll(npc); npcsTargetedByGuard.delete(npc);
   releaseStall(npc);
   if(npc.rid){ const e = regularPool.find(r => r.id === npc.rid); if(e) e.onFloor = false; }
@@ -8864,10 +8878,12 @@ function updatePopulation(dt){
     if(returning && currentDay - (returning.lastDay || 0) >= 5 && tabUnlocked('tabRegulars')){
       logEvent(`${returning.name} is back after a while away`, '#8fd6a8');
     }
-    makeNPC(returning ? { regular: returning } : {});
+    const viaCampaign = campaignTimeLeft > 0 && npcs.length >= Math.min(effectiveParkingCapacity() + hotelGuestsIn(), crowdDemand(0));
+    const arrived = makeNPC(returning ? { regular: returning } : {});
+    if(viaCampaign && arrived){ arrived.viaCampaign = true; const ds = DS(); ds.mktGuests = (ds.mktGuests || 0) + 1; }
     spawnTimer = 1.5 + Math.random()*2;
   }
-  if(npcs.length >= effectiveParkingCapacity()){ gripe('crowded', dt * 0.05); reputation = Math.max(0, reputation - dt*0.5*(1 - loungeOvercrowdRelief())); } // overcrowded, guests turned away (lounges ease the sting)
+  if(carsOnLot() >= effectiveParkingCapacity()){ gripe('crowded', dt * 0.05); reputation = Math.max(0, reputation - dt*0.5*(1 - loungeOvercrowdRelief())); } // overcrowded, guests turned away (lounges ease the sting)
   if(campaignTimeLeft > 0){ campaignTimeLeft -= dt; if(campaignTimeLeft <= 0){ campaignTimeLeft = 0; campaignKey = null; } }
   if(hrOutreachTimeLeft > 0){ hrOutreachTimeLeft -= dt; if(hrOutreachTimeLeft <= 0) hrOutreachTimeLeft = 0; }
   if(prPushCooldown > 0){ prPushCooldown -= dt; if(prPushCooldown <= 0) prPushCooldown = 0; }
