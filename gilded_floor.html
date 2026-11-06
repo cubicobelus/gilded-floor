@@ -5240,11 +5240,15 @@ const FIG_GEO = {
   hand: new THREE.SphereGeometry(0.065, 8, 8).translate(0, -0.5, 0),
 };
 // o: { skin, trousers, shirt | shirtMat }. Faces +z. Hair, hats and the like go on rig.head.
+// A little self-glow in each figure's own colour, so people stay readable and keep their colour under
+// the dimmer, tone-mapped casino light instead of going muddy.
+function figureFill(mat, k = 0.22){ mat.emissive.copy(mat.color).multiplyScalar(k); return mat; }
 function buildHumanoid(o){
   const g = new THREE.Group();
   const skinMat = new THREE.MeshStandardMaterial({ color: o.skin, roughness: 0.85 });
   const shirtMat = o.shirtMat || new THREE.MeshStandardMaterial({ color: o.shirt, roughness: 0.9 });
   const trouMat = new THREE.MeshStandardMaterial({ color: o.trousers, roughness: 0.95 });
+  figureFill(skinMat); figureFill(shirtMat); figureFill(trouMat, 0.15);
   const shoeMat = new THREE.MeshStandardMaterial({ color: 0x15120f, roughness: 0.55 });
   const body = new THREE.Group(); g.add(body);
   const torso = new THREE.Mesh(FIG_GEO.torso, shirtMat); torso.position.y = 0.98; torso.scale.z = 0.72; torso.castShadow = true; body.add(torso);
@@ -6957,14 +6961,14 @@ function makeLook(){
 function makeGuestMesh(tier=1, look=makeLook()){
   // Guests share one jointed body; wallet tier (0=cautious..3=high roller) shows through shirt richness,
   // a tie for the better-off and a small size bump. Skin, hair and accessory come from the guest's look.
-  const sat = 0.28 + tier*0.14;
-  const light = 0.38 + tier*0.035;
+  const sat = 0.38 + tier*0.13;
+  const light = 0.45 + tier*0.03;
   const shirtColor = new THREE.Color().setHSL(look.shirtHue, sat, light);
   const shirtMat = new THREE.MeshStandardMaterial({ color: shirtColor, metalness: tier>=3?0.3:0, roughness: tier>=3?0.4:0.9 });
   const trousers = FIG_TROUSERS[Math.floor(look.shirtHue * 997) % FIG_TROUSERS.length];
   const g = buildHumanoid({ shirtMat, trousers, skin: look.skin });
   const rig = g.userData.rig, head = rig.head;
-  const hairMat = new THREE.MeshStandardMaterial({ color: look.hair, roughness: 0.9 });
+  const hairMat = figureFill(new THREE.MeshStandardMaterial({ color: look.hair, roughness: 0.9 }), 0.15);
   const style = HAIR_STYLES[look.style];
   if(style !== 'bald'){
     const cap = new THREE.Mesh(new THREE.SphereGeometry(0.235, 10, 8, 0, Math.PI*2, 0, Math.PI*0.55), hairMat); cap.position.set(0, 1.56, -0.01); head.add(cap);
@@ -6973,7 +6977,7 @@ function makeGuestMesh(tier=1, look=makeLook()){
     if(style === 'bun'){ const bun = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 8), hairMat); bun.position.set(0, 1.84, -0.03); head.add(bun); }
   }
   if(look.acc === 'hat'){
-    const hatMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL((look.shirtHue + 0.5) % 1, 0.5, 0.3) });
+    const hatMat = figureFill(new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL((look.shirtHue + 0.5) % 1, 0.5, 0.35) }));
     const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.03, 14), hatMat); brim.position.y = 1.73;
     const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.21, 0.2, 12), hatMat); crown.position.y = 1.83;
     head.add(brim, crown);
