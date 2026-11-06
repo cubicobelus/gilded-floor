@@ -381,6 +381,15 @@ const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHei
 const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
+// Filmic tone mapping rolls off the highlights where several ceiling lights overlap, so the carpet and
+// walls keep their colour instead of washing out. Flat unlit things (screens, reels, signs, bulbs) are
+// left out of it so they stay crisp and bright.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.8;
+{
+  const BaseBasic = THREE.MeshBasicMaterial;
+  THREE.MeshBasicMaterial = class extends BaseBasic { constructor(p){ super(p); this.toneMapped = false; } };
+}
 document.body.appendChild(renderer.domElement);
 
 window.addEventListener('resize', ()=>{
@@ -390,8 +399,8 @@ window.addEventListener('resize', ()=>{
 });
 
 // ---------------- Lighting ----------------
-scene.add(new THREE.AmbientLight(0x554433, 0.7));
-const hemi = new THREE.HemisphereLight(0x998866, 0x110d08, 0.4);
+scene.add(new THREE.AmbientLight(0x554433, 0.35));
+const hemi = new THREE.HemisphereLight(0x998866, 0x110d08, 0.35);
 scene.add(hemi);
 
 // The renderer recompiles every shader whenever the number of lights changes, which used to lock the
