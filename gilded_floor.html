@@ -243,7 +243,9 @@
 
   <div style="color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin:0 0 5px;">Audio</div>
   <label style="display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;">Sound volume <input type="range" id="soundVolumeSlider" min="0" max="10" value="6"></label>
-  <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;">Mute sound <input type="checkbox" id="soundMuteToggle"></label>
+  <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;">Mute sound <input type="checkbox" id="soundMuteToggle"></label>
+  <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;">Casino ambience <input type="checkbox" id="ambienceToggle" checked></label>
+  <label style="display:flex;justify-content:space-between;gap:8px;margin-bottom:12px;">Ambience volume <input type="range" id="ambienceVolumeSlider" min="0" max="10" value="5"></label>
 
   <div style="color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin:0 0 5px;">Display</div>
   <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;">Always show nametags <input type="checkbox" id="nametagsAlwaysToggle"></label>
@@ -3600,54 +3602,240 @@ function removeMachine(m){
 
 // The casino starts empty and closed: buy your first machines, then open the doors.
 
-// ---------------- Sound (minimal, procedural - no external audio files) ----------------
+// ---------------- Sound (procedural - no external audio files) ----------------
+// Everything is synthesised with Web Audio. Effects go through one master bus (volume, mute, a gentle
+// compressor) with a send into a shared room reverb, so even small sounds sit in a big hall instead of
+// beeping straight at you. The floor ambience (crowd murmur, distant slots, chips, far-off jackpot bells)
+// has its own switch and volume in Settings.
 let soundVolume = 0.6;
 let soundMuted = false;
+let ambienceOn = true;
+let ambienceVolume = 0.5;
 let nametagsAlwaysOn = false; // when off, a machine's nametag only shows for 1 in-game day after it's placed
-let audioCtx = null;
+let audioCtx = null, sfxBus = null, masterGain = null, reverbSend = null, ambBus = null, noiseBuf = null;
 function getAudioCtx(){
   if(!audioCtx){
     const Ctx = window.AudioContext || window.webkitAudioContext;
-    if(Ctx) audioCtx = new Ctx();
+    if(Ctx){ audioCtx = new Ctx(); buildAudioGraph(audioCtx); }
   }
   if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   return audioCtx;
 }
-function playTone(freq, duration, type, gain, delay=0){
-  const ctx = getAudioCtx();
-  if(!ctx) return;
-  const t0 = ctx.currentTime + delay;
-  const osc = ctx.createOscillator();
-  const g = ctx.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, t0);
-  g.gain.setValueAtTime(0, t0);
-  g.gain.linearRampToValueAtTime(gain * soundVolume, t0 + 0.01);
-  g.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
-  osc.connect(g);
-  g.connect(ctx.destination);
-  osc.start(t0);
-  osc.stop(t0 + duration + 0.02);
+function buildAudioGraph(ctx){
+  masterGain = ctx.createGain();
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.25;
+  masterGain.connect(comp); comp.connect(ctx.destination);
+  // a 2.4 s stereo room tail made from decaying noise, darker as it fades
+  const len = Math.floor(ctx.sampleRate * 2.4), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+  for(let ch = 0; ch < 2; ch++){
+    const d = ir.getChannelData(ch); let lp = 0;
+    for(let i = 0; i < len; i++){
+      const t = i / len, k = 0.15 + 0.8 * t;
+      lp = lp + (1 - k) * ((Math.random() * 2 - 1) - lp);
+      d[i] = lp * Math.pow(1 - t, 2.6) * (i < ctx.sampleRate * 0.012 ? i / (ctx.sampleRate * 0.012) : 1);
+    }
+  }
+  const verb = ctx.createConvolver(); verb.buffer = ir;
+  reverbSend = ctx.createGain(); reverbSend.gain.value = 0.9;
+  reverbSend.connect(verb); verb.connect(masterGain);
+  sfxBus = ctx.createGain(); sfxBus.connect(masterGain);
+  const sfxWet = ctx.createGain(); sfxWet.gain.value = 0.22; sfxBus.connect(sfxWet); sfxWet.connect(reverbSend);
+  ambBus = ctx.createGain(); ambBus.gain.value = 0;
+  const ambDry = ctx.createGain(); ambDry.gain.value = 0.6; ambBus.connect(ambDry); ambDry.connect(masterGain);
+  const ambWet = ctx.createGain(); ambWet.gain.value = 0.8; ambBus.connect(ambWet); ambWet.connect(reverbSend);
+  // 3 s of soft (pinkish) noise shared by every noisy sound
+  const nl = ctx.sampleRate * 3; noiseBuf = ctx.createBuffer(1, nl, ctx.sampleRate);
+  const nd = noiseBuf.getChannelData(0); let b0 = 0, b1 = 0, b2 = 0;
+  for(let i = 0; i < nl; i++){ const w = Math.random() * 2 - 1; b0 = 0.997 * b0 + 0.029 * w; b1 = 0.985 * b1 + 0.032 * w; b2 = 0.95 * b2 + 0.048 * w; nd[i] = (b0 + b1 + b2 + w * 0.05) * 0.9; }
+  applyVolumes();
 }
-// Small named palette so call sites don't hand-tune tones inline. Kept deliberately
-// sparse/quiet - only the player's own actions make noise, not every NPC on the floor.
-function playSound(name){
+function applyVolumes(){
+  if(!audioCtx) return;
+  masterGain.gain.setTargetAtTime(soundMuted ? 0 : soundVolume, audioCtx.currentTime, 0.05);
+}
+
+// ---- building blocks; each takes a destination node so callers can muffle or place them ----
+function sfxOut(gain = 1, cutoff = 0){
+  // a per-sound gain (and, for far-away sounds, a low-pass) in front of the sfx bus
+  const ctx = audioCtx, g = ctx.createGain(); g.gain.value = gain;
+  if(cutoff){ const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff; g.connect(f); f.connect(sfxBus); }
+  else g.connect(sfxBus);
+  return g;
+}
+function tone(dest, freq, t, dur, type, gain, attack = 0.005, glideTo = 0){
+  const ctx = audioCtx, o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  if(glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, t + dur);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  o.connect(g); g.connect(dest); o.start(t); o.stop(t + dur + 0.05);
+}
+function noise(dest, t, dur, type, freq, q, gain, attack = 0.002){
+  const ctx = audioCtx, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = noiseBuf; f.type = type; f.frequency.value = freq; f.Q.value = q;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  s.connect(f); f.connect(g); g.connect(dest); s.start(t, Math.random() * 2); s.stop(t + dur + 0.05);
+}
+// a struck bell: inharmonic partials, the high ones dying first
+const BELL_PARTIALS = [[1, 1, 1], [2.0, 0.45, 0.7], [2.76, 0.55, 0.55], [5.4, 0.22, 0.3], [8.93, 0.1, 0.18]];
+function bell(dest, freq, t, dur, gain){
+  BELL_PARTIALS.forEach(([r, a, d]) => tone(dest, freq * r * (1 + (Math.random() - 0.5) * 0.002), t, dur * d, 'sine', gain * a, 0.002));
+}
+// one coin: a bright metallic ping plus a tiny click
+function coin(dest, t, gain){
+  const f = 2600 + Math.random() * 2600;
+  tone(dest, f, t, 0.09 + Math.random() * 0.12, 'sine', gain, 0.001);
+  tone(dest, f * 1.47, t, 0.06, 'sine', gain * 0.5, 0.001);
+  noise(dest, t, 0.015, 'highpass', 5000, 0.7, gain * 0.6);
+}
+function coinShower(dest, t, n, span, gain){
+  for(let i = 0; i < n; i++){ const u = Math.random(); coin(dest, t + Math.pow(u, 1.6) * span, gain * (0.5 + Math.random() * 0.5) * (1 - u * 0.5)); }
+}
+// two clay chips knocking together
+function chips(dest, t, gain){
+  noise(dest, t, 0.03, 'bandpass', 3200, 3, gain);
+  noise(dest, t + 0.05 + Math.random() * 0.04, 0.025, 'bandpass', 2700, 3, gain * 0.7);
+}
+// the classic electric slot bell: a hammer striking a bell about 16 times a second
+function ringingBell(dest, t, secs, gain){
+  const ctx = audioCtx, f0 = 1180, hammer = ctx.createGain(), env = ctx.createGain();
+  hammer.connect(env); env.connect(dest);
+  env.gain.setValueAtTime(gain, t); env.gain.setValueAtTime(gain, t + secs - 0.6); env.gain.exponentialRampToValueAtTime(0.0008, t + secs + 0.6);
+  const rate = 16.5;
+  hammer.gain.setValueAtTime(0, t);
+  for(let k = 0; k < secs * rate; k++){
+    const s = t + k / rate + (Math.random() - 0.5) * 0.004;
+    hammer.gain.setValueAtTime(0.85 + Math.random() * 0.15, s);
+    hammer.gain.exponentialRampToValueAtTime(0.3, s + 0.055);
+  }
+  BELL_PARTIALS.forEach(([r, a]) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = f0 * r; g.gain.value = a * 0.6; o.connect(g); g.connect(hammer);
+    o.start(t); o.stop(t + secs + 0.7);
+  });
+  noise(dest, t, secs, 'bandpass', 4200, 1.2, gain * 0.08, 0.01); // the buzz of the striker
+}
+// a short attract jingle like the ones slot machines play
+const SLOT_SCALE = [523, 587, 659, 784, 880, 1047, 1175, 1319];
+function slotJingle(dest, t, gain){
+  const n = 4 + Math.floor(Math.random() * 4), step = 0.07 + Math.random() * 0.05, base = Math.floor(Math.random() * 3);
+  for(let i = 0; i < n; i++){
+    const f = SLOT_SCALE[Math.min(SLOT_SCALE.length - 1, base + Math.floor(Math.random() * 5))];
+    tone(dest, f, t + i * step, 0.16, 'triangle', gain, 0.004);
+    tone(dest, f * 2, t + i * step, 0.08, 'sine', gain * 0.3, 0.002);
+  }
+}
+
+// Small named palette so call sites don't hand-tune sounds inline.
+// opts: { gain, cutoff } - callers far from the player pass a lower gain and a low-pass cutoff.
+function playSound(name, opts = {}){
   if(soundMuted || soundVolume <= 0) return;
-  if(name === 'place') playTone(220, 0.08, 'triangle', 0.18);
-  else if(name === 'sell') playTone(160, 0.12, 'triangle', 0.15);
-  else if(name === 'spin') playTone(520, 0.05, 'square', 0.05);
-  else if(name === 'win'){ playTone(660, 0.12, 'sine', 0.18); playTone(880, 0.14, 'sine', 0.16, 0.09); }
-  else if(name === 'lose') playTone(220, 0.18, 'sine', 0.12);
-  else if(name === 'bigwin'){ [523,659,784,1047].forEach((f,i)=> playTone(f, 0.22, 'triangle', 0.16, i*0.09)); }
-  else if(name === 'jackpot'){ [523,659,784,1047,1319,1568,2093].forEach((f,i)=> playTone(f, 0.3, 'triangle', 0.17, i*0.085)); for(let i=0;i<10;i++) playTone(2200 + Math.random()*1800, 0.07, 'sine', 0.06, 0.7 + i*0.09); playTone(1047, 0.9, 'sine', 0.1, 0.65); }
-  else if(name === 'click') playTone(700, 0.04, 'square', 0.05);
-  else if(name === 'ding'){ playTone(880, 0.13, 'sine', 0.13); playTone(1175, 0.18, 'sine', 0.11, 0.1); }
-  else if(name === 'till'){ playTone(1400, 0.05, 'square', 0.06); playTone(1900, 0.09, 'sine', 0.07, 0.05); }
-  else if(name === 'hire') playTone(520, 0.1, 'triangle', 0.12);
-  else if(name === 'bye') playTone(300, 0.14, 'triangle', 0.1);
-  else if(name === 'money'){ [660, 880, 1100].forEach((fq,i)=> playTone(fq, 0.16, 'sine', 0.12, i*0.07)); }
-  else if(name === 'achievement'){ playTone(523, 0.1, 'sine', 0.16); playTone(659, 0.1, 'sine', 0.16, 0.09); playTone(784, 0.16, 'sine', 0.18, 0.18); }
+  const ctx = getAudioCtx(); if(!ctx) return;
+  const t = ctx.currentTime + 0.01, out = sfxOut(opts.gain === undefined ? 1 : opts.gain, opts.cutoff || 0);
+  if(name === 'click'){ noise(out, t, 0.02, 'highpass', 2500, 0.7, 0.18); tone(out, 1900, t, 0.03, 'sine', 0.07, 0.001); }
+  else if(name === 'place'){ tone(out, 150, t, 0.16, 'sine', 0.2, 0.003, 55); noise(out, t, 0.08, 'lowpass', 700, 0.7, 0.15); }
+  else if(name === 'sell'){ noise(out, t, 0.25, 'bandpass', 1400, 0.8, 0.08, 0.08); coinShower(out, t + 0.12, 4, 0.2, 0.05); }
+  else if(name === 'spin'){
+    for(let i = 0; i < 14; i++){ const s = t + 0.35 * Math.pow(i / 14, 1.25); noise(out, s, 0.018, 'bandpass', 1700, 4, 0.12); }
+    tone(out, 90, t, 0.4, 'triangle', 0.05, 0.03, 70);
+  }
+  else if(name === 'win'){ coinShower(out, t, 6, 0.4, 0.07); bell(out, 1047, t, 0.6, 0.06); bell(out, 1319, t + 0.11, 0.8, 0.06); }
+  else if(name === 'lose'){ tone(out, 330, t, 0.22, 'triangle', 0.07, 0.01); tone(out, 262, t + 0.13, 0.3, 'triangle', 0.06, 0.01); }
+  else if(name === 'bigwin'){ [784, 988, 1175, 1568].forEach((f, i) => bell(out, f, t + i * 0.1, 1.2, 0.07)); coinShower(out, t + 0.1, 16, 1.2, 0.07); }
+  else if(name === 'jackpot'){
+    ringingBell(out, t, 3.4, 0.2);
+    [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => bell(out, f, t + 0.2 + i * 0.12, 1.6, 0.06));
+    coinShower(out, t + 0.3, 40, 3, 0.07);
+  }
+  else if(name === 'ding'){ bell(out, 2093, t, 1.6, 0.09); }
+  else if(name === 'till'){ bell(out, 2349, t, 1.0, 0.07); noise(out, t + 0.05, 0.18, 'bandpass', 900, 1.2, 0.06, 0.03); coinShower(out, t + 0.12, 3, 0.15, 0.05); }
+  else if(name === 'hire'){ bell(out, 784, t, 0.8, 0.07); bell(out, 1047, t + 0.1, 1.0, 0.07); }
+  else if(name === 'bye'){ bell(out, 784, t, 0.7, 0.06); bell(out, 587, t + 0.12, 0.9, 0.05); }
+  else if(name === 'money'){ coinShower(out, t, 5, 0.25, 0.07); bell(out, 1568, t + 0.05, 0.7, 0.04); }
+  else if(name === 'achievement'){ [523, 659, 784, 1047].forEach((f, i) => bell(out, f, t + i * 0.11, 1.4, 0.07)); }
+  else if(name === 'chips') chips(out, t, 0.12);
+  else if(name === 'slotjingle') slotJingle(out, t, 0.05);
+  else if(name === 'bell') ringingBell(out, t, 2.6, 0.09);
 }
+// How a sound at (x, z) on the floor should reach the player: quieter and duller with distance.
+function soundAt(x, z, level = 0){
+  const d = Math.hypot(x - player.pos.x, z - player.pos.z) + (level !== playerLevel() ? 12 : 0);
+  return { gain: Math.max(0.05, Math.min(1, 1 - (d - 6) / 55)), cutoff: d < 8 ? 0 : Math.max(900, 9000 - d * 160), d };
+}
+
+// ---- floor ambience ----
+// A murmur of voices (bands of noise shaped like vowels, pulsing at speech rate), plus distant slot jingles
+// and chips. It follows how full the floor is, and goes quiet when the casino is closed or the tab is hidden.
+let amb = null;
+function startAmbience(){
+  const ctx = getAudioCtx(); if(!ctx || amb) return;
+  amb = { voices: [], level: 0, next: 0 };
+  const VOWELS = [[730, 1090], [530, 1840], [270, 2290], [570, 840], [440, 1020], [660, 1720], [300, 870]];
+  for(let v = 0; v < 6; v++){
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const buzz = ctx.createOscillator(); buzz.type = 'sawtooth'; buzz.frequency.value = 95 + Math.random() * 140;
+    const buzzG = ctx.createGain(); buzzG.gain.value = 0.05; buzz.connect(buzzG);
+    const f1 = ctx.createBiquadFilter(), f2 = ctx.createBiquadFilter(), syl = ctx.createGain(), pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    f1.type = f2.type = 'bandpass'; f1.Q.value = 5; f2.Q.value = 7;
+    syl.gain.value = 0;
+    [src, buzzG].forEach(n => { n.connect(f1); n.connect(f2); });
+    f1.connect(syl); f2.connect(syl);
+    if(pan){ pan.pan.value = (v / 5) * 1.6 - 0.8; syl.connect(pan); pan.connect(ambBus); } else syl.connect(ambBus);
+    src.start(0, Math.random() * 2.5); buzz.start();
+    amb.voices.push({ f1, f2, syl, buzz, base: buzz.frequency.value, t: 0, VOWELS });
+  }
+  // a low room tone under the voices
+  const room = ctx.createBufferSource(); room.buffer = noiseBuf; room.loop = true;
+  const rf = ctx.createBiquadFilter(); rf.type = 'lowpass'; rf.frequency.value = 500;
+  amb.roomGain = ctx.createGain(); amb.roomGain.gain.value = 0;
+  room.connect(rf); rf.connect(amb.roomGain); amb.roomGain.connect(ambBus); room.start();
+}
+function ambienceTick(){
+  if(!audioCtx || !gameStarted) return;
+  if(!amb) startAmbience();
+  const ctx = audioCtx, now = ctx.currentTime;
+  const guests = npcs.length;
+  const crowd = casinoClosed ? 0 : Math.min(1, guests / 30);
+  const on = ambienceOn && !soundMuted && !document.hidden;
+  ambBus.gain.setTargetAtTime(on ? ambienceVolume * 0.9 : 0, now, 0.4);
+  if(!on) return;
+  amb.roomGain.gain.setTargetAtTime(0.25 * Math.max(0.15, crowd), now, 1);
+  // voices: book the next half-second of syllables for as many speakers as the crowd supports
+  const active = Math.round(crowd * amb.voices.length);
+  amb.voices.forEach((v, i) => {
+    if(i >= active){ v.syl.gain.setTargetAtTime(0, now, 0.3); return; }
+    if(v.t < now) v.t = now;
+    while(v.t < now + 0.6){
+      const pause = Math.random() < 0.18, len = 0.12 + Math.random() * 0.16, vw = v.VOWELS[Math.floor(Math.random() * v.VOWELS.length)];
+      if(!pause){
+        v.f1.frequency.setTargetAtTime(vw[0], v.t, 0.03); v.f2.frequency.setTargetAtTime(vw[1], v.t, 0.03);
+        v.buzz.frequency.setTargetAtTime(v.base * (0.88 + Math.random() * 0.24), v.t, 0.08);
+        const peak = (0.35 + Math.random() * 0.4) * (0.6 + crowd * 0.4);
+        v.syl.gain.setTargetAtTime(peak, v.t, 0.03); v.syl.gain.setTargetAtTime(0.02, v.t + len * 0.7, 0.05);
+      }
+      v.t += pause ? 0.25 + Math.random() * 0.6 : len;
+    }
+  });
+  // distant machines and tables, a few at a time, from somewhere on the floor
+  if(crowd > 0 && Math.random() < 0.35 * crowd){
+    const gm = machines.filter(m => m.category === 'gambling' && !m.closed && !m.broken);
+    if(gm.length){
+      const m = gm[Math.floor(Math.random() * gm.length)], at = soundAt(m.x, m.z, m.level || 0);
+      const slot = !!(m.parts && m.parts.slotDisplay);
+      if(at.d > 4) playAmbient(slot ? 'slotjingle' : 'chips', at.gain * 0.7, Math.min(at.cutoff || 6000, 6000));
+    }
+  }
+}
+// ambience one-shots go to the ambience bus (its own switch and volume) rather than the effects bus
+function playAmbient(name, gain, cutoff){
+  const ctx = audioCtx, t = ctx.currentTime + Math.random() * 0.2, g = ctx.createGain(), f = ctx.createBiquadFilter();
+  g.gain.value = gain; f.type = 'lowpass'; f.frequency.value = cutoff; g.connect(f); f.connect(ambBus);
+  if(name === 'slotjingle') slotJingle(g, t, 0.09);
+  else if(name === 'chips') chips(g, t, 0.25);
+  else if(name === 'bell') ringingBell(g, t, 2.4, 0.16);
+}
+setInterval(() => { try { ambienceTick(); } catch(e){} }, 250);
+document.addEventListener('visibilitychange', () => { if(audioCtx && document.hidden) ambBus.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05); });
 
 // ---------------- Economy ----------------
 // Guests spend a little more than the original tuning (BASE_SPEND), and Settings can tilt the whole game easier or harder.
@@ -7692,7 +7880,7 @@ function updateCoinBits(dt){
 // Big-win notices thin out as the casino grows: with a big floor there is always a big win somewhere.
 // Up to 6 gambling machines nothing changes; past that, a win has to be bigger to make the log, and the log
 // goes quiet for a while after each one. Your own wins always show, and the machine still celebrates.
-let bigWinLogAt = 0;
+let bigWinLogAt = 0, farBellAt = 0;
 function bigWinNews(actor, amount, floor, jackpot){
   if(actor === null) return true;
   const extra = Math.max(0, machines.filter(x => x.category === 'gambling').length - 6);
@@ -7711,8 +7899,12 @@ function celebrateWin(actor, m, mult, amount){
   spawnCoinBurst(m.x, 1.6 + mLevelY(m), m.z, jackpot ? 46 : 24);
   spawnFloatingText(text, new THREE.Vector3(m.x, 3.1, m.z), col);
   if(m.parts && m.parts.slotDisplay) m.celebrate = { t: jackpot ? 5 : 3, flash: 0, on: false, text, color: col, amount: '$' + Math.round(amount).toLocaleString() };
-  const near = actor === null || player.pos.distanceTo(new THREE.Vector3(m.x, player.pos.y, m.z)) < 9;
-  if(near) playSound(jackpot ? 'jackpot' : 'bigwin');
+  // your own wins and ones close by play in full; a jackpot further off still rings across the floor,
+  // quieter and duller with distance (and not more than one far bell every few seconds)
+  const at = soundAt(m.x, m.z, m.level || 0);
+  if(actor === null || at.d < 9) playSound(jackpot ? 'jackpot' : 'bigwin');
+  else if(jackpot && at.d < 70 && performance.now() - farBellAt > 6000){ farBellAt = performance.now(); playSound('bell', { gain: at.gain, cutoff: at.cutoff }); }
+  else if(at.d < 22) playSound('bigwin', { gain: at.gain * 0.6, cutoff: at.cutoff });
   if(bigWinNews(actor, amount, 0, jackpot)) logEvent(`${jackpot ? 'JACKPOT' : 'Big win'} at ${m.nick || m.name}: $${Math.round(amount).toLocaleString()} (${Math.round(mult)}x)`, col);
 }
 
@@ -10079,7 +10271,7 @@ function saveGame(){
       totalGamblingRevenue, revenueHigh, statHistory: statHistory.slice(-2400).map(s=>[Math.round(s.t*10)/10, Math.round(s.cash), Math.round(s.rev), +s.rep.toFixed(1), s.guests, Math.round(s.happy), Math.round(s.loyalty)]), totalGuestsServed,
       currentDay, dayStartCash, dayStartGuestsServed, dayTime,
       floorExpansions, roomBackZ: ROOM_BACK_Z, roomLeftX: ROOM_LEFT_X, roomRightX: ROOM_RIGHT_X, wallpaperKey, upperBuilt, unlockedTabs: Array.from(unlockedTabs), keybinds: {...keybinds}, checklistDone, playedAMachine, hotel: { rateMult: hotel.rateMult, dynamic: hotel.dynamic, fromH: hotel.fromH, toH: hotel.toH },
-      soundVolume, soundMuted, nametagsAlwaysOn, unlockPopupsEnabled, casinoClosed, ledger, sandbox, sandboxRealCash, officeUnlocked: Array.from(officeUnlocked), officesGranted, tipsOn: tipsEnabled, tips: tipList.slice(-40), difficulty, bigSpenderPct, dayOpenTime, wageUnit: 'day2',
+      soundVolume, soundMuted, ambienceOn, ambienceVolume, nametagsAlwaysOn, unlockPopupsEnabled, casinoClosed, ledger, sandbox, sandboxRealCash, officeUnlocked: Array.from(officeUnlocked), officesGranted, tipsOn: tipsEnabled, tips: tipList.slice(-40), difficulty, bigSpenderPct, dayOpenTime, wageUnit: 'day2',
       daysInRed, investorDebt, bailoutsUsed, loyaltyScore, regularPool: regularPool.slice(0, MAX_REGULARS).map(e => Object.assign({}, e, { onFloor:false })),
       unlockedAchievements: Array.from(unlockedAchievements),
       inspectionsSurvived, inspectionsCaught, everMachineBroken,
@@ -10190,6 +10382,9 @@ function loadGame(){
     soundMuted = data.soundMuted;
     document.getElementById('soundMuteToggle').checked = soundMuted;
   }
+  if(data.ambienceOn !== undefined){ ambienceOn = !!data.ambienceOn; document.getElementById('ambienceToggle').checked = ambienceOn; }
+  if(data.ambienceVolume !== undefined){ ambienceVolume = data.ambienceVolume; document.getElementById('ambienceVolumeSlider').value = Math.round(ambienceVolume*10); }
+  applyVolumes();
   nametagsAlwaysOn = !!data.nametagsAlwaysOn;
   document.getElementById('nametagsAlwaysToggle').checked = nametagsAlwaysOn;
   unlockPopupsEnabled = data.unlockPopupsEnabled === undefined ? true : !!data.unlockPopupsEnabled;
@@ -11173,8 +11368,10 @@ function updateDevDebugInfo(){
   `;
 }
 document.getElementById('mainSensSlider').addEventListener('input', (e)=>{ mouseSens = parseFloat(e.target.value) * 0.0005; });
-document.getElementById('soundVolumeSlider').addEventListener('input', (e)=>{ soundVolume = parseFloat(e.target.value) / 10; });
-document.getElementById('soundMuteToggle').addEventListener('change', (e)=>{ soundMuted = e.target.checked; });
+document.getElementById('soundVolumeSlider').addEventListener('input', (e)=>{ soundVolume = parseFloat(e.target.value) / 10; applyVolumes(); });
+document.getElementById('soundMuteToggle').addEventListener('change', (e)=>{ soundMuted = e.target.checked; applyVolumes(); });
+document.getElementById('ambienceToggle').addEventListener('change', (e)=>{ ambienceOn = e.target.checked; });
+document.getElementById('ambienceVolumeSlider').addEventListener('input', (e)=>{ ambienceVolume = parseFloat(e.target.value) / 10; });
 document.getElementById('nametagsAlwaysToggle').addEventListener('change', (e)=>{ nametagsAlwaysOn = e.target.checked; });
 document.getElementById('unlockPopupsToggle').addEventListener('change', (e)=>{ unlockPopupsEnabled = e.target.checked; if(!unlockPopupsEnabled){ unlockPopupQueue.length = 0; clearTimeout(unlockPopupTimer); unlockPopupTimer = null; unlockPopupEl.style.display = 'none'; } });
 
