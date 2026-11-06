@@ -459,26 +459,52 @@ function roomDepth(){ return ROOM_FRONT_Z - ROOM_BACK_Z; }
 function roomCenterZ(){ return (ROOM_FRONT_Z + ROOM_BACK_Z) / 2; }
 
 function makeCarpetTexture(depth, base = '#7a1f2b'){
-  const c = document.createElement('canvas');
-  c.width = 256; c.height = 256;
+  // A patterned casino carpet: a dark diamond lattice with gold rosettes where the lines cross,
+  // a medallion in each diamond and a fine fibre speckle so it reads as cloth, not tiles.
+  const S = 512, c = document.createElement('canvas');
+  c.width = S; c.height = S;
   const ctx = c.getContext('2d');
   ctx.fillStyle = base;
-  ctx.fillRect(0,0,256,256);
-  ctx.strokeStyle = 'rgba(201,162,39,0.35)';
-  ctx.lineWidth = 3;
-  for(let i=0;i<256;i+=32){
-    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,256); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(256,i); ctx.stroke();
+  ctx.fillRect(0,0,S,S);
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for(let i = 0; i < 9000; i++){
+    ctx.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,0.10)' : 'rgba(255,220,180,0.05)';
+    ctx.fillRect(rnd()*S, rnd()*S, 2, 2);
   }
-  ctx.fillStyle = 'rgba(201,162,39,0.25)';
-  for(let x=16;x<256;x+=32){
-    for(let y=16;y<256;y+=32){
-      ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2); ctx.fill();
-    }
+  const H = S/2; // two diamonds across the tile
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 10;
+  for(let k = -2; k <= 2; k++){
+    ctx.beginPath(); ctx.moveTo(k*H, 0); ctx.lineTo(k*H + S, S); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(k*H + S, 0); ctx.lineTo(k*H, S); ctx.stroke();
   }
+  ctx.strokeStyle = 'rgba(201,162,39,0.45)'; ctx.lineWidth = 2;
+  for(let k = -2; k <= 2; k++){
+    ctx.beginPath(); ctx.moveTo(k*H, 0); ctx.lineTo(k*H + S, S); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(k*H + S, 0); ctx.lineTo(k*H, S); ctx.stroke();
+  }
+  const at = (fn) => { for(let gx = -1; gx <= 2; gx++) for(let gy = -1; gy <= 2; gy++) fn(gx, gy); };
+  // rosettes on the crossings (corners and centre of the tile)
+  const rosette = (x, y) => {
+    ctx.fillStyle = 'rgba(214,172,52,0.75)';
+    for(let p = 0; p < 4; p++){ const a = p*Math.PI/2; ctx.beginPath(); ctx.ellipse(x + Math.cos(a)*11, y + Math.sin(a)*11, 10, 5, a, 0, Math.PI*2); ctx.fill(); }
+    ctx.fillStyle = 'rgba(30,90,80,0.9)'; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI*2); ctx.fill();
+  };
+  at((gx, gy) => { rosette(gx*H, gy*H); });
+  // medallions in the middle of each diamond
+  const medallion = (x, y) => {
+    ctx.strokeStyle = 'rgba(214,172,52,0.55)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, 38, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(30,90,80,0.7)'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(x, y, 28, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = 'rgba(214,172,52,0.55)';
+    for(let p = 0; p < 8; p++){ const a = p*Math.PI/4; ctx.beginPath(); ctx.arc(x + Math.cos(a)*18, y + Math.sin(a)*18, 3.5, 0, Math.PI*2); ctx.fill(); }
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI*2); ctx.fill();
+  };
+  at((gx, gy) => { medallion(gx*H + H/2, gy*H + H/2); });
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(roomWidth()/4, depth/4);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  tex.repeat.set(roomWidth()/4.5, depth/4.5);
   return tex;
 }
 
@@ -670,7 +696,7 @@ function buildSlabs(){
   scene.add(ceiling);
   slabTop = null;
   if(upperBuilt){
-    const tex = makeCarpetTexture(roomDepth(), '#1f3a5c'); tex.repeat.set(0.25, 0.25);
+    const tex = makeCarpetTexture(roomDepth(), '#1f3a5c'); tex.repeat.set(1/4.5, 1/4.5);
     slabTop = new THREE.Mesh(geo.clone(), new THREE.MeshStandardMaterial({ map: tex, roughness:0.9 }));
     slabTop.rotation.x = -Math.PI/2; slabTop.position.y = WALL_H; slabTop.receiveShadow = true;
     scene.add(slabTop);
