@@ -641,10 +641,79 @@ function makeWall(w,h,x,y,z,ry){
   return { wall, trim };
 }
 
+// ---- Outer-wall dressing: wood wainscot, a gold chair rail, crown moulding and glowing sconces ----
+// Built per wall and thrown away with the room shell. The sconces glow but are not lights (see the pool).
+let wainscotTexCache = null;
+function wainscotTexture(){
+  if(wainscotTexCache) return wainscotTexCache;
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const x = c.getContext('2d');
+  x.fillStyle = '#2a1810'; x.fillRect(0, 0, 256, 128);
+  x.fillStyle = '#3b2416'; x.fillRect(20, 16, 216, 96);
+  x.strokeStyle = 'rgba(0,0,0,0.55)'; x.lineWidth = 4; x.strokeRect(20, 16, 216, 96);
+  x.strokeStyle = 'rgba(201,162,39,0.35)'; x.lineWidth = 2; x.strokeRect(30, 26, 196, 76);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return (wainscotTexCache = t);
+}
+let haloTexCache = null;
+function haloTexture(){
+  if(haloTexCache) return haloTexCache;
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 4, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,205,140,0.6)'); g.addColorStop(0.35, 'rgba(255,180,110,0.22)'); g.addColorStop(1, 'rgba(255,170,100,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+  return (haloTexCache = new THREE.CanvasTexture(c));
+}
+const sconcePlateGeo = new THREE.BoxGeometry(0.22, 0.42, 0.06);
+const sconceShadeGeo = new THREE.CylinderGeometry(0.11, 0.07, 0.24, 10);
+const sconceHaloGeo = new THREE.PlaneGeometry(2, 2);
+const sconceShadeMat = new THREE.MeshBasicMaterial({ color:0xffe2b0 });
+const sconceHaloMat = new THREE.MeshBasicMaterial({ map: haloTexture(), transparent:true, depthWrite:false, blending:THREE.AdditiveBlending });
+// w: wall length, baseY: floor height of that storey, (x, z, ry): the wall's centre line, out: where the pieces go.
+// skipX: [from, to] along x on this wall where no sconce goes (the entrance).
+function decorateWall(w, baseY, x, z, ry, out, skipX){
+  const c = Math.cos(ry), s = Math.sin(ry);
+  const nx = ry ? Math.sign(roomCenterX() - x) : 0, nz = ry ? 0 : Math.sign(roomCenterZ() - z);
+  const add = (geo, mat, y, extra) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, baseY + y, z); m.rotation.y = ry; m.userData.ownGeo = true; if(extra) m.userData.ownMat = true; scene.add(m); out.push(m); return m; };
+  const wt = wainscotTexture().clone(); wt.needsUpdate = true; wt.repeat.set(Math.max(1, Math.round(w / 2)), 1);
+  add(new THREE.BoxGeometry(w, 1.2, 0.34), new THREE.MeshStandardMaterial({ map: wt, roughness:0.6 }), 0.6, true);
+  add(new THREE.BoxGeometry(w, 0.08, 0.42), trimMat, 1.22);
+  add(new THREE.BoxGeometry(w, 0.22, 0.42), trimMat, WALL_H - 0.17);
+  const ts = [];
+  const n = Math.floor((w - 3) / 6);
+  for(let i = 0; i <= n; i++){
+    const t = -n * 3 + i * 6, px = x + t * c, pz = z - t * s;
+    if(skipX && px > skipX[0] && px < skipX[1]) continue;
+    ts.push([px, pz]);
+  }
+  if(!ts.length) return;
+  const face = Math.atan2(nx, nz), q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), face), one = new THREE.Vector3(1, 1, 1);
+  const plates = new THREE.InstancedMesh(sconcePlateGeo, trimMat, ts.length);
+  const shades = new THREE.InstancedMesh(sconceShadeGeo, sconceShadeMat, ts.length);
+  const halos = new THREE.InstancedMesh(sconceHaloGeo, sconceHaloMat, ts.length);
+  const m = new THREE.Matrix4(), v = new THREE.Vector3();
+  ts.forEach(([px, pz], i) => {
+    plates.setMatrixAt(i, m.compose(v.set(px + nx * 0.18, baseY + 3.1, pz + nz * 0.18), q, one));
+    shades.setMatrixAt(i, m.compose(v.set(px + nx * 0.3, baseY + 3.3, pz + nz * 0.3), q, one));
+    halos.setMatrixAt(i, m.compose(v.set(px + nx * 0.17, baseY + 3.35, pz + nz * 0.17), q, one));
+  });
+  [plates, shades, halos].forEach(o => { o.instanceMatrix.needsUpdate = true; o.frustumCulled = false; o.userData.disposeOnRemove = true; scene.add(o); out.push(o); });
+}
+function clearDecor(list){
+  list.forEach(o => {
+    scene.remove(o);
+    if(o.userData.disposeOnRemove && o.dispose) o.dispose();
+    if(o.userData.ownGeo) o.geometry.dispose();
+    if(o.userData.ownMat){ if(o.material.map) o.material.map.dispose(); o.material.dispose(); }
+  });
+}
+
 // Everything below is rebuilt whenever the floor is expanded or the wallpaper changes.
 let floor, ceiling, wallBack, wallBackTrim, wallEast, wallEastTrim, wallWest, wallWestTrim;
 let frontPieces = [];
 let ceilingLightObjs = [];
+let wallDecor = [];
 const DOOR_H = 4.6;
 
 function buildRoomShell(){
@@ -652,6 +721,7 @@ function buildRoomShell(){
   frontPieces = [];
   ceilingLightObjs.forEach(o=>{ scene.remove(o); if(o.userData.disposeOnRemove && o.dispose) o.dispose(); });
   ceilingLightObjs = [];
+  clearDecor(wallDecor); wallDecor = [];
 
   const depth = roomDepth(), centerZ = roomCenterZ(), width = roomWidth(), cx = roomCenterX();
   const floorMat = new THREE.MeshStandardMaterial({ map: makeCarpetTexture(depth), roughness:0.9 });
@@ -673,6 +743,12 @@ function buildRoomShell(){
   ({ wall: wallBack, trim: wallBackTrim } = makeWall(width, WALL_H, cx, WALL_H/2, ROOM_BACK_Z, 0));
   ({ wall: wallEast, trim: wallEastTrim } = makeWall(depth, WALL_H, ROOM_RIGHT_X, WALL_H/2, centerZ, Math.PI/2));
   ({ wall: wallWest, trim: wallWestTrim } = makeWall(depth, WALL_H, ROOM_LEFT_X, WALL_H/2, centerZ, Math.PI/2));
+  const doorSkip = [-DOOR_HALF - 3, DOOR_HALF + 3];
+  decorateWall(segL, 0, ROOM_LEFT_X + segL/2, ROOM_FRONT_Z, 0, wallDecor, doorSkip);
+  decorateWall(segR, 0, DOOR_HALF + segR/2, ROOM_FRONT_Z, 0, wallDecor, doorSkip);
+  decorateWall(width, 0, cx, ROOM_BACK_Z, 0, wallDecor);
+  decorateWall(depth, 0, ROOM_RIGHT_X, centerZ, Math.PI/2, wallDecor);
+  decorateWall(depth, 0, ROOM_LEFT_X, centerZ, Math.PI/2, wallDecor);
 
   layoutLightPool(ceilPool, CEIL_COLS, CEIL_ROWS, WALL_H - 0.6, 1.6, true);
   buildChandeliers(WALL_H - 0.06, ceilingLightObjs);
@@ -765,7 +841,7 @@ function refreshLevels(){
 }
 function rebuildUpper(){
   if(!upperBuilt) layoutLightPool(upperPool, UPPER_COLS, UPPER_ROWS, WALL_H * 2 - 0.6, 0, false);
-  upperObjs.forEach(o=>{ scene.remove(o); if(o.userData.disposeOnRemove && o.dispose) o.dispose(); }); upperObjs = [];
+  clearDecor(upperObjs); upperObjs = [];
   if(!upperBuilt) return;
   const width = roomWidth(), depth = roomDepth(), cx = roomCenterX(), cz = roomCenterZ(), H = LEVEL_H;
   const wall = (w, x, z, ry)=>{
@@ -773,6 +849,7 @@ function rebuildUpper(){
     m.position.set(x, H + H/2, z); m.rotation.y = ry; scene.add(m); upperObjs.push(m);
     const t = new THREE.Mesh(new THREE.BoxGeometry(w, 0.3, 0.35), trimMat);
     t.position.set(x, H + 0.2, z); t.rotation.y = ry; scene.add(t); upperObjs.push(t);
+    decorateWall(w, H, x, z, ry, upperObjs);
   };
   wall(width, cx, ROOM_FRONT_Z, 0); wall(width, cx, ROOM_BACK_Z, 0);
   wall(depth, ROOM_RIGHT_X, cz, Math.PI/2); wall(depth, ROOM_LEFT_X, cz, Math.PI/2);
