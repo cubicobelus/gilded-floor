@@ -411,9 +411,64 @@ function makeLightSlot(){
   const l = new THREE.PointLight(0xffcc88, 0, 26, 2);
   l.castShadow = false;
   scene.add(l);
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffcc88 }));
-  scene.add(bulb);
+  // the visible fixtures are the chandeliers (buildChandeliers), so the pool's own bulb stays out of the scene
+  const bulb = new THREE.Object3D();
   return { l, bulb };
+}
+
+// Chandeliers hang in a grid across each ceiling. They are glowing meshes, not lights (the light pool
+// above does the lighting), and every chandelier shares three instanced meshes so a big floor stays cheap.
+const chandRodGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.7, 6);
+const chandRingGeo = new THREE.TorusGeometry(0.55, 0.045, 6, 24);
+const chandGemGeo = new THREE.SphereGeometry(0.085, 8, 6);
+const chandGoldMat = new THREE.MeshStandardMaterial({ color:0xc9a227, metalness:0.7, roughness:0.3, emissive:0x4a3408, emissiveIntensity:0.6 });
+const chandGemMat = new THREE.MeshBasicMaterial({ color:0xffe6b0 });
+function buildChandeliers(ceilY, out){
+  // one chandelier every other coffer, snapped to coffer centres (the coffers are 6 m, centred on 6k+3)
+  const w = roomWidth(), d = roomDepth(), SP = 12;
+  const nx = Math.max(1, Math.round(w / SP)), nz = Math.max(1, Math.round(d / SP));
+  const snap = (v, lo, hi) => Math.min(hi - 2, Math.max(lo + 2, Math.round((v - 3) / 6) * 6 + 3));
+  const spots = [];
+  for(let i = 0; i < nx; i++) for(let j = 0; j < nz; j++)
+    spots.push([snap(ROOM_LEFT_X + (i + 0.5) * w / nx, ROOM_LEFT_X, ROOM_RIGHT_X), snap(ROOM_BACK_Z + (j + 0.5) * d / nz, ROOM_BACK_Z, ROOM_FRONT_Z)]);
+  const gems = [];
+  for(let k = 0; k < 8; k++){ const a = k / 8 * Math.PI * 2; gems.push([Math.cos(a) * 0.55, -0.9, Math.sin(a) * 0.55]); }
+  for(let k = 0; k < 5; k++){ const a = k / 5 * Math.PI * 2 + 0.3; gems.push([Math.cos(a) * 0.28, -1.08, Math.sin(a) * 0.28]); }
+  gems.push([0, -1.25, 0]);
+  const rods = new THREE.InstancedMesh(chandRodGeo, chandGoldMat, spots.length);
+  const rings = new THREE.InstancedMesh(chandRingGeo, chandGoldMat, spots.length);
+  const gemMesh = new THREE.InstancedMesh(chandGemGeo, chandGemMat, spots.length * gems.length);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), flat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2), one = new THREE.Vector3(1, 1, 1), v = new THREE.Vector3();
+  spots.forEach(([x, z], i) => {
+    rods.setMatrixAt(i, m.compose(v.set(x, ceilY - 0.35, z), q, one));
+    rings.setMatrixAt(i, m.compose(v.set(x, ceilY - 0.85, z), flat, one));
+    gems.forEach(([gx, gy, gz], k) => gemMesh.setMatrixAt(i * gems.length + k, m.compose(v.set(x + gx, ceilY + gy, z + gz), q, one)));
+  });
+  // instanced meshes are culled by the base geometry's bounds at the origin, so culling is turned off
+  [rods, rings, gemMesh].forEach(o => { o.instanceMatrix.needsUpdate = true; o.frustumCulled = false; o.userData.disposeOnRemove = true; scene.add(o); out.push(o); });
+}
+
+// Coffered ceiling: recessed panels with a lighter frame and a thin gold edge, 6 m to a coffer.
+let ceilTexCache = null;
+function ceilingTexture(){
+  if(ceilTexCache) return ceilTexCache;
+  const S = 256, c = document.createElement('canvas'); c.width = S; c.height = S;
+  const x = c.getContext('2d');
+  x.fillStyle = '#3a2a1c'; x.fillRect(0, 0, S, S);        // frame
+  x.fillStyle = '#21170f'; x.fillRect(22, 22, S - 44, S - 44); // recess
+  const g = x.createRadialGradient(S/2, S/2, 10, S/2, S/2, S/2);
+  g.addColorStop(0, 'rgba(90,60,30,0.35)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g; x.fillRect(22, 22, S - 44, S - 44);
+  x.strokeStyle = 'rgba(201,162,39,0.8)'; x.lineWidth = 3; x.strokeRect(22, 22, S - 44, S - 44);
+  x.strokeStyle = 'rgba(201,162,39,0.35)'; x.lineWidth = 2; x.strokeRect(34, 34, S - 68, S - 68);
+  x.fillStyle = 'rgba(0,0,0,0.35)'; x.fillRect(0, 0, S, 4); x.fillRect(0, 0, 4, S);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return (ceilTexCache = t);
+}
+function ceilingMaterial(repX, repY){
+  const t = ceilingTexture().clone(); t.needsUpdate = true; t.repeat.set(repX, repY);
+  return new THREE.MeshStandardMaterial({ map: t, roughness: 0.85, side: THREE.DoubleSide });
 }
 const ceilPool = [], upperPool = [];
 for(let i = 0; i < CEIL_COLS * CEIL_ROWS; i++) ceilPool.push(makeLightSlot());
@@ -595,7 +650,7 @@ const DOOR_H = 4.6;
 function buildRoomShell(){
   [floor, wallBack, wallBackTrim, wallEast, wallEastTrim, wallWest, wallWestTrim, ...frontPieces].forEach(o=>{ if(o) scene.remove(o); });
   frontPieces = [];
-  ceilingLightObjs.forEach(o=>scene.remove(o));
+  ceilingLightObjs.forEach(o=>{ scene.remove(o); if(o.userData.disposeOnRemove && o.dispose) o.dispose(); });
   ceilingLightObjs = [];
 
   const depth = roomDepth(), centerZ = roomCenterZ(), width = roomWidth(), cx = roomCenterX();
@@ -620,6 +675,7 @@ function buildRoomShell(){
   ({ wall: wallWest, trim: wallWestTrim } = makeWall(depth, WALL_H, ROOM_LEFT_X, WALL_H/2, centerZ, Math.PI/2));
 
   layoutLightPool(ceilPool, CEIL_COLS, CEIL_ROWS, WALL_H - 0.6, 1.6, true);
+  buildChandeliers(WALL_H - 0.06, ceilingLightObjs);
   rebuildUpper();
 }
 
@@ -689,9 +745,9 @@ function slabShape(){
 }
 // The ground floor's ceiling and (once built) the upper floor's carpet, both cut around the stairwells.
 function buildSlabs(){
-  [ceiling, slabTop].forEach(o=>{ if(o){ scene.remove(o); o.geometry.dispose(); } });
+  [ceiling, slabTop].forEach(o=>{ if(o){ scene.remove(o); o.geometry.dispose(); if(o.material.map) o.material.map.dispose(); o.material.dispose(); } });
   const geo = new THREE.ShapeGeometry(slabShape());
-  ceiling = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color:0x1a1410, roughness:1, side:THREE.DoubleSide }));
+  ceiling = new THREE.Mesh(geo, ceilingMaterial(1/6, 1/6));
   ceiling.rotation.x = -Math.PI/2; ceiling.position.y = WALL_H - 0.06; // just under the upper floor's slab, so nothing standing up there shows through
   scene.add(ceiling);
   slabTop = null;
@@ -709,7 +765,7 @@ function refreshLevels(){
 }
 function rebuildUpper(){
   if(!upperBuilt) layoutLightPool(upperPool, UPPER_COLS, UPPER_ROWS, WALL_H * 2 - 0.6, 0, false);
-  upperObjs.forEach(o=>scene.remove(o)); upperObjs = [];
+  upperObjs.forEach(o=>{ scene.remove(o); if(o.userData.disposeOnRemove && o.dispose) o.dispose(); }); upperObjs = [];
   if(!upperBuilt) return;
   const width = roomWidth(), depth = roomDepth(), cx = roomCenterX(), cz = roomCenterZ(), H = LEVEL_H;
   const wall = (w, x, z, ry)=>{
@@ -720,8 +776,9 @@ function rebuildUpper(){
   };
   wall(width, cx, ROOM_FRONT_Z, 0); wall(width, cx, ROOM_BACK_Z, 0);
   wall(depth, ROOM_RIGHT_X, cz, Math.PI/2); wall(depth, ROOM_LEFT_X, cz, Math.PI/2);
-  const ceil2 = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), ceilMat);
+  const ceil2 = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), ceilingMaterial(width/6, depth/6));
   ceil2.rotation.x = Math.PI/2; ceil2.position.set(cx, H*2, cz); scene.add(ceil2); upperObjs.push(ceil2);
+  buildChandeliers(H*2, upperObjs);
   layoutLightPool(upperPool, UPPER_COLS, UPPER_ROWS, H * 2 - 0.6, 1.6, true);
 }
 function buildUpperFloor(){
