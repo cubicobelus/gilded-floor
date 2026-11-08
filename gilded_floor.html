@@ -401,9 +401,35 @@ window.addEventListener('resize', ()=>{
 });
 
 // ---------------- Lighting ----------------
-scene.add(new THREE.AmbientLight(0x554433, 0.35));
-const hemi = new THREE.HemisphereLight(0x998866, 0x110d08, 0.35);
+scene.add(new THREE.AmbientLight(0x554433, 0.22));
+const hemi = new THREE.HemisphereLight(0x998866, 0x110d08, 0.22);
 scene.add(hemi);
+
+// ---- Contact shadows and glow pools (flat blob planes, no shadow maps, no extra lights) ----
+// One shared soft radial texture and one shared plane; materials are shared too (glow: one per tint).
+const BLOB_TEX = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const x = c.getContext('2d'), gr = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.75)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c); return t;
+})();
+const BLOB_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const blobShadowMat = op => new THREE.MeshBasicMaterial({ map: BLOB_TEX, color: 0x000000, transparent: true, opacity: op, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+const SHADOW_MAT_MACHINE = blobShadowMat(0.6), SHADOW_MAT_PERSON = blobShadowMat(0.45);
+const glowMatCache = {};
+function glowMat(color){
+  return glowMatCache[color] || (glowMatCache[color] = new THREE.MeshBasicMaterial({ map: BLOB_TEX, color, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+}
+function addBlob(parent, mat, size, y, order, ox = 0, oz = 0){
+  const m = new THREE.Mesh(BLOB_GEO, mat);
+  m.scale.set(size, 1, size); m.position.set(ox, y, oz); m.renderOrder = order; m.frustumCulled = true;
+  parent.add(m); return m;
+}
+function mixHex(a, b, t){
+  const ar = a >> 16 & 255, ag = a >> 8 & 255, ab = a & 255, br = b >> 16 & 255, bg = b >> 8 & 255, bb = b & 255;
+  return (Math.round(ar + (br - ar) * t) << 16) | (Math.round(ag + (bg - ag) * t) << 8) | Math.round(ab + (bb - ab) * t);
+}
 
 // The renderer recompiles every shader whenever the number of lights changes, which used to lock the
 // game up for seconds each time the floor grew. So the lights live in a fixed-size pool: expanding the
@@ -752,7 +778,7 @@ function buildRoomShell(){
   decorateWall(depth, 0, ROOM_RIGHT_X, centerZ, Math.PI/2, wallDecor);
   decorateWall(depth, 0, ROOM_LEFT_X, centerZ, Math.PI/2, wallDecor);
 
-  layoutLightPool(ceilPool, CEIL_COLS, CEIL_ROWS, WALL_H - 0.6, 1.6, true);
+  layoutLightPool(ceilPool, CEIL_COLS, CEIL_ROWS, WALL_H - 0.6, 0.72, true);
   buildChandeliers(WALL_H - 0.06, ceilingLightObjs);
   rebuildUpper();
 }
@@ -858,7 +884,7 @@ function rebuildUpper(){
   const ceil2 = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), ceilingMaterial(width/6, depth/6));
   ceil2.rotation.x = Math.PI/2; ceil2.position.set(cx, H*2, cz); scene.add(ceil2); upperObjs.push(ceil2);
   buildChandeliers(H*2, upperObjs);
-  layoutLightPool(upperPool, UPPER_COLS, UPPER_ROWS, H * 2 - 0.6, 1.6, true);
+  layoutLightPool(upperPool, UPPER_COLS, UPPER_ROWS, H * 2 - 0.6, 0.72, true);
 }
 function buildUpperFloor(){
   if(upperBuilt || cash < UPPER_FLOOR_COST) return false;
@@ -3551,6 +3577,16 @@ function placeMachine(key, x, z, rotation=0, nickArg, level=0){
   const yOffset = type === 'lift' ? 0 : level * LEVEL_H;
   mesh.position.set(x, yOffset, z);
   mesh.rotation.y = rotation;
+  if(type !== 'wall' && type !== 'room' && type !== 'stairs' && type !== 'lift' && type !== 'chandelier' && type !== 'ropes'){
+    const sz = Math.max(1.6, radius * 3.4);
+    addBlob(mesh, SHADOW_MAT_MACHINE, sz, 0.02, 1);
+  }
+  // warm light pool on the carpet around games (slots in front of the screen, tables under the "lamp")
+  if(item.category === 'gambling' || type === 'bar'){
+    const sc = SLOT_CATALOG[type];
+    if(sc) addBlob(mesh, glowMat(mixHex(sc.glow, 0xff9a40, 0.6)), radius * 3.6, 0.025, 2, 0, radius * 0.9);
+    else addBlob(mesh, glowMat(0xff9440), radius * 3.8, 0.025, 2);
+  }
   scene.add(mesh);
   const label = makeLabel(nick || name);
   label.position.set(x, 2.1 + yOffset, z);
@@ -5433,6 +5469,7 @@ const FIG_GEO = {
 function figureFill(mat, k = 0.22){ mat.emissive.copy(mat.color).multiplyScalar(k); return mat; }
 function buildHumanoid(o){
   const g = new THREE.Group();
+  addBlob(g, SHADOW_MAT_PERSON, 1.1, 0.02, 1); // contact shadow; group y is the floor surface, sitting only moves the body
   const skinMat = new THREE.MeshStandardMaterial({ color: o.skin, roughness: 0.85 });
   const shirtMat = o.shirtMat || new THREE.MeshStandardMaterial({ color: o.shirt, roughness: 0.9 });
   const trouMat = new THREE.MeshStandardMaterial({ color: o.trousers, roughness: 0.95 });
