@@ -3066,6 +3066,8 @@ const BUILD_ITEMS = {
     desc:'Real pass-line dice odds. Rig the dice for more edge, at the risk of getting caught.' },
   baccarat:  { name:'Baccarat Table',   cost:1400, income:36, radius:1.5,  category:'gambling',
     desc:'Real Punto Banco odds - Player, Banker, or Tie. Rig the shoe for more edge, at the risk of getting caught.' },
+  holdem:    { name:"Hold'em Table",    cost:1350, income:20, radius:1.6,  category:'gambling',
+    desc:"No-Limit Texas Hold'em: up to 6 guests play each other, and the house takes only a small rake (5%, capped, nothing when there is no flop). Needs a dealer. Nothing to rig." },
   bigwheel:  { name:'Big Wheel',        cost:700,  income:10, radius:1.9,  category:'gambling',
     desc:'A big upright prize wheel. Pick a color and spin - the rarer the color, the bigger the payout (1x to 20x).' },
   sicbo:     { name:'Sic Bo',           cost:1200, income:18, radius:1.3,  category:'gambling',
@@ -3366,6 +3368,7 @@ const NICK_POOLS = {
   craps:     ['Snake Eyes','Seven Come Eleven','Rolling Thunder','Dice Dynasty'],
   sicbo:     ['Triple Threat','Small Fortune','Big Shake','Lucky Trio'],
   baccarat:  ['Le Salon','Punto Banco','Chez Banque','Baccarat Bay'],
+  holdem:    ['Pocket Rockets','The River Room','Big Blind Bar','Texas Two-Step','Flop House','Cowboys & Aces'],
   highroller:['The Vault','Diamond Room','Whale Table','Platinum Deal','The Gold Room'],
 };
 function pickNick(key){
@@ -3649,17 +3652,17 @@ function styleHighRoller(mesh, radius){
 function addTableNameplates(mesh, type, radius, nick, gold){
   const text = nick;
   const style = gold ? { bg:'#120a22', fg:'#e6c34a', border:'#e6c34a' } : { bg:'#2a1810', fg:'#e6c34a', border:'#c9a227' };
-  const front = { blackjack:[0.52,1.49,0.8], poker:[0.52,1.49,0.8], baccarat:[0.52,1.44,0.8], roulette:[0.45,1.09,0.7], craps:[0.5,0.87,0.9], bigwheel:[0.48,0.0,1.0], sicbo:[0.45,1.16,0.85] }[type];
+  const front = { blackjack:[0.52,1.49,0.8], poker:[0.52,1.49,0.8], baccarat:[0.52,1.44,0.8], roulette:[0.45,1.09,0.7], craps:[0.5,0.87,0.9], bigwheel:[0.48,0.0,1.0], sicbo:[0.45,1.16,0.85], holdem:[0.52,1.2,0.8] }[type];
   if(front){
     const plate = makeNameplate(text, front[2], front[2]*0.2, style);
     plate.position.set(0, front[0], front[1]);
     mesh.add(plate);
   }
   // the standard game name, lettered into the felt like a real table (roulette and the wheel get it on their bodies)
-  const gameNames = { blackjack:'BLACKJACK', poker:'POKER', roulette:'ROULETTE', craps:'CRAPS', baccarat:'BACCARAT', bigwheel:'BIG WHEEL', sicbo:'SIC BO' };
+  const gameNames = { blackjack:'BLACKJACK', poker:'POKER', roulette:'ROULETTE', craps:'CRAPS', baccarat:'BACCARAT', bigwheel:'BIG WHEEL', sicbo:'SIC BO', holdem:"HOLD'EM" };
   const gameName = gameNames[type];
   const letterFg = 'rgba(240,205,80,0.9)';
-  const feltDecal = { blackjack:[0,0.1], poker:[0,0.1], baccarat:[0,0.72], craps:[0,0.55], sicbo:[0,0.4] }[type];
+  const feltDecal = { blackjack:[0,0.1], poker:[0,0.1], baccarat:[0,0.72], craps:[0,0.55], sicbo:[0,0.4], holdem:[0,0.3] }[type];
   if(feltDecal){
     const w = Math.min(2.0, 0.3 + gameName.length*0.2);
     const decal = makeNameplate(gameName, w, w*0.16, { bg:'rgba(0,0,0,0)', fg:letterFg, transparent:true });
@@ -3806,6 +3809,28 @@ function buildMachineMesh(key, nick){
     addRoundRail(g, 1.55, 0.94, 0.08, 1.45);
     addChipStacks(g, 0, 0.905, -0.7);
     mesh = g; radius = 1.55; name = 'Poker Table';
+  } else if(type === 'holdem'){
+    // An oval No-Limit Hold'em table: green felt, gold rim, padded rail and chips like the other card tables, six seats
+    // round the edge and the dealer in the middle of the back (long) side. The rim, felt and rail are the round
+    // blackjack parts squashed to an oval.
+    const g = new THREE.Group();
+    const woodMatH = new THREE.MeshStandardMaterial({ color:0x2a1810, roughness:0.6 });
+    const feltMatH = new THREE.MeshStandardMaterial({ color:0x155c42, roughness:0.85 });
+    const trimMatH = new THREE.MeshStandardMaterial({ color:0xc9a227, metalness:0.7, roughness:0.3 });
+    const oval = new THREE.Group();
+    const skirtH = new THREE.Mesh(new THREE.CylinderGeometry(1.55,1.35,0.85,24), woodMatH);
+    skirtH.position.y = 0.425;
+    const feltH = new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,0.05,24), feltMatH);
+    feltH.position.y = 0.88;
+    const rimH = new THREE.Mesh(new THREE.TorusGeometry(1.52,0.06,8,28), trimMatH);
+    rimH.rotation.x = Math.PI/2;
+    rimH.position.y = 0.88;
+    oval.add(skirtH, feltH, rimH);
+    addRoundRail(oval, 1.55, 0.94, 0.08, 1.45);
+    oval.scale.set(1, 1, 0.78);
+    g.add(oval);
+    addChipStacks(g, 0, 0.905, -0.85);
+    mesh = g; radius = 1.6; name = "Hold'em Table";
   } else if(type === 'craps'){
     const g = new THREE.Group();
     const woodMat4 = new THREE.MeshStandardMaterial({ color:0x2a1810, roughness:0.6 });
@@ -4512,7 +4537,7 @@ function placeMachine(key, x, z, rotation=0, nickArg, level=0){
     denom: slotCfg ? slotCfg.denoms[Math.floor(slotCfg.denoms.length/2)] : undefined,
     lines: slotCfg ? (slotCfg.defLines || slotCfg.lines[0]) : undefined,
     occupants: 0,
-    seatOwners: (type === 'blackjack' || type === 'poker' || type === 'roulette' || type === 'baccarat' || type === 'craps' || type === 'bigwheel' || type === 'sicbo') ? [null,null,null,null,null] : undefined,
+    seatOwners: (type === 'blackjack' || type === 'poker' || type === 'roulette' || type === 'baccarat' || type === 'craps' || type === 'bigwheel' || type === 'sicbo') ? [null,null,null,null,null] : type === 'holdem' ? [null,null,null,null,null,null] : undefined,
     payout: isSlotType ? (slotCfg ? slotCfg.rtp : 0.90) : undefined, // adjustable RTP
     edge: isTableGame ? 0 : undefined,                 // adjustable rigging, carries inspection risk
     suspicion: isTableGame ? 0 : undefined,
@@ -5121,6 +5146,7 @@ const UPKEEP_PER_DAY = {
   revmgr:8, hroffice:6, mktoffice:6, controlroom:10, analyticsoffice:9, relationsoffice:8,
   // Sic Bo - dice, priced and upkept like its closest sibling, Craps.
   sicbo:9,
+  holdem:10,
 };
 // Upkeep was running a little high against what a floor earns, so every item costs 40% less to keep.
 const UPKEEP_SCALE = 0.6;
@@ -6865,7 +6891,7 @@ function makeStool(velvet){
 function machineFamily(m){
   if(m.category !== 'gambling') return null;
   if(SLOT_CATALOG[m.type]) return 'slot';
-  return ['blackjack', 'poker', 'baccarat', 'craps', 'roulette', 'sicbo'].includes(m.type) ? 'table' : null;
+  return ['blackjack', 'poker', 'baccarat', 'craps', 'roulette', 'sicbo', 'holdem'].includes(m.type) ? 'table' : null;
 }
 const COSMETIC_STEPS = {
   table: [[1, 'chips on the felt'], [3, 'stools at the seats'], [5, 'a brass lamp'], [7, 'velvet stools and gold chips']],
@@ -6891,7 +6917,7 @@ function colorwayEligible(m){
   if(it.style === 'highroller') return false;
   const cfg = SLOT_CATALOG[m.type];
   if(cfg) return !cfg.gold && !cfg.highLimit;
-  return ['blackjack', 'poker', 'baccarat', 'craps', 'roulette', 'sicbo'].includes(m.type);
+  return ['blackjack', 'poker', 'baccarat', 'craps', 'roulette', 'sicbo', 'holdem'].includes(m.type);
 }
 function dullColor(c){ const o = c.clone(), hsl = {}; o.getHSL(hsl); return o.setHSL(hsl.h, hsl.s * 0.68, hsl.l * 0.86); }
 function colorwayPrimaries(m){ // the materials that carry the machine's main colour, found once per build
@@ -6954,14 +6980,14 @@ function buildUpgradeFx(m, sig){
   if(fam === 'table'){
     const velvet = total >= 7;
     if(total >= 1 && m.type !== 'roulette'){
-      const spots = m.type === 'craps' ? [[-1.0, 0.5, 0xc0392b], [-0.85, 0.62, 0x1e7a46], [0.95, 0.55, 0x2d5bb3]] : [[-0.6, 0.62, 0xc0392b], [-0.46, 0.74, 0x1e7a46], [0.52, 0.7, 0x2d5bb3]];
-      if(velvet) spots.push([m.type === 'craps' ? 0.0 : 0.05, m.type === 'craps' ? 0.55 : 0.86, 0xd4af37]);
+      const spots = m.type === 'craps' ? [[-1.0, 0.5, 0xc0392b], [-0.85, 0.62, 0x1e7a46], [0.95, 0.55, 0x2d5bb3]] : m.type === 'holdem' ? [[-0.8, -0.45, 0xc0392b], [-0.65, -0.58, 0x1e7a46], [0.8, -0.5, 0x2d5bb3]] : [[-0.6, 0.62, 0xc0392b], [-0.46, 0.74, 0x1e7a46], [0.52, 0.7, 0x2d5bb3]];
+      if(velvet) spots.push(m.type === 'holdem' ? [0.95, -0.35, 0xd4af37] : [m.type === 'craps' ? 0.0 : 0.05, m.type === 'craps' ? 0.55 : 0.86, 0xd4af37]);
       spots.forEach(([x, z, hex]) => { const c = new THREE.Mesh(UPFX_GEO.chipStack, chipStackMat(hex)); c.position.set(x, 0.905, z); dress.add(c); });
     }
     if(total >= 3){
       fx.stools = [];
-      for(let i = 0; i < TABLE_SEAT_COUNT; i++){
-        const a = seatAngle(i), rr = m.radius + 0.55, s = makeStool(velvet);
+      for(let i = 0; i < seatCount(m); i++){
+        const a = seatLocalAngle(m, i), rr = m.type === 'holdem' ? 2.15 : m.radius + 0.55, s = makeStool(velvet);
         s.position.set(Math.sin(a) * rr, 0, Math.cos(a) * rr); dress.add(s); fx.stools.push(s);
       }
     }
@@ -7165,7 +7191,7 @@ const UNLOCK_THRESHOLDS = {
   // (they're cheap enough that this was never really the problem); the High Roller tier - the real late-
   // game content - is stretched from a cramped $3,000-6,000 span out to $6,000-28,000, so each one lands
   // as its own later milestone instead of all five unlocking together within the opening stretch.
-  baccarat: 2800, bigwheel: 300, sicbo: 2000,
+  baccarat: 2800, bigwheel: 300, sicbo: 2000, holdem: 3000,
   // Kitchen moved 1,500 -> 3,000 per direct request. Moved dining tables the same amount, along with
   // it (they were always paired at the same threshold) - a kitchen with nowhere to serve, or dining
   // tables with no chef to cook for them, is a dead half-feature either way; if just the kitchen alone
@@ -7884,7 +7910,7 @@ const PREFS_KEY = 'gilded_floor_prefs_v1';
 function loadPrefs(){ try{ const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); if(p.tableView === 'seated' || p.tableView === 'overhead') tableViewMode = p.tableView; }catch(e){} }
 function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify({ tableView: tableViewMode })); }catch(e){} }
 loadPrefs();
-const TABLE_HALF = { blackjack:[1.63,1.63], poker:[1.63,1.63], baccarat:[1.58,1.58], roulette:[1.1,1.1], sicbo:[1.15,1.15], craps:[1.7,0.85] }; // outer rail, local x / z
+const TABLE_HALF = { blackjack:[1.63,1.63], poker:[1.63,1.63], baccarat:[1.58,1.58], roulette:[1.1,1.1], sicbo:[1.15,1.15], craps:[1.7,0.85], holdem:[1.63,1.27] }; // outer rail, local x / z
 const TABLE_TOP_Y = 0.93;
 function tableViewpoint(m, mode, frontDir, off){
   const half = TABLE_HALF[m.type] || [m.radius + 0.08, m.radius + 0.08];
@@ -8081,6 +8107,7 @@ window.addEventListener('keydown', (e)=>{
     if(m && m.category === 'gambling' && m.closed){ unrigAndReopen(m); return; } // walk up + F = unrig and reopen
     if(m && m.category === 'gambling' && (m.broken || needsService(m))){ repairMachine(m); return; } // walk up + F = pay for a repair
     if(m && m.category === 'gambling'){
+      if(m.type === 'holdem'){ logEvent(`${m.name}: guests only for now - you cannot sit down yet`, '#9fb3a8'); return; }
       if(isSeatedTable(m) && freeSeatCount(m) === 0){ logEvent(`${m.name} is full - no free seat`, '#9fb3a8'); return; }
       if(isSlotLike(m) && ((m.occupants||0) > 0 || m.spinning)){ logEvent(`Someone is already playing this ${m.name}`, '#9fb3a8'); return; }
       const betGame = startBetChoice(m);
@@ -8561,6 +8588,7 @@ function guestSuitsMachine(npc, m){
   if(needsService(m) && Math.random() < 0.45){ gripe('brokenKit', 0.12); return false; } // it looks rough - most guests walk past
   if(isSlotLike(m) && managerAtMachine(m)) return false; // you're sitting there
   if(isHighRollerMachine(m) && npc.startingWallet < 350) return false;
+  if(m.type === 'holdem' && npc.wallet < holdemBB(m) * HOLDEM_MIN_BUYIN_BB) return false; // can't cover a buy-in
   if(isSlotMachine(m)){
     const unit = slotUnit(m);
     if(npc.wallet < unit * 3) return false;
@@ -8593,8 +8621,8 @@ function findGambleSpot(npc){
   const pool0 = hrOnly && hrOnly.length ? hrOnly : candidates;
   pool0.sort((a,b)=>{
     // tables with a dealer standing at them feel "closer" - guests are drawn to them
-    const da = ((a.x-npc.pos.x)**2 + (a.z-npc.pos.z)**2) * (isStaffed(a) ? 0.4 : 1) * (a.hotTime > 0 ? 0.25 : 1) / machineAppeal(a) * varietyPenalty(npc, a) * superstitionFactor(npc, a);
-    const db = ((b.x-npc.pos.x)**2 + (b.z-npc.pos.z)**2) * (isStaffed(b) ? 0.4 : 1) * (b.hotTime > 0 ? 0.25 : 1) / machineAppeal(b) * varietyPenalty(npc, b) * superstitionFactor(npc, b);
+    const da = ((a.x-npc.pos.x)**2 + (a.z-npc.pos.z)**2) * (isStaffed(a) ? 0.4 : 1) * (a.hotTime > 0 ? 0.25 : 1) / machineAppeal(a) * varietyPenalty(npc, a) * superstitionFactor(npc, a) * holdemLonelyFactor(a);
+    const db = ((b.x-npc.pos.x)**2 + (b.z-npc.pos.z)**2) * (isStaffed(b) ? 0.4 : 1) * (b.hotTime > 0 ? 0.25 : 1) / machineAppeal(b) * varietyPenalty(npc, b) * superstitionFactor(npc, b) * holdemLonelyFactor(b);
     return da-db;
   });
   const pool = pool0.slice(0, Math.min(3, pool0.length));
@@ -9354,13 +9382,15 @@ function makeCardMesh(card, faceDown=false){
 const TABLE_SEAT_COUNT = 5;
 const SEAT_ANGLE_STEP = 0.6; // radians between neighboring seats, fanned around the player side (+z)
 function seatAngle(i){ return (i - (TABLE_SEAT_COUNT-1)/2) * SEAT_ANGLE_STEP; }
+function seatCount(m){ return m.type === 'holdem' ? 6 : TABLE_SEAT_COUNT; }   // a Hold'em table seats six (see HOLDEM_SEAT_ANG)
+function seatLocalAngle(m, i){ return m.type === 'holdem' ? HOLDEM_SEAT_ANG[i] : seatAngle(i); }
 function isCardTable(m){ return m.type === 'blackjack' || m.type === 'poker'; }
 function tableHands(m){ return activeGames.filter(g => g.m === m && (g.kind === 'blackjack' || g.kind === 'poker' || g.shared)); }
 function seatIsFree(m, i){ return !m.seatOwners[i] && !tableHands(m).some(g => g.seatIndex === i); }
-function freeSeatCount(m){ let n = 0; for(let i=0;i<TABLE_SEAT_COUNT;i++) if(seatIsFree(m,i)) n++; return n; }
+function freeSeatCount(m){ let n = 0; for(let i=0;i<seatCount(m);i++) if(seatIsFree(m,i)) n++; return n; }
 // Reserves a seat for `owner` (an NPC, or the string 'manager'). Returns the seat index or -1.
 function claimSeat(m, owner, preferredOrder){
-  const order = preferredOrder || [0,1,2,3,4].sort(()=>Math.random()-0.5);
+  const order = preferredOrder || (m.type === 'holdem' ? [0,1,2,3,4,5] : [0,1,2,3,4]).sort(()=>Math.random()-0.5);
   for(const i of order){
     if(seatIsFree(m, i)){ m.seatOwners[i] = owner; return i; }
   }
@@ -9371,7 +9401,7 @@ function releaseSeat(m, seatIndex, owner){
 }
 // Where a guest stands to play a given seat: just outside the table rim, on that seat's side.
 function seatStandPos(m, i){
-  const a = seatAngle(i), r = m.radius + 0.55;
+  const a = seatLocalAngle(m, i), r = m.type === 'holdem' ? 2.15 : m.radius + 0.55;
   return localToWorld(m, Math.sin(a)*r, Math.cos(a)*r);
 }
 // Cards fan out around the seat's angle, each hand turned to face its player, and are
@@ -9468,7 +9498,7 @@ function startSlotGame(actor, m, forcedBet){
 // already treat any isSeatedTable uniformly (claimSeat + freeSeatCount), and the full-table check at
 // the player's own interact key already gates on isSeatedTable before the slot-style busy check.
 function isSpinTable(m){ return m.type === 'roulette' || m.type === 'baccarat' || m.type === 'craps' || m.type === 'bigwheel' || m.type === 'sicbo'; }
-function isSeatedTable(m){ return isCardTable(m) || isSpinTable(m); }
+function isSeatedTable(m){ return isCardTable(m) || isSpinTable(m) || m.type === 'holdem'; }
 const SPIN_BET_WINDOW = { roulette:4.5, baccarat:4.5, craps:3.5, bigwheel:4.5, sicbo:4.0 };
 
 function pickGuestBetType(kind){
@@ -10068,6 +10098,235 @@ window.addEventListener('keydown', (e)=>{
   }
 });
 
+// ---------------- Hold'em tables on the floor (guests only for now) ----------------
+// Guests who sit at a Hold'em table buy in from their wallet, play No-Limit Hold'em against each other with the
+// rules engine above, and take what is left back to their wallet when they go. The casino only earns the rake.
+// The engine runs the hand; this section paces it (think times, dealing, showdown), keeps the seats and wallets in
+// step, books the rake like any other table result, and draws the cards, chips and dealer button on the felt.
+const HOLDEM_BB_PER_INCOME = 1.5;   // big blind = the item's base stake (income) x this
+const HOLDEM_RAKE_CAP_BB = 3;       // rake cap per hand, in big blinds (5% of the pot, no flop no drop)
+const HOLDEM_MIN_BUYIN_BB = 20;     // a guest needs at least this many big blinds to sit
+const HOLDEM_SEAT_ANG = [-150, -90, -30, 30, 90, 150].map(d => d * Math.PI / 180); // 0 = front (+z), dealer at the back middle
+function holdemBB(m){ return Math.max(2, Math.round((m.income || 20) * HOLDEM_BB_PER_INCOME)); }
+function holdemStyleFor(npc){ return npc.isWhale ? 'whale' : npc.tier >= 3 ? 'loose' : npc.tier === 2 ? 'regular' : 'tight'; }
+function holdemRuntime(m){
+  if(!m.hd){
+    const bb = holdemBB(m);
+    m.hd = {
+      t: holdemNewTable({ seats:6, sb:Math.max(1, Math.floor(bb / 2)), bb, rakePct:0.05, rakeCap:Math.round(bb * HOLDEM_RAKE_CAP_BB), rng:Math.random }),
+      phase:'wait', timer:0, thinkT:0, pending:null, npc:[null,null,null,null,null,null], snap:{},
+      dealOrder:[], dealShown:0, dealT:0, boardShown:0, bt:0, revealed:false, lonely:0, vis:null,
+    };
+  }
+  return m.hd;
+}
+function holdemLonelyFactor(m){ return (m.type === 'holdem' && m.seatOwners && m.seatOwners.filter(Boolean).length === 1) ? 0.5 : 1; } // a table with one player waiting draws company
+function holdemGuestSit(npc, m){
+  const hd = holdemRuntime(m), bb = hd.t.bb;
+  const buyIn = Math.min(Math.floor(npc.wallet), bb * (40 + Math.floor(Math.random() * 61)));
+  if(buyIn < bb * HOLDEM_MIN_BUYIN_BB) return false;
+  if(!holdemSit(hd.t, npc.seatIndex, { id:npc.name, stack:buyIn, isHuman:false, style:holdemStyleFor(npc) })) return false;
+  npc.wallet -= buyIn;
+  hd.npc[npc.seatIndex] = npc;
+  npc.hdSeated = true; npc.hdLeave = false; npc.hdHands = 6 + Math.floor(Math.random() * 30);
+  return true;
+}
+// A table that is shut, sold or picked up mid-hand voids the hand: everyone's chips in the pot go back to their stacks.
+function holdemAbortHand(hd){
+  const t = hd.t;
+  if(t.street === 'idle' || t.street === 'done') return;
+  for(let i = 0; i < 6; i++){ const p = t.seats[i]; if(p && p.inHand){ p.stack += p.total; p.total = 0; p.bet = 0; } }
+  t.pot = 0; t.street = 'done'; t.toAct = -1; t.lastResult = null;
+  hd.phase = 'wait'; hd.timer = 0; hd.pending = null; hd.revealed = false; hd.dealShown = 0; hd.boardShown = 0;
+}
+// Takes the guest's stack back to their wallet. (The normal exits wait for the hand to end; this is also reached when the
+// table is shut or moved, which voids a hand in progress.)
+function holdemGuestLeave(npc){
+  const m = npc.machine, hd = m && m.hd;
+  if(!hd || !npc.hdSeated) return;
+  npc.hdSeated = false;
+  const seat = npc.seatIndex, p = hd.t.seats[seat];
+  if(p && p.inHand) holdemAbortHand(hd);
+  const r = holdemLeave(hd.t, seat);
+  if(r && r.left) npc.wallet += r.stack;
+  hd.npc[seat] = null;
+}
+function holdemGuestMidHand(npc){
+  const m = npc.machine, hd = m && m.hd;
+  if(!hd || !npc.hdSeated || hd.phase === 'wait') return false;
+  const p = hd.t.seats[npc.seatIndex];
+  return !!p && p.inHand;
+}
+// The house's cut: booked the way a table result is (ledger, cash, per-machine stats, day stats, wear).
+function bookHoldemRake(m, rake, pot){
+  const ds = DS(); ds.rounds++;
+  const st = m.st || (m.st = { rounds:0, wagered:0, paidOut:0, taken:0, biggestPayout:0 });
+  st.rounds++; st.wagered += pot;
+  if(rake > 0){
+    ledger.tableWon += rake; m.dayNet = (m.dayNet || 0) + rake;
+    ds.biggestHouseWin = Math.max(ds.biggestHouseWin, rake);
+    addCash(rake); totalGamblingRevenue += rake;
+    m.lifetimeIncome = (m.lifetimeIncome || 0) + rake; st.taken += rake;
+  }
+  addWear(m);
+}
+function hdStartHand(m, hd){
+  const t = hd.t;
+  hd.snap = {};
+  for(let i = 0; i < 6; i++) if(t.seats[i]) hd.snap[i] = t.seats[i].stack;
+  hd.timer = 0;
+  if(!holdemStartHand(t)) return;
+  hd.dealOrder = t.events.filter(e => e.type === 'deal').map(e => e.seat);
+  hd.phase = 'deal'; hd.dealT = 0; hd.dealShown = 0; hd.boardShown = 0; hd.bt = 0; hd.revealed = false; hd.pending = null;
+}
+function hdSettle(m, hd){
+  const t = hd.t, L = t.lastResult;
+  for(let i = 0; i < 6; i++){
+    const g = hd.npc[i], p = t.seats[i];
+    if(!g || !p || hd.snap[i] === undefined || !p.inHand) continue;
+    const delta = p.stack - hd.snap[i];
+    recordGuestResult(g, -delta, 0, m);
+    g.hdHands--;
+    if(p.stack < t.bb || g.hdHands <= 0) g.hdLeave = true;   // busted (no top-up) or played their share of hands
+  }
+  let pot = 0; L.pots.forEach(q => { pot += q.amount; });
+  bookHoldemRake(m, L.rake, pot);
+  const lift = 1.9 + mLevelY(m);
+  L.winners.forEach(w => {
+    const a = HOLDEM_SEAT_ANG[w.seat], p = localToWorld(m, Math.sin(a) * 1.3, Math.cos(a) * 1.0);
+    spawnFloatingText('+$' + w.amount + (w.handName ? ' ' + w.handName : ''), new THREE.Vector3(p.x, lift, p.z), '#8fd6a8');
+  });
+  if(L.rake > 0){ const p = localToWorld(m, 0, -0.5); spawnFloatingText('+$' + L.rake + ' rake', new THREE.Vector3(p.x, 1.5 + mLevelY(m), p.z), '#e6c34a'); }
+  hd.phase = 'showdown'; hd.timer = L.showdown ? 2.6 : 1.0; hd.revealed = !!L.showdown; hd.pending = null;
+}
+function updateHoldemTable(m, dt){
+  const hd = m.hd;
+  if(!hd) return;
+  const t = hd.t;
+  if(hd.phase === 'wait'){
+    let seated = 0;
+    for(let i = 0; i < 6; i++) if(hd.npc[i] && t.seats[i] && t.seats[i].stack > 0) seated++;
+    if(seated >= 2 && isStaffed(m) && !m.broken && !m.closed){
+      hd.lonely = 0; hd.timer += dt;
+      if(hd.timer >= 1.5) hdStartHand(m, hd);
+    } else {
+      hd.timer = 0;
+      if(m.seatOwners.some(Boolean)){
+        hd.lonely += dt;   // nobody to play, or no dealer: they give up after a while
+        if(hd.lonely > 40){ hd.lonely = 0; hd.npc.forEach(g => { if(g) g.hdLeave = true; }); }
+      } else hd.lonely = 0;
+    }
+  } else if(hd.phase === 'deal'){
+    hd.dealT += dt;
+    const total = hd.dealOrder.length * 2;
+    hd.dealShown = Math.min(total, Math.floor(hd.dealT / 0.16));
+    if(hd.dealT > total * 0.16 + 0.4) hd.phase = 'act';
+  } else if(hd.phase === 'act'){
+    if(hd.boardShown < t.board.length){   // the next street is turned over before anyone acts
+      hd.bt += dt;
+      if(hd.bt >= 0.8){ hd.bt = 0; hd.boardShown = hd.boardShown === 0 ? 3 : hd.boardShown + 1; }
+    } else if(t.street === 'done'){
+      hdSettle(m, hd);
+    } else {
+      if(!hd.pending){
+        hd.pending = holdemAiDecide(t, Math.random);
+        hd.thinkT = hd.pending ? hd.pending.think * machineSpeedFactor(m) : 0;
+      }
+      hd.thinkT -= dt;
+      if(hd.thinkT <= 0){
+        const d = hd.pending; hd.pending = null;
+        if(!d || !holdemAct(t, d).ok){ const la = holdemLegalActions(t); if(la && !holdemAct(t, { type: la.canCheck ? 'check' : 'fold' }).ok) hd.phase = 'showdown'; }
+      }
+    }
+  } else if(hd.phase === 'showdown'){
+    hd.timer -= dt;
+    if(hd.timer <= 0){ hd.phase = 'wait'; hd.timer = 0; hd.revealed = false; hd.dealShown = 0; hd.boardShown = 0; }
+  }
+  if(m.lodState === 0 && hd.phase !== 'wait' && !hd.vis) hdEnsureVis(m, hd);
+  if(hd.vis) hdRender(m, hd);
+}
+
+// ---- drawing: hole cards, board, bets, pot, dealer button (children of the table, hidden with the far-detail tier) ----
+const HD_VIS = { geo:null, back:null, face:{}, chip:null, btn:null, stackGeo:null, btnGeo:null };
+function hdCardObj(c){ return { label:['2','3','4','5','6','7','8','9','10','J','Q','K','A'][c >> 2], suit:['\u2663','\u2666','\u2665','\u2660'][c & 3] }; }
+function hdFaceMat(c){ return HD_VIS.face[c] || (HD_VIS.face[c] = makeCardMesh(hdCardObj(c), false).material); }
+function hdBackMat(){ return HD_VIS.back || (HD_VIS.back = makeCardMesh({ label:'A', suit:'\u2660' }, true).material); }
+function hdEnsureVis(m, hd){
+  if(!HD_VIS.geo){
+    HD_VIS.geo = new THREE.BoxGeometry(0.23, 0.32, 0.01);
+    HD_VIS.stackGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.016, 10);
+    HD_VIS.btnGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.014, 14);
+    HD_VIS.chip = [0xc03030, 0x2c6cc0, 0x2a2a2a, 0xe6c34a].map(c => new THREE.MeshStandardMaterial({ color:c, roughness:0.5 }));
+    HD_VIS.btn = new THREE.MeshStandardMaterial({ color:0xf5ecd8, roughness:0.4 });
+  }
+  const grp = new THREE.Group(); grp.name = 'holdemLive';
+  const card = () => { const c = new THREE.Mesh(HD_VIS.geo, hdBackMat()); c.rotation.x = -Math.PI / 2; c.visible = false; grp.add(c); return c; };
+  const hole = [], bets = [], board = [];
+  for(let i = 0; i < 6; i++){
+    const a = HOLDEM_SEAT_ANG[i], sx = Math.sin(a), cz = Math.cos(a), pair = [];
+    for(let k = 0; k < 2; k++){
+      const c = card(), off = (k - 0.5) * 0.17;
+      c.position.set(sx * 0.95 + cz * off, 0.905 + k * 0.004, cz * 0.72 - sx * off);
+      c.rotation.z = a + (k - 0.5) * 0.08;
+      pair.push(c);
+    }
+    hole.push(pair);
+    const b = new THREE.Mesh(HD_VIS.stackGeo, HD_VIS.chip[0]); b.position.set(sx * 0.78, 0.905, cz * 0.5); b.visible = false; grp.add(b); bets.push(b);
+  }
+  for(let k = 0; k < 5; k++){ const c = card(); c.position.set((k - 2) * 0.25, 0.905, -0.12); board.push(c); }
+  const pot = new THREE.Mesh(HD_VIS.stackGeo, HD_VIS.chip[3]); pot.scale.x = pot.scale.z = 1.7; pot.position.set(0, 0.905, -0.5); pot.visible = false; grp.add(pot);
+  const button = new THREE.Mesh(HD_VIS.btnGeo, HD_VIS.btn); button.visible = false; grp.add(button);
+  m.mesh.add(grp);
+  gfLod(m.mesh).far.push(grp);
+  hd.vis = { grp, hole, bets, board, pot, button };
+}
+function hdRender(m, hd){
+  const v = hd.vis, t = hd.t, bb = t.bb, L = t.lastResult;
+  if(m.lodState !== 0){ return; }   // far away: the logic keeps running, the drawing waits until you are close again
+  const active = hd.phase !== 'wait', n = hd.dealOrder.length;
+  const betting = hd.phase === 'deal' || hd.phase === 'act';
+  let betSum = 0;
+  for(let i = 0; i < 6; i++){
+    const p = t.seats[i], idx = hd.dealOrder.indexOf(i);
+    for(let k = 0; k < 2; k++){
+      const c = v.hole[i][k];
+      const show = active && !!p && p.inHand && !p.folded && idx >= 0 && (k * n + idx) < hd.dealShown && p.cards[k] != null;
+      if(c.visible !== show) c.visible = show;
+      if(show){
+        const want = (hd.revealed && L && L.shown && L.shown[i]) ? hdFaceMat(p.cards[k]) : hdBackMat();
+        if(c.material !== want) c.material = want;
+      }
+    }
+    const b = v.bets[i], bet = betting && p && p.bet > 0 ? p.bet : 0;
+    betSum += bet;
+    if(bet > 0){
+      const chips = Math.max(1, Math.min(12, Math.ceil(bet / bb)));
+      const mat = HD_VIS.chip[bet < bb * 3 ? 0 : bet < bb * 10 ? 1 : bet < bb * 30 ? 2 : 3];
+      b.scale.y = chips; b.position.y = 0.905 + 0.008 * chips;
+      if(b.material !== mat) b.material = mat;
+    }
+    if(b.visible !== (bet > 0)) b.visible = bet > 0;
+  }
+  for(let k = 0; k < 5; k++){
+    const c = v.board[k], show = k < hd.boardShown && t.board[k] != null;
+    if(c.visible !== show) c.visible = show;
+    if(show){ const want = hdFaceMat(t.board[k]); if(c.material !== want) c.material = want; }
+  }
+  const potBack = betting ? t.pot - betSum : (hd.phase === 'showdown' ? 0 : 0);
+  if(potBack > 0){
+    const chips = Math.max(1, Math.min(16, Math.ceil(potBack / (bb * 2))));
+    v.pot.scale.y = chips; v.pot.position.y = 0.905 + 0.008 * chips;
+    v.pot.material = HD_VIS.chip[potBack < bb * 10 ? 1 : potBack < bb * 40 ? 2 : 3];
+  }
+  if(v.pot.visible !== (potBack > 0)) v.pot.visible = potBack > 0;
+  const showBtn = active && t.button >= 0;
+  if(v.button.visible !== showBtn) v.button.visible = showBtn;
+  if(showBtn){
+    const a = HOLDEM_SEAT_ANG[t.button];
+    v.button.position.set(Math.sin(a) * 1.12 + Math.cos(a) * 0.25, 0.912, Math.cos(a) * 0.86 - Math.sin(a) * 0.25);
+  }
+}
+
 function updateActiveGames(dt){
   updateCoinBits(dt);
   if(managerGame && managerGame.kind === 'blackjack' && (managerGame.phase === 'playerTurn' || managerGame.phase === 'playerTurn2')){
@@ -10117,7 +10376,7 @@ function updateActiveGames(dt){
     blackjackPromptEl.style.display = 'none';
   }
 
-  machines.forEach(m=>{ if(isCardTable(m)) updateCardTable(m, dt); else if(isSpinTable(m)) updateSpinTable(m, dt); });
+  machines.forEach(m=>{ if(isCardTable(m)) updateCardTable(m, dt); else if(isSpinTable(m)) updateSpinTable(m, dt); else if(m.type === 'holdem') updateHoldemTable(m, dt); });
 
   for(let i=activeGames.length-1; i>=0; i--){
     const game = activeGames[i];
@@ -10186,6 +10445,7 @@ function updateActiveGames(dt){
 function releaseNpcFromMachine(npc, wasGambling){
   const m = npc.machine;
   if(m){
+    if(m.type === 'holdem') holdemGuestLeave(npc);
     if(wasGambling) m.occupants = Math.max(0, (m.occupants||0) - 1);
     if(m.seatOwners) releaseSeat(m, npc.seatIndex, npc);
   }
@@ -10277,7 +10537,7 @@ function updateNPCs(dt){
         npc.playTimer -= dt;
         const atCardTable = isSeatedTable(m);
         const busy = atCardTable ? tableHands(m).some(g => g.actor === npc) : m.spinning;
-        if(npc.playTimer <= 0 && !busy){
+        if(npc.playTimer <= 0 && !busy && m.type !== 'holdem'){   // (Hold'em guests play inside their table's own hand loop)
           let started;
           if(isSlotMachine(m)) started = startSlotGame(npc, m);
           else if(m.type === 'bigwheel') started = startBigWheelGame(npc, m);
@@ -10298,11 +10558,12 @@ function updateNPCs(dt){
         }
         npc.gambleTimeLeft -= dt;
       }
-      const brokeOut = npc.wallet <= 5;
+      let brokeOut = npc.wallet <= 5 && !npc.hdSeated;
       const walkedAwayHappy = npc.wallet > npc.startingWallet*2.5 && Math.random() < 0.02;
-      const midHand = m && isSeatedTable(m) && tableHands(m).some(g => g.actor === npc); // finish the hand they're in first
-      if(!midHand && (npc.gambleTimeLeft <= 0 || !m || !machines.includes(m) || m.closed || m.broken || brokeOut || walkedAwayHappy)){
+      const midHand = m && isSeatedTable(m) && (m.type === 'holdem' ? holdemGuestMidHand(npc) : tableHands(m).some(g => g.actor === npc)); // finish the hand they're in first
+      if(!midHand && (npc.gambleTimeLeft <= 0 || !m || !machines.includes(m) || m.closed || m.broken || brokeOut || walkedAwayHappy || npc.hdLeave)){
         releaseNpcFromMachine(npc, true);
+        if(m && m.type === 'holdem'){ npc.hdLeave = false; brokeOut = npc.wallet <= 5; } // the stack is back in the wallet now
         if(brokeOut){
           // Cheapskates don't bother topping up at the ATM - "heads home the moment the wallet's dry" -
           // straight to leaving instead of the usual top-up detour.
@@ -10352,6 +10613,13 @@ function updateNPCs(dt){
           npc.state = 'wander';
           npc.waitTimer = 0.5 + Math.random();
           pickWanderTarget(npc);
+        } else if(npc.state === 'toMachine' && npc.machine && npc.machine.type === 'holdem' && !holdemGuestSit(npc, npc.machine)){
+          // can't cover the buy-in after all (or the seat is still being cleared): wander off
+          releaseSeat(npc.machine, npc.seatIndex, npc);
+          npc.machine = null;
+          npc.state = 'wander';
+          npc.waitTimer = 0.5 + Math.random();
+          pickWanderTarget(npc);
         } else if(npc.state === 'toMachine' && npc.machine){
           npc.machine.occupants = (npc.machine.occupants||0) + 1;
           npc.state = 'gambling';
@@ -10362,6 +10630,7 @@ function updateNPCs(dt){
           // waitresses extend how long a guest sticks around playing
           npc.gambleTimeLeft = sessionBase * tableFactor * (1 + roamingStaff('waitress')*0.06) * amenityDurationMultiplier() * machineAppeal(npc.machine) * (npc.isMember ? clubTierOf(npc.points).stay : 1);
           npc.playTimer = 0.3;
+          if(npc.machine.type === 'holdem') npc.gambleTimeLeft = 1200; // a Hold'em guest stays for a number of hands, not a number of minutes
         } else {
           if(npc.needsLoo && tryGoLoo(npc)) return;   // first things first
           if(tryGoEat(npc)) return;
@@ -11869,8 +12138,8 @@ function openMachineConfig(m){
   // those machine types have.
   if(m.category === 'gambling'){
     if(needsDealer(m)) html += `<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Dealer</span><span style="color:${m.staffer?'#8fd6a8':'#e08a8a'};">${m.staffer ? (m.staffer.postMachine === m ? 'at this table' : 'shared with the next table') : 'none - closed'}</span></div>`;
-    const rigOK = tabUnlocked('tabRigging');
-    if(!rigOK) html += '<p style="color:#9fb3a8;font-size:11px;">Payout and rigging controls unlock as your casino grows.</p>'; else
+    const rigOK = tabUnlocked('tabRigging') && m.type !== 'holdem';
+    if(!rigOK) html += m.type === 'holdem' ? '<p style="color:#9fb3a8;font-size:11px;">A fair game: guests play each other and the house only takes the rake (5% of the pot, capped, nothing without a flop). There is nothing to rig.</p>' : '<p style="color:#9fb3a8;font-size:11px;">Payout and rigging controls unlock as your casino grows.</p>'; else
     if(isSlotLike(m)){
       html += `<label style="display:flex;justify-content:space-between;gap:10px;">Payout (RTP) <span id="cfgPayoutVal">${Math.round(m.payout*100)}%</span></label>
         <input type="range" id="cfgPayout" min="${SLOT_RTP_MIN}" max="${SLOT_RTP_MAX}" value="${Math.round(m.payout*100)}" style="width:100%;margin:6px 0;">
@@ -11933,7 +12202,7 @@ const riggingPanelEl = document.getElementById('riggingPanel');
 riggingPanelEl.addEventListener('click', (e)=> e.stopPropagation());
 let riggingRows = [];
 function updateRiggingPanel(){
-  const gambling = machines.filter(m => m.category === 'gambling');
+  const gambling = machines.filter(m => m.category === 'gambling' && m.type !== 'holdem');
   const slots = gambling.filter(isSlotLike), tables = gambling.filter(m => !isSlotLike(m));
   riggingRows = [];
   const ordinals = {}, totals = {};
@@ -12619,6 +12888,7 @@ function updateHint(){
       return;
     }
     if(isSlotLike(closest)) text += ` · RTP ${Math.round(closest.payout*100)}%` + (closest.denom ? ` · ${closest.lines}x$${fmtStake(closest.denom)}` : '');
+    else if(closest.type === 'holdem') text += ` · rake only · ${seatCount(closest) - freeSeatCount(closest)}/${seatCount(closest)} seats taken`;
     else if(isSeatedTable(closest)) text += ` · rig ${Math.round(closest.edge*100)}% · ${TABLE_SEAT_COUNT - freeSeatCount(closest)}/${TABLE_SEAT_COUNT} seats taken`;
     else if(closest.category === 'gambling') text += ` · rig ${Math.round(closest.edge*100)}% · ${closest.occupants||0}/${maxOccupantsFor(closest)} playing`;
     hintEl.textContent = text;
