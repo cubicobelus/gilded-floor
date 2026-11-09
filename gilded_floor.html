@@ -587,7 +587,8 @@ let ROOM_BACK_Z = -17;
 function roomDepth(){ return ROOM_FRONT_Z - ROOM_BACK_Z; }
 function roomCenterZ(){ return (ROOM_FRONT_Z + ROOM_BACK_Z) / 2; }
 
-function makeCarpetTexture(depth, base = '#7a1f2b'){
+const CARPET_TILE_M = 2.8; // metres per texture tile (was 4.5; smaller reads as finer carpet pattern)
+function makeCarpetTexture(depth, base = '#5c1019'){
   // A patterned casino carpet: a dark diamond lattice with gold rosettes where the lines cross,
   // a medallion in each diamond and a fine fibre speckle so it reads as cloth, not tiles.
   const S = 512, c = document.createElement('canvas');
@@ -596,6 +597,15 @@ function makeCarpetTexture(depth, base = '#7a1f2b'){
   ctx.fillStyle = base;
   ctx.fillRect(0,0,S,S);
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // soft wide blotches (drawn wrapped so the tile still joins up) break up the grid when it repeats
+  for(let i = 0; i < 16; i++){
+    const bx = rnd()*S, by = rnd()*S, br = 70 + rnd()*90, dark = rnd() < 0.55;
+    for(let ox = -S; ox <= S; ox += S) for(let oy = -S; oy <= S; oy += S){
+      const g = ctx.createRadialGradient(bx+ox, by+oy, 0, bx+ox, by+oy, br);
+      g.addColorStop(0, dark ? 'rgba(0,0,0,0.05)' : 'rgba(150,30,40,0.04)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.fillRect(bx+ox-br, by+oy-br, br*2, br*2);
+    }
+  }
   for(let i = 0; i < 9000; i++){
     ctx.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,0.10)' : 'rgba(255,220,180,0.05)';
     ctx.fillRect(rnd()*S, rnd()*S, 2, 2);
@@ -629,11 +639,19 @@ function makeCarpetTexture(depth, base = '#7a1f2b'){
     for(let p = 0; p < 8; p++){ const a = p*Math.PI/4; ctx.beginPath(); ctx.arc(x + Math.cos(a)*18, y + Math.sin(a)*18, 3.5, 0, Math.PI*2); ctx.fill(); }
     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI*2); ctx.fill();
   };
-  at((gx, gy) => { medallion(gx*H + H/2, gy*H + H/2); });
+  // second motif: a four-petal flower, so the diamonds alternate like a chequerboard
+  const flower = (x, y) => {
+    ctx.strokeStyle = 'rgba(214,172,52,0.5)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x, y-40); ctx.lineTo(x+40, y); ctx.lineTo(x, y+40); ctx.lineTo(x-40, y); ctx.closePath(); ctx.stroke();
+    ctx.fillStyle = 'rgba(30,90,80,0.65)';
+    for(let p = 0; p < 4; p++){ const a = p*Math.PI/2 + Math.PI/4; ctx.beginPath(); ctx.ellipse(x + Math.cos(a)*16, y + Math.sin(a)*16, 15, 7, a, 0, Math.PI*2); ctx.fill(); }
+    ctx.fillStyle = 'rgba(214,172,52,0.6)'; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI*2); ctx.fill();
+  };
+  at((gx, gy) => { if(((gx + gy) & 1) === 0) medallion(gx*H + H/2, gy*H + H/2); else flower(gx*H + H/2, gy*H + H/2); });
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  tex.repeat.set(roomWidth()/4.5, depth/4.5);
+  tex.repeat.set(roomWidth()/CARPET_TILE_M, depth/CARPET_TILE_M);
   return tex;
 }
 
@@ -742,6 +760,36 @@ function haloTexture(){
 const sconcePlateGeo = new THREE.BoxGeometry(0.22, 0.42, 0.06);
 const sconceShadeGeo = new THREE.CylinderGeometry(0.11, 0.07, 0.24, 10);
 const sconceHaloGeo = new THREE.PlaneGeometry(2, 2);
+// Engaged pilasters: shallow columns hugging the wall, so they sit outside every collider and placement area.
+const pilShaftGeo = new THREE.BoxGeometry(0.5, WALL_H - 0.85, 0.16);
+const pilBaseGeo = new THREE.BoxGeometry(0.7, 0.3, 0.24);
+const pilCapGeo = new THREE.BoxGeometry(0.68, 0.22, 0.24);
+let pilasterList = []; // {x, z, level, meshes, i, mats} per pilaster, so refreshPilasters can hide ones behind placed items
+const PIL_ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+// Hides every pilaster that a placed item stands on or touches (rooms, walls, bars... placed flush to the outer wall).
+// Only called when items are placed/removed/moved or the shell is rebuilt, never per frame.
+function refreshPilasters(){
+  pilasterList = pilasterList.filter(e => e.meshes[0].parent);
+  let ms; try { ms = machines; } catch(e) { return; } // the first shell build runs before `machines` exists
+  for(const e of pilasterList){
+    let hide = false;
+    for(let k = 0; k < ms.length && !hide; k++){
+      const m = ms[k];
+      if((m.level || 0) !== e.level) continue;
+      const dx = e.x - m.x, dz = e.z - m.z;
+      if(m.type === 'room'){
+        const T = ROOM_TIERS[m.room ? m.room.tier : m.parts.tier], r = m.rotation || 0, c = Math.cos(r), sn = Math.sin(r);
+        const lx = dx*c - dz*sn, lz = dx*sn + dz*c;
+        hide = Math.abs(lx) < T.w/2 + 0.55 && Math.abs(lz) < T.d/2 + 0.55;
+      } else {
+        const rr = (m.radius || 1) + 0.55;
+        hide = dx*dx + dz*dz < rr*rr;
+      }
+    }
+    for(let j = 0; j < 3; j++){ e.meshes[j].setMatrixAt(e.i, hide ? PIL_ZERO : e.mats[j]); e.meshes[j].instanceMatrix.needsUpdate = true; }
+  }
+}
+const pilShaftMat = new THREE.MeshStandardMaterial({ color:0x4a2e1c, roughness:0.55 });
 const sconceShadeMat = new THREE.MeshBasicMaterial({ color:0xffe2b0 });
 const sconceHaloMat = new THREE.MeshBasicMaterial({ map: haloTexture(), transparent:true, depthWrite:false, blending:THREE.AdditiveBlending });
 // w: wall length, baseY: floor height of that storey, (x, z, ry): the wall's centre line, out: where the pieces go.
@@ -763,6 +811,30 @@ function decorateWall(w, baseY, x, z, ry, out, skipX){
   }
   if(!ts.length) return;
   const face = Math.atan2(nx, nz), q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), face), one = new THREE.Vector3(1, 1, 1);
+  // pilasters in every second gap between sconces (about every 12 m), so they never overlap a sconce
+  const ps = [];
+  for(let i = 0; i < n; i++){
+    if((i - Math.floor((n - 1) / 2)) % 2) continue;
+    const t = -n * 3 + i * 6 + 3, px = x + t * c, pz = z - t * s;
+    if(skipX && px > skipX[0] - 0.5 && px < skipX[1] + 0.5) continue;
+    ps.push([px, pz]);
+  }
+  if(ps.length){
+    const shafts = new THREE.InstancedMesh(pilShaftGeo, pilShaftMat, ps.length);
+    const bases = new THREE.InstancedMesh(pilBaseGeo, trimMat, ps.length);
+    const caps = new THREE.InstancedMesh(pilCapGeo, trimMat, ps.length);
+    const pm = new THREE.Matrix4(), pv = new THREE.Vector3(), o = 0.17 + 0.06; // out from the wall-centre line, past the wainscot
+    ps.forEach(([px, pz], i) => {
+      const mats = [
+        pm.compose(pv.set(px + nx * o, baseY + 0.3 + (WALL_H - 0.85) / 2, pz + nz * o), q, one).clone(),
+        pm.compose(pv.set(px + nx * (o + 0.03), baseY + 0.15, pz + nz * (o + 0.03)), q, one).clone(),
+        pm.compose(pv.set(px + nx * (o + 0.03), baseY + WALL_H - 0.39, pz + nz * (o + 0.03)), q, one).clone(),
+      ];
+      [shafts, bases, caps].forEach((mesh, j) => mesh.setMatrixAt(i, mats[j]));
+      pilasterList.push({ x: px + nx * 0.3, z: pz + nz * 0.3, level: baseY > 0 ? 1 : 0, meshes: [shafts, bases, caps], i, mats });
+    });
+    [shafts, bases, caps].forEach(o2 => { o2.instanceMatrix.needsUpdate = true; o2.frustumCulled = false; o2.userData.disposeOnRemove = true; scene.add(o2); out.push(o2); });
+  }
   const plates = new THREE.InstancedMesh(sconcePlateGeo, trimMat, ts.length);
   const shades = new THREE.InstancedMesh(sconceShadeGeo, sconceShadeMat, ts.length);
   const halos = new THREE.InstancedMesh(sconceHaloGeo, sconceHaloMat, ts.length);
@@ -827,6 +899,7 @@ function buildRoomShell(){
   layoutLightPool(ceilPool, CEIL_COLS, CEIL_ROWS, WALL_H - 0.6, 0.72, true);
   buildChandeliers(WALL_H - 0.06, ceilingLightObjs);
   rebuildUpper();
+  refreshPilasters();
 }
 
 // ---------------- Upper floor + staircases ----------------
@@ -902,7 +975,7 @@ function buildSlabs(){
   scene.add(ceiling);
   slabTop = null;
   if(upperBuilt){
-    const tex = makeCarpetTexture(roomDepth(), '#1f3a5c'); tex.repeat.set(1/4.5, 1/4.5);
+    const tex = makeCarpetTexture(roomDepth(), '#1f3a5c'); tex.repeat.set(1/CARPET_TILE_M, 1/CARPET_TILE_M);
     slabTop = new THREE.Mesh(geo.clone(), new THREE.MeshStandardMaterial({ map: tex, roughness:0.9 }));
     slabTop.rotation.x = -Math.PI/2; slabTop.position.y = WALL_H; slabTop.receiveShadow = true;
     scene.add(slabTop);
@@ -1016,6 +1089,54 @@ function refreshRoomDoors(){
 }
 
 // ---- meshes ----
+// Corridor-style front: one merged, vertex-coloured mesh (panelling, wainscot, door casing, sconce) per room,
+// plus a number plate and a glow card that drop out when the room is far away (see gfDetail).
+const ROOM_FACADE = {
+  std:   { door:0x2b1a12, casing:0x8a6a2a },
+  dlx:   { door:0x5a1420, casing:0xb08a2a },
+  suite: { door:0x123f30, casing:0xe6c34a },
+};
+const facadeMat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.6, metalness:0.15 });
+function mergeColoredBoxes(list){
+  const pos = [], nor = [], col = [], idx = [], cc = new THREE.Color();
+  list.forEach(([bw, bh, bd, x, y, z, hex]) => {
+    const g = new THREE.BoxGeometry(bw, bh, bd), base = pos.length / 3;
+    cc.set(hex);
+    const p = g.attributes.position, nm = g.attributes.normal;
+    for(let i = 0; i < p.count; i++){ pos.push(p.getX(i) + x, p.getY(i) + y, p.getZ(i) + z); nor.push(nm.getX(i), nm.getY(i), nm.getZ(i)); col.push(cc.r, cc.g, cc.b); }
+    for(let i = 0; i < g.index.count; i++) idx.push(g.index.array[i] + base);
+    g.dispose();
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx);
+  return geo;
+}
+// One shared atlas of room numbers (8 x 8 cells, 101-164); each plate maps to its own cell.
+let roomNumAtlas = null, roomPlateMat = null, roomSerial = 0;
+function roomNumberMaterial(){
+  if(roomPlateMat) return roomPlateMat;
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 512;
+  const x = c.getContext('2d');
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  for(let i = 0; i < 64; i++){
+    const cx = (i % 8) * 128, cy = Math.floor(i / 8) * 64;
+    x.fillStyle = '#1c130c'; x.fillRect(cx, cy, 128, 64);
+    x.strokeStyle = '#c9a227'; x.lineWidth = 4; x.strokeRect(cx + 3, cy + 3, 122, 58);
+    x.fillStyle = '#e6c34a'; x.font = 'bold 40px Georgia, serif'; x.fillText(String(101 + i), cx + 64, cy + 34);
+  }
+  roomNumAtlas = new THREE.CanvasTexture(c); roomNumAtlas.anisotropy = 4;
+  return (roomPlateMat = new THREE.MeshBasicMaterial({ map: roomNumAtlas }));
+}
+function roomPlateGeo(cell){
+  const g = new THREE.PlaneGeometry(0.36, 0.18), uv = g.attributes.uv;
+  const u0 = (cell % 8) / 8, v0 = 1 - (Math.floor(cell / 8) + 1) / 8;
+  for(let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) / 8, v0 + uv.getY(i) / 8);
+  return g;
+}
+const roomHaloGeo = new THREE.PlaneGeometry(1.1, 1.1);
 function buildHotelRoomMesh(tierKey){
   const T = ROOM_TIERS[tierKey], w = T.w, d = T.d, H = ROOM_H;
   const g = new THREE.Group();
@@ -1027,11 +1148,30 @@ function buildHotelRoomMesh(tierKey){
   seg(sw, H, 0.2, -(1 + sw/2), H/2, d/2); seg(sw, H, 0.2, 1 + sw/2, H/2, d/2); seg(2, H - 2.4, 0.2, 0, 2.4 + (H - 2.4)/2, d/2);
   const trim = new THREE.Mesh(new THREE.BoxGeometry(w + 0.25, 0.1, d + 0.25), trimMat); trim.position.y = 0.05; g.add(trim);
   const door = new THREE.Group();
-  const leaf = new THREE.Mesh(new THREE.BoxGeometry(1.9, 2.35, 0.08), new THREE.MeshStandardMaterial({ color:0x4a2c16, roughness:0.6 })); leaf.position.y = 1.175;
+  const F = ROOM_FACADE[tierKey] || ROOM_FACADE.std;
+  const leaf = new THREE.Mesh(new THREE.BoxGeometry(1.9, 2.35, 0.08), new THREE.MeshStandardMaterial({ color:F.door, roughness:0.6 })); leaf.position.y = 1.175;
   const handle = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), trimMat); handle.position.set(0.7, 1.1, 0.07);
   door.add(leaf, handle); door.position.set(0, 0, d/2); g.add(door);
   const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 10), new THREE.MeshStandardMaterial({ color:0x33dd66, emissive:0x33dd66, emissiveIntensity:1.2 }));
   lamp.position.set(0, H - 0.4, d/2 + 0.2); g.add(lamp);
+  // facade cladding sits just proud of the outer face (z = d/2 + 0.1) so the shell dimensions stay the same
+  const fz = d/2 + 0.1 + 0.02, DARK = 0x3b2416, GOLD = 0xc9a227, PANEL = 0x4f3524;
+  const fb = [];
+  [-1, 1].forEach(sgn => {
+    const cxs = sgn * (1 + sw/2);
+    fb.push([sw, H - 1.1, 0.04, cxs, 1.1 + (H - 1.1)/2, fz, PANEL]);   // upper wall
+    fb.push([sw, 1.1, 0.06, cxs, 0.55, fz + 0.01, DARK]);              // wainscot
+    fb.push([sw, 0.07, 0.09, cxs, 1.13, fz + 0.025, GOLD]);            // chair rail
+    fb.push([0.12, 2.5, 0.09, sgn * 1.06, 1.25, fz + 0.025, F.casing]); // door casing post
+  });
+  fb.push([2, H - 2.4, 0.04, 0, 2.4 + (H - 2.4)/2, fz, PANEL]);       // above the door
+  fb.push([2.3, 0.14, 0.09, 0, 2.47, fz + 0.025, F.casing]);          // door casing header
+  fb.push([0.16, 0.34, 0.05, -1.75, 2.1, fz + 0.03, GOLD]);           // sconce plate
+  fb.push([0.1, 0.2, 0.1, -1.75, 2.2, fz + 0.08, 0xffe2b0]);          // sconce shade
+  const facade = new THREE.Mesh(mergeColoredBoxes(fb), facadeMat); facade.receiveShadow = true; g.add(facade);
+  const plate = new THREE.Mesh(roomPlateGeo(roomSerial++ % 64), roomNumberMaterial()); plate.position.set(1.75, 1.7, fz + 0.04);
+  const halo = new THREE.Mesh(roomHaloGeo, sconceHaloMat); halo.position.set(-1.75, 2.25, fz + 0.1); halo.renderOrder = 2;
+  gfDetail(g, [plate, halo], 'far');
   const interior = new THREE.Group(); g.add(interior);
   return { group: g, parts: { interior, door, lamp, wallMat, tier: tierKey } };
 }
@@ -2296,7 +2436,7 @@ function buildEntrance(){
   }
 
   // red carpet runner leading guests in from the door
-  const carpet = new THREE.Mesh(new THREE.PlaneGeometry(3, 9), new THREE.MeshStandardMaterial({ color:0x7a1f2b, roughness:0.9 }));
+  const carpet = new THREE.Mesh(new THREE.PlaneGeometry(3, 9), new THREE.MeshStandardMaterial({ color:0x520d17, roughness:0.9 }));
   carpet.rotation.x = -Math.PI/2;
   carpet.position.set(0, 0.015, wallZ - 5.5);
   scene.add(carpet);
@@ -3811,6 +3951,7 @@ function placeMachine(key, x, z, rotation=0, nickArg, level=0){
   if(slotCfg) refreshSlotDisplay(machines[machines.length-1]);
   if(type === 'wall') recomputeWallChains();
   if(type === 'stairs' || type === 'lift') refreshLevels();
+  refreshPilasters();
   if(type === 'room'){ const rm = machines[machines.length-1]; rm.room = newRoomState(item.tier); rebuildRoomInterior(rm); updateRoomLamp(rm); rm.parts.door.visible = !casinoClosed; }
   // The desk comes with Bronze already running - there's no reason to sell someone the stand and then
   // separately charge them to switch it on. Only bumps clubLevel up, never down, so re-placing a second
@@ -3825,6 +3966,7 @@ function removeMachine(m){
   if(idx !== -1) machines.splice(idx, 1);
   if(m.type === 'wall') recomputeWallChains();
   if(m.type === 'stairs' || m.type === 'lift') refreshLevels();
+  refreshPilasters();
 }
 
 // The casino starts empty and closed: buy your first machines, then open the doors.
