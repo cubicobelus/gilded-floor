@@ -7317,6 +7317,20 @@ function computeGameViewpoint(m){
     const overheadYaw = Math.atan2(-(m.x - overhead.x), -(m.z - overhead.z));
     return { viewPos: overhead, viewYaw: overheadYaw, viewPitch: -Math.PI/2 + 0.02 };
   }
+  // Slots: frame the cabinet's own play area (top of the reel window down to the stake display) instead
+  // of a fixed standing eye height, so a small 3-reel and a tall Golden Jackpot both fill the view. The
+  // camera sits level with the middle of that area (about seated eye height) and backs off until it
+  // fills ~66% of the frame, which keeps the stake display clear of the bet prompt at the bottom and
+  // low enough to see under the button ledge. Heights mirror buildSlotCabinet.
+  const cfg = SLOT_CATALOG[m.type];
+  if(cfg){
+    const sc = cfg.scale, winH = cfg.rows === 1 ? 0.42 : 0.6, winY = cfg.rows === 1 ? 1.05 : 1.08;
+    const top = (winY + winH/2) * sc, bottom = 0.425 * sc, mid = (top + bottom) / 2;
+    const halfTan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const dist = 0.33*sc + ((top - bottom) / 2) / (halfTan * 0.6);
+    const seat = new THREE.Vector3(m.x + frontDir.x*dist, mid - 0.06*sc + off, m.z + frontDir.z*dist);
+    return { viewPos: seat, viewYaw, viewPitch: 0.04 };
+  }
   return { viewPos, viewYaw, viewPitch: -0.12 };
 }
 function lockCameraForGame(game, m){
