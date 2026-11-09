@@ -38,6 +38,28 @@
   #settingsBtn, #helpBtn{ display:inline-flex; align-items:center; gap:6px; }
   /* Icons come from one SVG sprite (see #iconSprite); stroke follows the text colour. */
   .ic{ width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; flex:none; vertical-align:middle; }
+  /* ---- form controls in the house palette ---- */
+  input[type=range]{ -webkit-appearance:none; appearance:none; background:transparent; height:16px; margin:0; cursor:pointer; accent-color:#c9a227; vertical-align:middle; }
+  input[type=range]::-webkit-slider-runnable-track{ height:4px; border-radius:3px; border:1px solid #2a4a3c; background:linear-gradient(90deg,#c9a227 var(--p,50%),#0d1a14 var(--p,50%)); }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:14px; height:14px; margin-top:-6px; border-radius:50%; background:#e6c34a; border:2px solid #9c7d1a; box-shadow:0 1px 3px rgba(0,0,0,0.5); }
+  input[type=range]::-moz-range-track{ height:4px; border-radius:3px; border:1px solid #2a4a3c; background:#0d1a14; }
+  input[type=range]::-moz-range-progress{ height:4px; border-radius:3px; background:#c9a227; }
+  input[type=range]::-moz-range-thumb{ width:10px; height:10px; border-radius:50%; background:#e6c34a; border:2px solid #9c7d1a; }
+  input[type=range]:focus-visible, select:focus-visible, input[type=checkbox]:focus-visible{ outline:1px solid #e6c34a; outline-offset:2px; }
+  select{ -webkit-appearance:none; appearance:none; background-color:#12241d; color:#f0e6d2; border:1px solid rgba(201,162,39,0.55); border-radius:6px; padding:3px 24px 3px 8px; font:inherit; cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23e6c34a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 8px center; }
+  select option{ background:#12241d; color:#f0e6d2; }
+  input[type=checkbox]{ -webkit-appearance:none; appearance:none; width:16px; height:16px; margin:0; flex:none; border:1px solid rgba(201,162,39,0.6); border-radius:4px; background:#0d1a14 center/12px no-repeat; cursor:pointer; vertical-align:middle; accent-color:#c9a227; }
+  input[type=checkbox]:checked{ background-color:#c9a227; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.5l2.5 2.5 4.5-5.5' fill='none' stroke='%2312241d' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+  .ic.inl{ width:1.15em; height:1.15em; margin-right:4px; vertical-align:-0.2em; }
+  .buildCatTab .ic{ width:16px; height:16px; margin-right:6px; vertical-align:-3px; }
+  .hotbarSlot .ic{ width:14px; height:14px; margin-right:6px; vertical-align:-2px; }
+  .pips{ display:inline-flex; gap:3px; vertical-align:middle; margin-left:6px; }
+  .pip{ width:8px; height:8px; border-radius:50%; border:1px solid #c9a227; box-sizing:border-box; }
+  .pip.on{ background:#c9a227; }
+  #blackjackPrompt .kbd{ color:#e6c34a; font-weight:600; border:1px solid rgba(201,162,39,0.45); border-radius:4px; padding:1px 6px; margin:0 5px 0 0; font-size:12px; }
+  #blackjackPrompt .kbd:not(:first-child){ margin-left:14px; }
   #settingsBtn .ic, #helpBtn .ic{ width:16px; height:16px; color:#e6c34a; }
   .sideTab{
     color:#f0e6d2; padding:clamp(2px,0.8vh,9px) 4px; font-size:clamp(9px,1.4vh,11px); text-align:center; cursor:pointer;
@@ -152,7 +174,7 @@
   </div>
 </div>
 
-<svg id="iconSprite" width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="i-build" viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-2 2-5-5z"/><path d="M12.5 6.5L5 14"/><path d="M5 14l-1.5 5.5L9 18l7.5-7.5"/></symbol><symbol id="i-club" viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="2.6"/><path d="M3.5 18c0-3 2.2-5 5-5s5 2 5 5"/><circle cx="16.5" cy="9" r="2.1"/><path d="M15 13.2c3.2-.4 5.5 1.3 5.5 4.3"/></symbol><symbol id="i-staff" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5.5 20c0-3.8 2.8-6 6.5-6s6.5 2.2 6.5 6z"/><path d="M12 14.5l-1.3 1.8 1.3 3.2 1.3-3.2z"/></symbol><symbol id="i-stats" viewBox="0 0 24 24"><path d="M4 20h16"/><rect x="5.5" y="12" width="3" height="8" rx=".6"/><rect x="10.5" y="5" width="3" height="15" rx=".6"/><rect x="15.5" y="9" width="3" height="11" rx=".6"/></symbol><symbol id="i-building" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="1"/><path d="M8.5 7.5h1.5M14 7.5h1.5M8.5 11h1.5M14 11h1.5"/><path d="M10 20.5v-4.5h4v4.5"/></symbol><symbol id="i-regulars" viewBox="0 0 24 24"><path d="M12 3.5l2.5 5.3 5.7.7-4.2 4 1.1 5.7L12 16.4 6.9 19.2 8 13.5l-4.2-4 5.7-.7z"/></symbol><symbol id="i-rigging" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/></symbol><symbol id="i-hotel" viewBox="0 0 24 24"><path d="M12 5v1.5"/><path d="M5 17a7 7 0 0 1 14 0z"/><path d="M3.5 19.5h17"/><path d="M10.5 5h3"/></symbol><symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.3 9.4a2.8 2.8 0 0 1 5.4.9c0 1.9-2.7 2.3-2.7 4"/><circle cx="12" cy="17.3" r=".6"/></symbol><symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="11" width="13" height="9" rx="1.8"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></symbol></defs></svg>
+<svg id="iconSprite" width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="i-build" viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-2 2-5-5z"/><path d="M12.5 6.5L5 14"/><path d="M5 14l-1.5 5.5L9 18l7.5-7.5"/></symbol><symbol id="i-club" viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="2.6"/><path d="M3.5 18c0-3 2.2-5 5-5s5 2 5 5"/><circle cx="16.5" cy="9" r="2.1"/><path d="M15 13.2c3.2-.4 5.5 1.3 5.5 4.3"/></symbol><symbol id="i-staff" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5.5 20c0-3.8 2.8-6 6.5-6s6.5 2.2 6.5 6z"/><path d="M12 14.5l-1.3 1.8 1.3 3.2 1.3-3.2z"/></symbol><symbol id="i-stats" viewBox="0 0 24 24"><path d="M4 20h16"/><rect x="5.5" y="12" width="3" height="8" rx=".6"/><rect x="10.5" y="5" width="3" height="15" rx=".6"/><rect x="15.5" y="9" width="3" height="11" rx=".6"/></symbol><symbol id="i-building" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="1"/><path d="M8.5 7.5h1.5M14 7.5h1.5M8.5 11h1.5M14 11h1.5"/><path d="M10 20.5v-4.5h4v4.5"/></symbol><symbol id="i-regulars" viewBox="0 0 24 24"><path d="M12 3.5l2.5 5.3 5.7.7-4.2 4 1.1 5.7L12 16.4 6.9 19.2 8 13.5l-4.2-4 5.7-.7z"/></symbol><symbol id="i-rigging" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/></symbol><symbol id="i-hotel" viewBox="0 0 24 24"><path d="M12 5v1.5"/><path d="M5 17a7 7 0 0 1 14 0z"/><path d="M3.5 19.5h17"/><path d="M10.5 5h3"/></symbol><symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.3 9.4a2.8 2.8 0 0 1 5.4.9c0 1.9-2.7 2.3-2.7 4"/><circle cx="12" cy="17.3" r=".6"/></symbol><symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="11" width="13" height="9" rx="1.8"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></symbol><symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="i-load" viewBox="0 0 24 24"><path d="M3.5 6.5h6l2 2h9v10h-17z"/></symbol><symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></symbol><symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 19.5h14"/></symbol><symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5v1.5A3 3 0 0 0 8 10.5M16 6h3v1.5a3 3 0 0 1-3 3M12 13v4M8.5 20h7M10 17h4"/></symbol><symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M9 17h6M10 20h4M12 3.5a5.5 5.5 0 0 0-3.2 10c.6.5.7 1.1.7 1.8V17h5v-1.7c0-.7.1-1.3.7-1.8A5.5 5.5 0 0 0 12 3.5z"/></symbol><symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5L19 4M16 7l2.5 2.5"/></symbol><symbol id="i-reset" viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.2-5.1M5 4v4h4"/></symbol><symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 15.5H3z"/><path d="M12 10v4.5M12 17v.2"/></symbol><symbol id="i-dice" viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M9 9v.1M15 15v.1M12 12v.1"/></symbol><symbol id="i-sofa" viewBox="0 0 24 24"><path d="M5 11V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3M3.5 12a1.5 1.5 0 0 1 3 0v2h11v-2a1.5 1.5 0 0 1 3 0v5h-17zM6 17v2M18 17v2"/></symbol><symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19C5 10 10 5 19 5c0 9-5 14-14 14zM5 19l8-8"/></symbol><symbol id="i-columns" viewBox="0 0 24 24"><path d="M3.5 8L12 4l8.5 4M5.5 9.5v8M10 9.5v8M14 9.5v8M18.5 9.5v8M3.5 20h17"/></symbol></defs></svg>
 <div id="hud">
   Cash: <b id="cashDisp">$2,000</b> · Day <b id="dayVal">1</b> · <b id="clockLabel">8:00 AM</b> <span id="peakLabel" style="color:#e6c34a;"></span> <span id="inspectorLabel" style="color:#ffb347;"></span> <span id="parkingLabel" style="color:#ff9f7a;"></span><br>
   Mode: <b id="modeIndicator">UI Mode</b>
@@ -168,7 +190,7 @@
   <button id="bankruptRestartBtn" class="hotbarSlot" style="font-size:14px;padding:10px 22px;">Start a new casino</button>
 </div>
 <div id="legendaryOverlay" style="display:none;position:fixed;inset:0;background:rgba(10,14,4,0.94);z-index:20;color:#f0e6d2;align-items:center;justify-content:center;flex-direction:column;text-align:center;">
-  <div style="font-size:38px;color:#e6c34a;letter-spacing:3px;">&#127942; LEGENDARY CASINO &#127942;</div>
+  <div style="font-size:38px;color:#e6c34a;letter-spacing:3px;"><svg class="ic" style="width:34px;height:34px;vertical-align:-5px;margin-right:12px;"><use href="#i-trophy"/></svg>LEGENDARY CASINO<svg class="ic" style="width:34px;height:34px;vertical-align:-5px;margin-left:12px;"><use href="#i-trophy"/></svg></div>
   <div id="legendaryText" style="margin:12px 0 18px 0;font-size:13px;line-height:1.6;max-width:480px;color:#9fb3a8;"></div>
   <div id="legendaryStats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;max-width:680px;width:90vw;margin-bottom:24px;"></div>
   <button id="legendaryCloseBtn" class="hotbarSlot" style="font-size:14px;padding:10px 22px;">Keep playing</button>
@@ -261,7 +283,7 @@
       </div>
 
       <div class="statsPane" data-pane="achievements" style="display:none;">
-        <p style="margin:0 0 8px 0;">&#127942; Achievements (<span id="achUnlockedCount">0</span>/<span id="achTotalCount">0</span>)</p>
+        <p style="margin:0 0 8px 0;"><svg class="ic inl"><use href="#i-trophy"/></svg>Achievements (<span id="achUnlockedCount">0</span>/<span id="achTotalCount">0</span>)</p>
         <div id="achievementList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;font-size:10px;"></div>
       </div>
 
@@ -306,12 +328,12 @@
   <div style="font-size:10px;color:#9db8a8;margin:4px 0 12px;line-height:1.35;">How many of your guests are high rollers, out of everyone who walks in. Higher means more money, faster - an easier ride if you want one.</div>
 
   <div style="color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin:0 0 5px;">Save data</div>
-  <button id="saveBtn" class="hotbarSlot" style="width:100%;margin-bottom:6px;">💾 Save</button>
-  <button id="loadBtn" class="hotbarSlot" style="width:100%;margin-bottom:6px;">📂 Load</button>
-  <button id="exportBtn" class="hotbarSlot" style="width:100%;margin-bottom:6px;">&#11015; Export save file</button>
-  <button id="importBtn" class="hotbarSlot" style="width:100%;margin-bottom:6px;">&#11014; Import save file</button>
+  <button id="saveBtn" class="hotbarSlot" style="width:100%;margin-bottom:6px;"><svg class="ic inl"><use href="#i-save"/></svg>Save</button>
+  <button id="loadBtn" class="hotbarSlot" style="width:100%;margin-bottom:6px;"><svg class="ic inl"><use href="#i-load"/></svg>Load</button>
+  <button id="exportBtn" class="hotbarSlot" style="width:100%;margin-bottom:6px;"><svg class="ic inl"><use href="#i-download"/></svg>Export save file</button>
+  <button id="importBtn" class="hotbarSlot" style="width:100%;margin-bottom:6px;"><svg class="ic inl"><use href="#i-upload"/></svg>Import save file</button>
   <input type="file" id="importFile" accept=".json,application/json" style="display:none;">
-  <button id="resetBtn" class="hotbarSlot" style="width:100%;border-color:#7a1f2b;color:#e08a8a;">🔄 Reset</button>
+  <button id="resetBtn" class="hotbarSlot" style="width:100%;border-color:#7a1f2b;color:#e08a8a;"><svg class="ic inl"><use href="#i-reset"/></svg>Reset</button>
 </div>
 <style>body.photoMode #tipStack, body.photoMode #checklist, body.photoMode #hud, body.photoMode #eventLog, body.photoMode #speedControls, body.photoMode #modeBtn, body.photoMode #settingsBtn, body.photoMode #helpBtn, body.photoMode #sideTabsLeft, body.photoMode #minimap, body.photoMode #hint, body.photoMode #unlockHint, body.photoMode #closedBanner, body.photoMode #debtBox, body.photoMode #sellProgress, body.photoMode #blackjackPrompt, body.photoMode #crosshair, body.photoMode #inspectorLabel, body.photoMode #unlockPopup, body.photoMode #brokenIndicator { display:none !important; }</style>
 <div id="crosshair" style="display:none;"></div>
@@ -4251,14 +4273,14 @@ function devUnlockActive(){ try{ return devUnlockAll; } catch(e){ return false; 
 function officeOn(type){ return sandbox || officesGranted || devUnlockActive() || machines.some(m => m.type === type); }
 function officeHint(type){
   const o = OFFICE_INFO[type], it = BUILD_ITEMS[type];
-  return `&#128274; ${o.feature}: ` + (isUnlocked(type) ? `buy the ${o.name} in the Build tab's Amenities section ($${it.cost.toLocaleString()})` : `the ${o.name} unlocks with ${o.unlock}`);
+  return `${icn('lock')}${o.feature}: ` + (isUnlocked(type) ? `buy the ${o.name} in the Build tab's Amenities section ($${it.cost.toLocaleString()})` : `the ${o.name} unlocks with ${o.unlock}`);
 }
 function checkOfficeUnlocks(){
   Object.entries(OFFICE_INFO).forEach(([k, o]) => {
     if(officeUnlocked.has(k)) return;
     if(!(officesGranted || o.test())) return;
     officeUnlocked.add(k); // progress never goes backwards
-    if(!officesGranted){ logEvent(`New in Amenities: the ${o.name} - ${o.feature.toLowerCase()}`, '#9fd3ff'); playSound('achievement'); showUnlockPopup(`&#128273; New in Amenities: <b>${o.name}</b><br><span style="font-size:11px;color:#9fb3a8;">${o.feature}</span>`); }
+    if(!officesGranted){ logEvent(`New in Amenities: the ${o.name} - ${o.feature.toLowerCase()}`, '#9fd3ff'); playSound('achievement'); showUnlockPopup(`${icn('key')}New in Amenities: <b>${o.name}</b><br><span style="font-size:11px;color:#9fb3a8;">${o.feature}</span>`); }
   });
 }
 
@@ -4271,11 +4293,22 @@ const tipsSeen = new Set(), tipList = [];
 let unlockPopupsEnabled = true;
 const unlockPopupEl = document.getElementById('unlockPopup'), unlockPopupTextEl = document.getElementById('unlockPopupText');
 let unlockPopupQueue = [], unlockPopupTimer = null;
+// The toast sits top-centre, but that is exactly where open panels keep their headers and tabs. While any
+// managed panel is open it moves to the bottom centre (above the hint line) instead; still click to dismiss.
+function positionUnlockPopup(){
+  if(unlockPopupEl.style.display === 'none') return;
+  let panelOpen = false;
+  try{ panelOpen = MANAGED_POPUP_IDS.some(id => { const el = document.getElementById(id); return el && el.style.display === 'block'; }); }catch(e){} // list is declared further down
+  unlockPopupEl.style.top = panelOpen ? 'auto' : '68px';
+  unlockPopupEl.style.bottom = panelOpen ? '44px' : 'auto';
+}
+setInterval(positionUnlockPopup, 300);
 function advanceUnlockPopup(){
   clearTimeout(unlockPopupTimer);
   if(!unlockPopupQueue.length){ unlockPopupEl.style.display = 'none'; unlockPopupTimer = null; return; }
   unlockPopupTextEl.innerHTML = unlockPopupQueue.shift();
   unlockPopupEl.style.display = 'block';
+  positionUnlockPopup();
   // long messages (the red-ink fun fact, the longer tips) need longer to read than a short unlock notice
   const plainLen = unlockPopupTextEl.textContent.length;
   unlockPopupTimer = setTimeout(advanceUnlockPopup, Math.min(30000, Math.max(10000, 5000 + plainLen * 55)));
@@ -4289,8 +4322,9 @@ unlockPopupEl.addEventListener('click', (e)=>{ e.stopPropagation(); advanceUnloc
 function tip(key, text){
   if(!tipsEnabled || tipsSeen.has(key)) return;
   tipsSeen.add(key); tipList.push({ key, text });
-  logEvent('&#128161; ' + text, '#9fd3ff');
-  showUnlockPopup('&#128161; ' + text);
+  // the toast already shows this text, so only fall back to the event log when toasts are switched off
+  if(unlockPopupsEnabled) showUnlockPopup(icn('lightbulb') + text);
+  else logEvent(icn('lightbulb') + text, '#9fd3ff');
 }
 // The Tips list still only ever shows a given tip's toast once (tipsSeen, above), but the persistent
 // list in the Club & Guests tab is a different matter - a tip whose problem has since been fixed is just
@@ -4309,7 +4343,7 @@ function tipRelevant(key){
 }
 function tipsHtml(){
   const relevant = tipList.filter(t => tipRelevant(t.key));
-  return relevant.length ? relevant.slice().reverse().map(t => `<div style="padding:3px 0;border-top:1px solid #2a4a3c;">&#128161; ${t.text}</div>`).join('')
+  return relevant.length ? relevant.slice().reverse().map(t => `<div style="padding:3px 0;border-top:1px solid #2a4a3c;">${icn('lightbulb')}${t.text}</div>`).join('')
     : '<div style="color:#9fb3a8;">Tips turn up here as you play: the first time something comes up, you will get a short note about it.</div>';
 }
 
@@ -4548,6 +4582,7 @@ const eventEntries = [];
 function renderEventLog(){
   eventLogEl.innerHTML = eventEntries.map(e=>`<div class="eventEntry" style="color:${e.color};border-left-color:${e.color};">${e.text}</div>`).join('');
 }
+function icn(k){ return '<svg class="ic inl"><use href="#i-' + k + '"/></svg>'; } // small inline icon from the sprite
 function logEvent(text, color){
   eventEntries.unshift({ text, color: color||'#f0e6d2', t: Date.now() });
   if(typeof DS === 'function'){ const l = DS().log; l.push(text.replace(/<[^>]+>/g,'')); if(l.length > 40) l.shift(); }
@@ -4634,14 +4669,14 @@ function checkAchievements(){
     if(unlockedAchievements.has(a.id)) return;
     if(a.check()){
       unlockedAchievements.add(a.id);
-      logEvent(`🏆 Achievement unlocked: ${a.name}`, '#e6c34a');
+      logEvent(`${icn('trophy')}Achievement unlocked: ${a.name}`, '#e6c34a');
       playSound('achievement');
     }
   });
   // A one-time celebration the moment the last one clocks in - not an ending, nothing locks or stops,
   // just a genuine "you've built something legendary" moment for finishing the whole list.
   if(before < ACHIEVEMENTS.length && unlockedAchievements.size === ACHIEVEMENTS.length){
-    logEvent('🏆 Every achievement earned - a legendary casino.', '#e6c34a');
+    logEvent(icn('trophy') + 'Every achievement earned - a legendary casino.', '#e6c34a');
     playSound('achievement');
     showLegendaryOverlay();
   }
@@ -4875,7 +4910,7 @@ function updateDayNight(dt){
     dayStats = newDayStats();
     resetGripes();
     showDaySummary(currentDay, dayNet, guestsToday, dayLedger, dayS);
-    logEvent(`${weekday(currentDay).name} complete — net $${dayNet}, ${guestsToday} guests`, dayNet>=0?'#8fd6a8':'#e08a8a');
+    logEvent(`${weekday(currentDay).name} complete, net $${dayNet}, ${guestsToday} guests`, dayNet>=0?'#8fd6a8':'#e08a8a');
     currentDay++;
     dayValEl.textContent = currentDay;
     dayStartCash = cash; sandboxDayStart = sandboxTally;
@@ -5587,7 +5622,7 @@ function simulateSlot(bet, payout, pWin=0.35){
 
 // ---------------- Staff ----------------
 const STAFF_TYPES = {
-  security: { name:'Security Guard', hireCost:200, wage:22, color:0x2b3a4a, desc:'Cuts down on scams — nudges the odds back your way.' },
+  security: { name:'Security Guard', hireCost:200, wage:22, color:0x2b3a4a, desc:'Cuts down on scams, nudging the odds back your way.' },
   dealer:   { name:'Dealer',         hireCost:250, wage:25, color:0x1a1a1a, desc:'Tables need one to open. Runs their own table and one neighbouring table (extras wander): guests bet ~15% more and are drawn to it.' },
   waitress: { name:'Waiter',         hireCost:180, wage:18, color:0xb03a5b, desc:'Works one bar (extras walk the floor): staffed bars boost spending and keep guests seated.' },
   clerk:       { name:'Clerk',            hireCost:220, wage:22, color:0x2a4a6a, desc:'Works the front desk and the cashier cage - without one, the line crawls.' },
@@ -5747,7 +5782,7 @@ function renderStaffPanel(){
         <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.name} <span style="color:${lv.col};font-size:10px;">${lv.name}</span></span>
         <span title="how they feel about the job"><span style="display:inline-block;width:42px;height:5px;background:#0d1a14;border-radius:3px;vertical-align:middle;"><span style="display:block;height:5px;width:${Math.round(mood*0.42)}px;background:${moodCol};border-radius:3px;"></span></span></span>
         <span style="color:#9fb3a8;">$${Math.round(staffWage(s))}</span>
-        ${next && !hr ? '<span style="color:#9fb3a8;font-size:10px;text-align:center;">&#128274;</span>' : next ? `<button class="hotbarSlot sfTrain" data-i="${staffNPCs.indexOf(s)}" style="font-size:10px;padding:2px 4px;min-width:0;width:100%;box-sizing:border-box;${cash < trainCost(s) ? 'opacity:.45;' : ''}">$${trainCost(s)}</button>`
+        ${next && !hr ? '<span style="color:#9fb3a8;font-size:10px;text-align:center;">' + icn('lock') + '</span>' : next ? `<button class="hotbarSlot sfTrain" data-i="${staffNPCs.indexOf(s)}" style="font-size:10px;padding:2px 4px;min-width:0;width:100%;box-sizing:border-box;${cash < trainCost(s) ? 'opacity:.45;' : ''}">$${trainCost(s)}</button>`
                : '<span style="color:#e6c34a;font-size:10px;text-align:center;">maxed</span>'}
       </div>`;
     });
@@ -6790,7 +6825,7 @@ function checkTabUnlocks(silent){
     if(unlockedTabs.has(u.id)) continue;
     if(!u.ok()) break;
     unlockedTabs.add(u.id);
-    if(!silent){ logEvent(`New tab unlocked: ${u.name} [${u.key}]`, '#e6c34a'); playSound('achievement'); showUnlockPopup(`&#128273; New tab: <b>${u.name}</b> [${u.key}]`); }
+    if(!silent){ logEvent(`New tab unlocked: ${u.name} [${u.key}]`, '#e6c34a'); playSound('achievement'); showUnlockPopup(`${icn('key')}New tab: <b>${u.name}</b> [${u.key}]`); }
   }
   applyTabVisibility();
 }
@@ -6886,7 +6921,7 @@ function warmThumbs(){
   setTimeout(step, 2500);
 }
 
-const CATEGORY_ICONS = { gambling: '🎰', amenity: '🛋', decoration: '🌿', architecture: '🏛' };
+const CATEGORY_ICONS = { gambling: ICON_HTML('dice'), amenity: ICON_HTML('sofa'), decoration: ICON_HTML('leaf'), architecture: ICON_HTML('columns') };
 let buildCategory = 'gambling'; // which of the 3 sub-tabs the Build panel last showed - remembered across opens/closes
 // The single Build tab replaces the old separate Machines/Amenities/Decor tabs: one wider panel with
 // big sub-tab indicators at the top to switch between the three, instead of three side tabs each
@@ -6906,7 +6941,7 @@ function openCategoryPopup(category){
   let html = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
     <h3 style="margin:0;color:#e6c34a;font-weight:normal;">Build</h3>
     <div style="display:flex;gap:6px;flex:1;flex-wrap:wrap;">
-      ${Object.keys(CATEGORY_LABELS).map(c=> `<button class="buildCatTab${c===category?' active':''}" data-cat="${c}">${CATEGORY_ICONS[c]} ${CATEGORY_LABELS[c]}</button>`).join('')}
+      ${Object.keys(CATEGORY_LABELS).map(c=> `<button class="buildCatTab${c===category?' active':''}" data-cat="${c}">${CATEGORY_ICONS[c]}${CATEGORY_LABELS[c]}</button>`).join('')}
     </div>
     <button id="categoryPopupClose" class="hotbarSlot" style="padding:4px 12px;">Close</button>
   </div>`;
@@ -9351,6 +9386,10 @@ function finishBlackjack(game){
 }
 
 const blackjackPromptEl = document.getElementById('blackjackPrompt');
+// Prompts are written as plain text with [Key] markers; render the keys as small boxed chips (like the title screen)
+Object.defineProperty(blackjackPromptEl, 'promptText', { set(v){
+  blackjackPromptEl.innerHTML = String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\[([^\]]+)\]/g, '<b class="kbd">$1</b>').replace(/ {2,}/g, ' ');
+} });
 window.addEventListener('keydown', (e)=>{
   if(!managerGame || managerGame.kind !== 'blackjack') return;
   const g = managerGame;
@@ -9483,45 +9522,45 @@ function updateActiveGames(dt){
   if(managerGame && managerGame.kind === 'blackjack' && (managerGame.phase === 'playerTurn' || managerGame.phase === 'playerTurn2')){
     const isHand2 = managerGame.phase === 'playerTurn2';
     const cards = isHand2 ? managerGame.hand2Cards : managerGame.playerCards;
-    let text = `Total: ${handTotal(cards)} — [H] Hit  [S] Stand`;
+    let text = `Total: ${handTotal(cards)} · [H] Hit  [S] Stand`;
     if(cards.length === 2 && !managerGame.tookAction && !managerGame.isSplit){
       text += `  [D] Double  [U] Surrender`;
       if(cards[0].value === cards[1].value) text += `  [P] Split`;
     }
     if(managerGame.isSplit) text += isHand2 ? ' (Hand 2)' : ' (Hand 1)';
-    blackjackPromptEl.textContent = text;
+    blackjackPromptEl.promptText = text;
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && managerGame.kind === 'roulette' && managerGame.phase === 'betting'){
-    blackjackPromptEl.textContent = 'Place your bet — [R] Red (1:1)  [B] Black (1:1)  [G] Green/0 (35:1)';
+    blackjackPromptEl.promptText = 'Place your bet · [R] Red (1:1)  [B] Black (1:1)  [G] Green/0 (35:1)';
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && managerGame.shared && managerGame.phase === 'queued'){
-    blackjackPromptEl.textContent = 'Waiting for the current round to finish...';
+    blackjackPromptEl.promptText = 'Waiting for the current round to finish...';
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && managerGame.shared && managerGame.phase === 'placed' && managerGame.round && managerGame.round.phase === 'betting'){
-    blackjackPromptEl.textContent = 'Bet placed - waiting for the other players...';
+    blackjackPromptEl.promptText = 'Bet placed - waiting for the other players...';
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && managerGame.kind === 'bigwheel' && managerGame.phase === 'betting'){
-    blackjackPromptEl.textContent = 'Pick a color — ' + Object.values(BIGWHEEL_COLORS).map(c => `[${c.key.slice(3)}] ${c.name} (${bigWheelPayout(managerGame.m, c.name.toLowerCase(), null).toFixed(1)}:1)`).join('  ');
+    blackjackPromptEl.promptText = 'Pick a color · ' + Object.values(BIGWHEEL_COLORS).map(c => `[${c.key.slice(3)}] ${c.name} (${bigWheelPayout(managerGame.m, c.name.toLowerCase(), null).toFixed(1)}:1)`).join('  ');
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && managerGame.kind === 'baccarat' && managerGame.phase === 'betting'){
-    blackjackPromptEl.textContent = 'Place your bet — [P] Player (1:1)  [K] Banker (0.95:1)  [T] Tie (8:1)';
+    blackjackPromptEl.promptText = 'Place your bet · [P] Player (1:1)  [K] Banker (0.95:1)  [T] Tie (8:1)';
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && managerGame.kind === 'sicbo' && managerGame.phase === 'betting'){
-    blackjackPromptEl.textContent = 'Place your bet — [S] Small, 4-10 (1:1)  [B] Big, 11-17 (1:1)  [T] Any Triple (30:1)';
+    blackjackPromptEl.promptText = 'Place your bet · [S] Small, 4-10 (1:1)  [B] Big, 11-17 (1:1)  [T] Any Triple (30:1)';
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && managerGame.kind === 'poker' && managerGame.phase === 'playerTurn'){
     const e = evaluate3Card(managerGame.playerCards);
     const handNames = ['High card','Pair','Flush','Straight','Three of a kind','Straight flush'];
-    blackjackPromptEl.textContent = `Your hand: ${handNames[e.category]} — [S] Play (match the ante)  [U] Fold`;
+    blackjackPromptEl.promptText = `Your hand: ${handNames[e.category]} · [S] Play (match the ante)  [U] Fold`;
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && managerGame.kind === 'betChoice'){
     const bg = managerGame, fmt = v => v >= 10 ? Math.round(v) : v.toFixed(2);
     const credits = bg.unit ? Math.round(bg.bet/bg.unit) : 0;
     const detail = bg.unit ? ` (${credits} credit${credits===1?'':'s'} - ${bg.m.lines} line${bg.m.lines===1?'':'s'} x $${fmt(bg.m.denom)})` : '';
-    blackjackPromptEl.textContent = bg.unit ? `Bet $${fmt(bg.bet)}${detail}  -  [\u2191/\u2193] credits  [\u2190/\u2192] denomination${(SLOT_CATALOG[bg.m.type] && SLOT_CATALOG[bg.m.type].lines.length > 1) ? '  [L] lines' : ''}  [Enter] spin  [F] leave` : `Bet: $${fmt(bg.bet)} - [\u2191/\u2193] adjust  [Enter] confirm  [F] cancel${(bg.m.type !== 'bigwheel') ? `  [${bindKey('tableView')}] view` : ''}`;
+    blackjackPromptEl.promptText = bg.unit ? `Bet $${fmt(bg.bet)}${detail}  ·  [\u2191/\u2193] credits  [\u2190/\u2192] denomination${(SLOT_CATALOG[bg.m.type] && SLOT_CATALOG[bg.m.type].lines.length > 1) ? '  [L] lines' : ''}  [Enter] spin  [${bindKey('interact')}] leave` : `Bet: $${fmt(bg.bet)} · [\u2191/\u2193] adjust  [Enter] confirm  [${bindKey('interact')}] cancel${(bg.m.type !== 'bigwheel') ? `  [${bindKey('tableView')}] view` : ''}`;
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && (managerGame.kind === 'blackjack' || managerGame.kind === 'poker') && (managerGame.phase === 'waiting' || managerGame.phase === 'dealing')){
-    blackjackPromptEl.textContent = managerGame.phase === 'waiting' ? 'Waiting for the next deal...' : 'Dealing...';
+    blackjackPromptEl.promptText = managerGame.phase === 'waiting' ? 'Waiting for the next deal...' : 'Dealing...';
     blackjackPromptEl.style.display = 'block';
   } else {
     blackjackPromptEl.style.display = 'none';
@@ -9943,7 +9982,7 @@ function spawnInspector(){
     pos: new THREE.Vector3(EXIT_POINT.x, 0, EXIT_POINT.z), target: new THREE.Vector3(), speed: 1.7,
   };
   mesh.position.copy(inspector.pos);
-  inspectorLabelEl.textContent = '🕵 Inspector on site';
+  inspectorLabelEl.textContent = 'Inspector on site';
   logEvent('An inspector has arrived and is checking machines - fix anything rigged!', '#ffb347');
   playSound('click');
   return true;
@@ -10088,14 +10127,14 @@ const RANDOM_EVENTS = [
   }},
   { weight:3, run(){
     const g = makeNPC({ vip:true });
-    logEvent('👑 A VIP high roller has walked in - make it worth their while', '#e6c34a');
+    logEvent('A VIP high roller has walked in - make it worth their while', '#e6c34a');
     return g;
   }},
   { weight:3, run(){
     const room = Math.max(0, Math.min(6, effectiveParkingCapacity() - npcs.length));
     if(room < 3) return false;
     for(let i=0;i<room;i++) makeNPC();
-    logEvent(`🚌 A tour bus just pulled up - ${room} guests are heading in`, '#8fd6a8');
+    logEvent(`A tour bus just pulled up - ${room} guests are heading in`, '#8fd6a8');
     return true;
   }},
   { weight:2.5, run(){
@@ -10103,7 +10142,7 @@ const RANDOM_EVENTS = [
     if(!slots.length) return false;
     const m = slots[Math.floor(Math.random()*slots.length)];
     m.hotTime = 60;
-    logEvent(`🔥 ${m.name} is running hot - guests are flocking to it (pays out extra for a minute)`, '#ffb347');
+    logEvent(`${m.name} is running hot - guests are flocking to it (pays out extra for a minute)`, '#ffb347');
     return true;
   }},
   { weight:1.5, run(){
@@ -10122,7 +10161,7 @@ const RANDOM_EVENTS = [
     // probabilistic risk.
     const load = roleLoad('security');
     const caughtChance = (load > 0 && load <= 1.15) ? 1 : Math.min(0.9, securityStrength() * 0.3);
-    if(Math.random() < caughtChance){ logEvent('👮 Security caught a pickpocket working the floor', '#8fd6a8'); return true; }
+    if(Math.random() < caughtChance){ logEvent('Security caught a pickpocket working the floor', '#8fd6a8'); return true; }
     addCash(-amount); ledger.theft += amount;
     logEvent(`A pickpocket got away with $${amount} from the floor (security guards catch these)`, '#e08a8a');
     return true;
@@ -10416,7 +10455,7 @@ function updateBusinessPanel(){
     document.getElementById('loanStatusP').innerHTML = loanOwed > 0
       ? `Loan: owe <b style="color:#e08a8a;">$${Math.round(loanOwed).toLocaleString()}</b> at ${(loanRateFor()*100).toFixed(1)}%/day<br><span style="font-size:10px;color:#9fb3a8;">$${Math.round(loanDailyPayment()).toLocaleString()} leaves the account at the end of each day${loanMissed ? ' - ' + loanMissed + ' missed' : ''}</span>`
       : loansUnlocked ? `No loan &middot; <span style="font-size:10px;color:#9fb3a8;">the bank will lend up to $${lim.toLocaleString()} at ${(loanRateFor()*100).toFixed(1)}%/day</span>`
-      : `&#128274; <span style="font-size:10px;color:#9fb3a8;">Loans unlock at $2,000 lifetime revenue</span>`;
+      : `${icn('lock')}<span style="font-size:10px;color:#9fb3a8;">Loans unlock at $2,000 lifetime revenue</span>`;
     const lb = document.getElementById('loanBtn');
     lb.textContent = !loansUnlocked ? 'Locked' : want < 500 ? 'Nothing to lend'
       : (loanArmed && loanArmedAmount === want) ? `Confirm: borrow $${want.toLocaleString()} at ${(loanRateFor()*100).toFixed(1)}%/day`
@@ -10502,7 +10541,7 @@ function drawMarketingChart(){
   pts.forEach((s,i)=>{ const x = X(s.t), y = Y(s.guests); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
   ctx.stroke();
   ctx.fillStyle = '#9fb3a8'; ctx.font = '8px Arial'; ctx.textAlign = 'right';
-  ctx.fillText('— gold: manual · blue: auto', W - pad, 9);
+  ctx.fillText('gold: manual · blue: auto', W - pad, 9);
 }
 function updateMarketingPanel(){
   const mkt = officeOn('mktoffice');
@@ -10612,7 +10651,7 @@ function applyOfficeGates(){
   document.querySelectorAll('#clubPanel .mktHint').forEach(el => { el.innerHTML = mkt ? '' : `<div style="color:#9fb3a8;font-size:10px;margin-bottom:6px;">${officeHint('mktoffice')}</div>`; });
   if(!mkt) document.getElementById('clubBtn').style.opacity = '0.4';
   document.querySelectorAll('#statsPanel .acctHint').forEach(el => { el.innerHTML = ''; });
-  document.querySelectorAll('#statsPanel .loanHint').forEach(el => { el.innerHTML = loansUnlocked ? '' : '<div style="color:#9fb3a8;font-size:10px;margin-bottom:6px;">&#128274; Unlocks at $2,000 lifetime revenue</div>'; });
+  document.querySelectorAll('#statsPanel .loanHint').forEach(el => { el.innerHTML = loansUnlocked ? '' : '<div style="color:#9fb3a8;font-size:10px;margin-bottom:6px;">'+icn('lock')+'Unlocks at $2,000 lifetime revenue</div>'; });
   document.getElementById('deptTable').style.display = acct ? '' : 'none';
   document.getElementById('loanStatusP').style.display = loansUnlocked ? '' : 'none';
   document.getElementById('loanAmount').parentElement.style.display = loansUnlocked ? 'flex' : 'none';
@@ -10707,7 +10746,7 @@ function updateStatsPanel(){
       bar = `<div style="height:4px;background:#0d1a14;border-radius:2px;margin-top:4px;"><div style="height:4px;width:${pct}%;background:#c9a227;border-radius:2px;"></div></div>`;
     }
     return `<div style="background:rgba(0,0,0,0.25);border:1px solid ${unlocked?'#c9a227':'#2a4a3c'};border-radius:4px;padding:5px 6px;${unlocked?'':'opacity:0.75;'}">
-      <div style="color:${unlocked?'#e6c34a':'#f0e6d2'};font-weight:bold;">${unlocked?'🏆':'🔒'} ${a.name}</div>
+      <div style="color:${unlocked?'#e6c34a':'#f0e6d2'};font-weight:bold;">${icn(unlocked?'trophy':'lock')}${a.name}</div>
       <div style="color:#9fb3a8;">${a.desc}</div>
       ${bar}
     </div>`;
@@ -11111,17 +11150,21 @@ document.getElementById('resetBtn').addEventListener('click', (e)=>{
   const btn = e.currentTarget;
   if(!resetArmed){
     resetArmed = true;
-    btn.textContent = '⚠ Click again to confirm';
+    btn.innerHTML = ICON_HTML('warn') + 'Click again to confirm';
     clearTimeout(resetArmTimer);
-    resetArmTimer = setTimeout(()=>{ resetArmed = false; btn.textContent = '🔄 Reset'; }, 4000);
+    resetArmTimer = setTimeout(()=>{ resetArmed = false; btn.innerHTML = ICON_HTML('reset') + 'Reset'; }, 4000);
     return;
   }
   clearTimeout(resetArmTimer);
   resetArmed = false;
-  btn.textContent = '🔄 Reset';
+  btn.innerHTML = ICON_HTML('reset') + 'Reset';
   resetGame();
 });
 setInterval(saveGame, 20000);
+// sliders show a gold fill up to the thumb (webkit has no native progress pseudo-element, so feed it a custom property)
+function syncRanges(){ document.querySelectorAll('input[type=range]').forEach(r => { const mn = +r.min || 0, mx = +r.max || 100; r.style.setProperty('--p', (((+r.value) - mn) / Math.max(1e-9, mx - mn) * 100) + '%'); }); }
+document.addEventListener('input', (e)=>{ if(e.target && e.target.type === 'range') syncRanges(); });
+setInterval(syncRanges, 500); syncRanges();
 
 // ---------------- Sandbox mode, and save-file export / import ----------------
 // Sandbox pins cash and unlocks everything. Your real cash is set aside and handed back when you switch it off.
@@ -11212,7 +11255,7 @@ function openMachineConfig(m){
   closeManagedPopups('machineConfigPanel');
   const cfg = SLOT_CATALOG[m.type];
   let html = `<h3 style="margin:0 0 8px 0;color:#e6c34a;font-weight:normal;">${m.name}</h3>`;
-  if(m.category === 'gambling' && !canRename(m)) html += `<div style="color:#9fb3a8;font-size:11px;margin-bottom:8px;">&#128274; Naming it unlocks at Showpiece level ${NAME_UNLOCK_APPEAL}</div>`;
+  if(m.category === 'gambling' && !canRename(m)) html += `<div style="color:#9fb3a8;font-size:11px;margin-bottom:8px;">${icn('lock')}Naming it unlocks at Showpiece level ${NAME_UNLOCK_APPEAL}</div>`;
   else if(canRename(m)) html += `<label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">Name <input id="cfgNick" maxlength="22" value="${(m.nick || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}" style="flex:1;background:#0d1a14;border:1px solid #2a4a3c;color:#f0e6d2;border-radius:4px;padding:3px 6px;font-size:12px;"></label>`;
   if(cfg){
     const opts = (list, cur, fmt)=> list.map(v=>`<option value="${v}"${v===cur?' selected':''}>${fmt(v)}</option>`).join('');
@@ -11262,7 +11305,7 @@ function openMachineConfig(m){
     Object.entries(UPGRADES).forEach(([k, u])=>{
       const lvl = upLevel(m, k), maxed = lvl >= UPGRADE_MAX, c = maxed ? 0 : upgradeCost(k, lvl, m);
       html += `<div style="display:grid;grid-template-columns:1fr 92px;gap:8px;align-items:center;margin-bottom:5px;">
-        <div><b>${u.name}</b> <span style="color:#e6c34a;">${'\u25cf'.repeat(lvl)}${'\u25cb'.repeat(UPGRADE_MAX - lvl)}</span>
+        <div><b>${u.name}</b> <span class="pips" title="Level ${lvl} of ${UPGRADE_MAX}">${Array.from({length:UPGRADE_MAX}, (_, i) => `<span class="pip${i < lvl ? ' on' : ''}"></span>`).join('')}</span>
           <div style="color:#9fb3a8;font-size:10px;">${u.desc}</div></div>
         <button class="hotbarSlot cfgUp" data-k="${k}" ${maxed || cash < c ? 'disabled' : ''} style="font-size:11px;${maxed || cash < c ? 'opacity:.45;' : ''}">${maxed ? 'Maxed' : '$' + c.toLocaleString()}</button>
       </div>`;
@@ -11548,7 +11591,7 @@ function updateRegularsPanel(){
       return `<div class="regRow" data-id="${e.id}" style="display:grid;grid-template-columns:52px minmax(120px,1fr) 56px 150px 1.4fr;gap:10px;align-items:center;padding:7px 8px;margin-top:4px;border-radius:6px;cursor:pointer;background:${good?'rgba(60,140,90,0.10)':'rgba(180,60,60,0.10)'};border-left:4px solid ${good?'#3fae6a':'#c94a4a'};">
         <img src="${avatarURL(e.look, 52)}" width="46" height="46" style="border-radius:50%;border:2px solid ${col};">
         <div><b style="font-size:13px;">${e.name}</b> <span style="color:${col};font-size:10px;">${tier}</span><div style="font-size:10px;">${status}</div>
-          <div style="font-size:10px;color:#9fb3a8;">${e.visits} visit${e.visits===1?'':'s'} · likes ${fav ? fav[0] : '&mdash;'}</div></div>
+          <div style="font-size:10px;color:#9fb3a8;">${e.visits} visit${e.visits===1?'':'s'} · likes ${fav ? fav[0] : '-'}</div></div>
         <div title="Loyalty ${Math.round(e.affinity)}/100"><div style="height:6px;background:#0d1a14;border-radius:3px;overflow:hidden;"><div style="height:6px;width:${Math.round(e.affinity)}%;background:${loyaltyBarColor(e.affinity)};border-radius:3px;"></div></div></div>
         <div style="text-align:center;">${netBadge(net)}<div style="font-size:9px;color:#9fb3a8;margin-top:2px;">house ${moneyStr(e.net)} · comps -$${Math.round(e.compSpend||0)}</div></div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">${compButtons(e)}</div>
@@ -11918,7 +11961,7 @@ function updateDevDebugInfo(){
   const el = document.getElementById('devDebugInfo');
   if(!el) return;
   el.innerHTML = `
-    Day ${currentDay} — ${Math.round((dayTime/DAY_LENGTH)*100)}% through<br>
+    Day ${currentDay} · ${Math.round((dayTime/DAY_LENGTH)*100)}% through<br>
     Cash: $${Math.round(cash).toLocaleString()} · Reputation: ${reputation.toFixed(1)}<br>
     Guests: ${npcs.length} (cars ${carsOnLot()} / ${effectiveParkingCapacity()} parking) · Staff: ${staffNPCs.length}<br>
     Active games: ${activeGames.length} · Machines: ${machines.length}<br>
@@ -11989,7 +12032,7 @@ function updateHint(){
   if(!buildType && pointerLocked && !managerCameraLock){ const rm = roomUnderPlayer(); if(rm){ hintEl.textContent = casinoClosed ? 'Press F to furnish this room' : 'Rooms can only be furnished while the casino is closed'; hintEl.style.opacity = 1; return; } }
   if(!buildType && pointerLocked && !managerCameraLock){ const g = aimedGuest(); if(g){ hintEl.textContent = guestHintText(g); hintEl.style.opacity = 1; return; } }
   if(buildType){
-    hintEl.textContent = `${movingMachine ? 'Moving' : 'Placing'}: ${BUILD_ITEMS[buildType].name} — click to place, R/E to rotate, Q/Esc to cancel${ghost && ghost.userData.reason ? '  (' + ghost.userData.reason + ')' : ''}`;
+    hintEl.textContent = `${movingMachine ? 'Moving' : 'Placing'}: ${BUILD_ITEMS[buildType].name} · click to place, R/E to rotate, Q/Esc to cancel${ghost && ghost.userData.reason ? '  (' + ghost.userData.reason + ')' : ''}`;
     hintEl.style.opacity = 1;
     return;
   }
@@ -12017,16 +12060,16 @@ function updateHint(){
       // Aiming at a hotel room from outside used to just show its bare name ("Standard Room") with no
       // indication F does anything at all - tryEnterRoom() already lets you walk into any vacant one,
       // the hint just never mentioned it.
-      if(playerInRoom === closest) hintEl.textContent = `${text} — press F (or Q) to step back out`;
-      else if(closest.room.occupant) hintEl.textContent = `${text} — occupied`;
+      if(playerInRoom === closest) hintEl.textContent = `${text} · press F (or Q) to step back out`;
+      else if(closest.room.occupant) hintEl.textContent = `${text} · occupied`;
       else if(playerInRoom) hintEl.textContent = text; // already inside a different room - entering this one isn't on offer right now
-      else hintEl.textContent = `${text} — press F to enter`;
+      else hintEl.textContent = `${text} · press F to enter`;
       hintEl.style.opacity = 1;
       return;
     }
-    if(isSlotLike(closest)) text += ` — RTP ${Math.round(closest.payout*100)}%` + (closest.denom ? ` · ${closest.lines}x$${fmtStake(closest.denom)}` : '');
-    else if(isSeatedTable(closest)) text += ` — rig ${Math.round(closest.edge*100)}% · ${TABLE_SEAT_COUNT - freeSeatCount(closest)}/${TABLE_SEAT_COUNT} seats taken`;
-    else if(closest.category === 'gambling') text += ` — rig ${Math.round(closest.edge*100)}% · ${closest.occupants||0}/${maxOccupantsFor(closest)} playing`;
+    if(isSlotLike(closest)) text += ` · RTP ${Math.round(closest.payout*100)}%` + (closest.denom ? ` · ${closest.lines}x$${fmtStake(closest.denom)}` : '');
+    else if(isSeatedTable(closest)) text += ` · rig ${Math.round(closest.edge*100)}% · ${TABLE_SEAT_COUNT - freeSeatCount(closest)}/${TABLE_SEAT_COUNT} seats taken`;
+    else if(closest.category === 'gambling') text += ` · rig ${Math.round(closest.edge*100)}% · ${closest.occupants||0}/${maxOccupantsFor(closest)} playing`;
     hintEl.textContent = text;
     hintEl.style.opacity = 1;
   } else {
@@ -12193,6 +12236,7 @@ const FIRST_STEPS = [
 let playedAMachine = false, checklistDone = false;
 const checklistEl = document.getElementById('checklist');
 function updateChecklist(){
+  if(!checklistDone && currentDay >= 8) checklistDone = true; // by day 8 the player has found their feet; saved with the rest
   if(checklistDone){ checklistEl.style.display = 'none'; return; }
   const done = FIRST_STEPS.filter(s => s.done()).length;
   if(done >= FIRST_STEPS.length){
@@ -12306,11 +12350,11 @@ function animate(){        // machine - a standing banner says so regardless of 
     nearestBroken = here.length ? here.reduce((best,m)=> (best === null || (m.x-player.pos.x)**2 + (m.z-player.pos.z)**2 < (best.x-player.pos.x)**2 + (best.z-player.pos.z)**2) ? m : best, null) : null;
     if(allBroken.length){
       let text;
-      if(here.length === 1 && !elsewhere) text = `⚠ ${here[0].nick || here[0].name} is broken down - press F at it, or hire a Mechanic`;
-      else if(!elsewhere) text = `⚠ ${here.length} machines on this floor are broken down`;
-      else if(!here.length) text = `⚠ ${elsewhere} machine${elsewhere === 1 ? '' : 's'} broken down on the other floor`;
-      else text = `⚠ ${here.length} broken down here, ${elsewhere} more on the other floor`;
-      brokenIndicatorEl.textContent = text;
+      if(here.length === 1 && !elsewhere) text = `${here[0].nick || here[0].name} is broken down - press F at it, or hire a Mechanic`;
+      else if(!elsewhere) text = `${here.length} machines on this floor are broken down`;
+      else if(!here.length) text = `${elsewhere} machine${elsewhere === 1 ? '' : 's'} broken down on the other floor`;
+      else text = `${here.length} broken down here, ${elsewhere} more on the other floor`;
+      brokenIndicatorEl.innerHTML = icn('warn') + text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       brokenIndicatorEl.style.display = 'block';
     } else brokenIndicatorEl.style.display = 'none';
   }
@@ -12417,7 +12461,7 @@ function animate(){        // machine - a standing banner says so regardless of 
 }
 buildExterior();
 checkTabUnlocks(true);
-if(loadGame()) logEvent('Welcome back — loaded your saved casino', '#e6c34a');
+if(loadGame()) logEvent('Welcome back, loaded your saved casino', '#e6c34a');
 else logEvent('Welcome! Press 1 to buy your first machines, then click Open Casino.', '#e6c34a');
 warmThumbs();
 animate();
