@@ -2791,12 +2791,25 @@ function addChipStacks(g, x, y, z){
   g.add(chips);
 }
 
+// Distance detail: small parts go into their own group so the update loop can hide them when the camera is
+// far away (tier 'far' > ~28 m, 'vfar' > ~40 m). A separate wrapper means gameplay code that toggles the
+// parts themselves is unaffected. Nodes must be direct children of `root` (the wrapper sits at identity).
+function gfLod(root){ return root.userData.lod || (root.userData.lod = { far: [], vfar: [] }); }
+function gfDetail(root, nodes, tier){
+  const grp = new THREE.Group(); grp.name = 'detail';
+  nodes.forEach(n => grp.add(n));
+  root.add(grp);
+  gfLod(root)[tier || 'far'].push(grp);
+  return grp;
+}
+
 // Builds any slot cabinet from its catalog entry: `reels` columns by `rows` symbols,
 // with the cabinet widened for 5-reel machines and a taller window for 3-row ones.
 function buildSlotCabinet(cfg, nick){
   const scale = cfg.scale, nReels = cfg.reels, rows = cfg.rows;
   const wide = nReels > 3 ? 1.45 : 1.0;
   const g = new THREE.Group();
+  const det = []; // small parts hidden when far away (see gfDetail)
   // (high metalness renders near-black without an environment map, so the gold cabinet leans on emissive instead)
   const cabinetMat = cfg.gold
     ? new THREE.MeshStandardMaterial({ color:0xe6b82e, emissive:0x8a6a10, emissiveIntensity:0.8, metalness:0.25, roughness:0.35 })
@@ -2872,6 +2885,7 @@ function buildSlotCabinet(cfg, nick){
     const pts = []; for(let i=0;i<nb;i++) pts.push([(-0.4+0.8*i/(nb-1))*scale*wide, 1.655*scale, 0.355*scale, 0.022*scale]);
     const bulbs = gfBulbSets('slot'+ck, cfg.glow, pts);
     g.add(cap, frame, ledge, lamp, ...bulbs);
+    det.push(frame, ledge, lamp, ...bulbs);
   }
   // payline overlay: drawn right over the reel window so extra lines are visible on the machine itself
   const ovW = 0.54*wide*scale, ovH = (winH-0.06)*scale;
@@ -2880,15 +2894,17 @@ function buildSlotCabinet(cfg, nick){
   const ovTex = new THREE.CanvasTexture(ovCanvas);
   const overlay = new THREE.Mesh(new THREE.PlaneGeometry(ovW, ovH), new THREE.MeshBasicMaterial({ map: ovTex, transparent:true, depthWrite:false }));
   overlay.position.set(0, winY*scale, 0.348*scale);
-  g.add(overlay);
+  g.add(overlay); det.push(overlay);
   // stake display under the buttons: lines, denomination and the current bet
   const dW = 0.62*scale*wide, dH = 0.15*scale;
   const dCanvas = document.createElement('canvas'); dCanvas.width = 512; dCanvas.height = Math.round(512*dH/dW);
   const dTex = new THREE.CanvasTexture(dCanvas);
   const display = new THREE.Mesh(new THREE.PlaneGeometry(dW, dH), new THREE.MeshBasicMaterial({ map: dTex }));
   display.position.set(0, 0.5*scale, 0.331*scale);
-  g.add(display);
+  g.add(display); det.push(display);
   g.userData.slotDisplay = { canvas:dCanvas, tex:dTex, overlayCanvas:ovCanvas, overlayTex:ovTex, glow:cssHex(cfg.glow), reels:nReels, rows };
+  det.push(trimL, trimR, nameplate, ...buttons, leverGroup);
+  gfDetail(g, det);
   if(cfg.gold){
     // a crown of gold spheres across the top so the jackpot machine reads from across the floor
     const crownMat = new THREE.MeshStandardMaterial({ color:0xfff2a0, emissive:0xe6c34a, emissiveIntensity:0.9, metalness:0.9, roughness:0.2 });
@@ -3754,13 +3770,13 @@ function placeMachine(key, x, z, rotation=0, nickArg, level=0){
   mesh.rotation.y = rotation;
   if(type !== 'wall' && type !== 'room' && type !== 'stairs' && type !== 'lift' && type !== 'chandelier' && type !== 'ropes'){
     const sz = Math.max(1.6, radius * 3.4);
-    addBlob(mesh, SHADOW_MAT_MACHINE, sz, 0.02, 1);
+    gfLod(mesh).vfar.push(addBlob(mesh, SHADOW_MAT_MACHINE, sz, 0.02, 1));
   }
   // warm light pool on the carpet around games (slots in front of the screen, tables under the "lamp")
   if(item.category === 'gambling' || type === 'bar'){
     const sc = SLOT_CATALOG[type];
-    if(sc) addBlob(mesh, glowMat(mixHex(sc.glow, 0xff9a40, 0.6)), radius * 3.6, 0.025, 2, 0, radius * 0.9);
-    else addBlob(mesh, glowMat(0xff9440), radius * 3.8, 0.025, 2);
+    if(sc) gfLod(mesh).vfar.push(addBlob(mesh, glowMat(mixHex(sc.glow, 0xff9a40, 0.6)), radius * 3.6, 0.025, 2, 0, radius * 0.9));
+    else gfLod(mesh).vfar.push(addBlob(mesh, glowMat(0xff9440), radius * 3.8, 0.025, 2));
   }
   scene.add(mesh);
   const label = makeLabel(nick || name);
@@ -3773,7 +3789,7 @@ function placeMachine(key, x, z, rotation=0, nickArg, level=0){
   const isSlotType = !!slotCfg || type === 'bigwheel';
   const isTableGame = type === 'blackjack' || type === 'roulette' || type === 'poker' || type === 'craps' || type === 'baccarat' || type === 'sicbo';
   machines.push({
-    level, mesh, label, x, z, radius, name, nick, type, key, rotation, parts, cols: makeColliders(key, x, z, rotation, radius), pcols: makePlacementCols(key, x, z, rotation, radius),
+    level, mesh, lod: mesh.userData.lod, lodState: 0, label, x, z, radius, name, nick, type, key, rotation, parts, cols: makeColliders(key, x, z, rotation, radius), pcols: makePlacementCols(key, x, z, rotation, radius),
     labelUntil,
     category: item.category,
     cost: item.cost,
@@ -5644,7 +5660,7 @@ const FIG_GEO = {
 function figureFill(mat, k = 0.22){ mat.emissive.copy(mat.color).multiplyScalar(k); return mat; }
 function buildHumanoid(o){
   const g = new THREE.Group();
-  addBlob(g, SHADOW_MAT_PERSON, 1.1, 0.02, 1); // contact shadow; group y is the floor surface, sitting only moves the body
+  const personBlob = addBlob(g, SHADOW_MAT_PERSON, 1.1, 0.02, 1); // contact shadow; group y is the floor surface, sitting only moves the body
   const skinMat = new THREE.MeshStandardMaterial({ color: o.skin, roughness: 0.85 });
   const shirtMat = o.shirtMat || new THREE.MeshStandardMaterial({ color: o.shirt, roughness: 0.9 });
   const trouMat = new THREE.MeshStandardMaterial({ color: o.trousers, roughness: 0.95 });
@@ -5655,6 +5671,7 @@ function buildHumanoid(o){
   const head = new THREE.Group(); body.add(head);
   const skull = new THREE.Mesh(FIG_GEO.head, skinMat); skull.position.y = 1.55; skull.castShadow = true; head.add(skull);
   const detail = []; // small parts that are dropped when the figure is far from the camera
+  const detail2 = [personBlob]; // hair, hats, ties, arms and the shadow: dropped beyond ~32 m (arms are added below)
   [-0.075, 0.075].forEach(x => { const e = new THREE.Mesh(FIG_GEO.eye, FIG_EYE_MAT); e.position.set(x, 1.57, 0.195); detail.push(e); head.add(e); });
   const mkLeg = x => {
     const l = new THREE.Group(); l.position.set(x, 0.66, 0);
@@ -5667,10 +5684,11 @@ function buildHumanoid(o){
     a.rotation.z = x < 0 ? -0.09 : 0.09; body.add(a); return a;
   };
   g.userData.rig = {
-    legL: mkLeg(-0.11), legR: mkLeg(0.11), armL: mkArm(-0.33), armR: mkArm(0.33), body, head, detail, far: false,
+    legL: mkLeg(-0.11), legR: mkLeg(0.11), armL: mkArm(-0.33), armR: mkArm(0.33), body, head, detail, detail2, far: false, far2: false,
     v: 0, phase: Math.random() * 6.28, t: Math.random() * 20, seed: Math.random() * 10,
     cur: { lL: 0, lR: 0, aL: 0, aR: 0 },
   };
+  detail2.push(g.userData.rig.armL, g.userData.rig.armR);
   return g;
 }
 // pose: '' (just stand / walk), 'slot', 'table', 'eat', 'drink', 'clip'. dt is real time.
@@ -5681,6 +5699,8 @@ function animateFigure(mesh, dt, pose){
   { // level of detail: small parts vanish past 20 m, and past 45 m the figure stops animating altogether
     const ddx = px - player.pos.x, ddz = pz - player.pos.z, d2 = ddx*ddx + ddz*ddz, far = d2 > 400;
     if(far !== r.far){ r.far = far; r.detail.forEach(o => { o.visible = !far; }); }
+    const far2 = d2 > 1024;
+    if(far2 !== r.far2){ r.far2 = far2; r.detail2.forEach(o => { o.visible = !far2; }); }
     if(d2 > 2025){ r.lx = px; r.lz = pz; return; }
   }
   if(r.lx === undefined){ r.lx = px; r.lz = pz; }
@@ -5721,6 +5741,7 @@ function makeStaffMesh(color){
   head.add(cap, peak);
   const tie = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.34, 0.03), new THREE.MeshStandardMaterial({ color: 0xe6e0d0 }));
   tie.position.set(0, 1.12, 0.2); g.userData.rig.body.add(tie);
+  g.userData.rig.detail2.push(cap, peak, tie);
   return g;
 }
 
@@ -7183,6 +7204,8 @@ function makeCar(color){
     const tl = new THREE.Mesh(carGeos.light, carMats.tail); tl.position.set(x, 0.62, -2.1); g.add(tl);
   });
   g.traverse(o=>{ if(o.isMesh){ o.castShadow = true; } });
+  // wheels and lamps only matter up close (see updateDetailLOD); body and glass stay
+  gfDetail(g, g.children.filter(o => o !== body && o !== cabin), 'far');
   return g;
 }
 
@@ -7392,6 +7415,9 @@ function makeGuestMesh(tier=1, look=makeLook()){
     const tie = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.32, 0.03), new THREE.MeshStandardMaterial({ color: tier >= 3 ? 0xd4af37 : 0x7a1f2b, metalness: tier >= 3 ? 0.6 : 0, roughness: 0.5 }));
     tie.position.set(0, 1.12, 0.2); rig.body.add(tie);
   }
+  // hair, hats, glasses and ties are far-LOD details too (everything on the head/body beyond the basic parts)
+  head.children.forEach(c => { if(c.isMesh && c.geometry !== FIG_GEO.head && c.geometry !== FIG_GEO.eye) rig.detail2.push(c); });
+  rig.body.children.forEach(c => { if(c.isMesh && c.geometry !== FIG_GEO.torso) rig.detail2.push(c); });
   g.scale.setScalar(0.92 + tier*0.06);
   return g;
 }
@@ -11705,7 +11731,7 @@ function updateMinimap(dt){
   minimapTimer = 0.12;
   { // name tags draw over everything, so only show the ones on the floor you are standing on
     const pl = playerLevel();
-    machines.forEach(m => { if(m.label) m.label.visible = labelShouldShow(m) && (m.level || 0) === pl && !managerAtMachine(m); });
+    machines.forEach(m => { if(m.label) m.label.visible = labelShouldShow(m) && (m.level || 0) === pl && !managerAtMachine(m) && (m.x-player.pos.x)**2 + (m.z-player.pos.z)**2 < 1225; }); // (beyond 35 m a tag is unreadable)
   }
   const W = minimapCanvas.width, H = minimapCanvas.height, pad = 6;
   const x0 = ROOM_LEFT_X, x1 = ROOM_RIGHT_X, z0 = ROOM_BACK_Z, z1 = ROOM_FRONT_Z + 2;
@@ -11898,6 +11924,44 @@ function updateBrokenArrow(){
   brokenArrowEl.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(dx, -dy)}rad)`;
   brokenArrowEl.style.display = 'block';
 }
+// Hides small details on far machines and the interiors of sealed hotel rooms. Runs every frame over all
+// machines (a few hundred distance checks, no allocation); only touches .visible when a state changes.
+const LOD_FAR2 = [784, 676], LOD_VFAR2 = [1600, 1444]; // squared 28 m / 26 m and 40 m / 38 m (second value is the way back in)
+function updateDetailLOD(){
+  const c = camera.position, cx = c.x, cy = c.y, cz = c.z, force = photoMode;
+  for(let i = 0; i < machines.length; i++){
+    const m = machines[i], mp = m.mesh.position;
+    if(m.type === 'room' && m.parts && m.parts.interior){
+      // The door leaf seals the doorway while the casino is open, so nobody can see in unless they are
+      // inside or the camera is above the walls (photo mode, upper floor looking down).
+      const sealed = m.parts.door.visible && playerInRoom !== m && cy < mp.y + ROOM_H + 0.3;
+      if(m.parts.interior.visible === sealed) m.parts.interior.visible = !sealed;
+    }
+    const lod = m.lod; if(!lod) continue;
+    const dx = mp.x - cx, dy = mp.y - cy, dz = mp.z - cz, d2 = dx*dx + dy*dy + dz*dz;
+    const s = m.lodState;
+    let ns;
+    if(force) ns = 0;
+    else if(s === 0) ns = d2 > LOD_VFAR2[0] ? 2 : d2 > LOD_FAR2[0] ? 1 : 0;
+    else if(s === 1) ns = d2 > LOD_VFAR2[0] ? 2 : d2 < LOD_FAR2[1] ? 0 : 1;
+    else ns = d2 < LOD_FAR2[1] ? 0 : d2 < LOD_VFAR2[1] ? 1 : 2;
+    if(ns !== s){
+      m.lodState = ns;
+      const farOn = ns === 0, vfarOn = ns < 2;
+      for(let k = 0; k < lod.far.length; k++) lod.far[k].visible = farOn;
+      for(let k = 0; k < lod.vfar.length; k++) lod.vfar[k].visible = vfarOn;
+    }
+  }
+}
+function updateCarLOD(){
+  const c = camera.position;
+  for(const k in stallCars){
+    const car = stallCars[k], p = car.position, lod = car.userData.lod;
+    const dx = p.x - c.x, dz = p.z - c.z, d2 = dx*dx + dz*dz + (c.y - p.y)*(c.y - p.y);
+    const near = photoMode || d2 < (car.userData.carNear ? LOD_FAR2[0] : LOD_FAR2[1]); // 28 m to drop, back in under 26 m
+    if(near !== car.userData.carNear){ car.userData.carNear = near; for(let i = 0; i < lod.far.length; i++) lod.far[i].visible = near; }
+  }
+}
 function animate(){        // machine - a standing banner says so regardless of where the camera's pointed
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
@@ -12027,6 +12091,8 @@ function animate(){        // machine - a standing banner says so regardless of 
   if(statsPanel.style.display === 'block' && statsRefreshT <= 0){ statsRefreshT = 0.25; updateStatsPanel(); }
   if(document.getElementById('devPanel').style.display === 'block') updateDevDebugInfo();
   updateHint();
+  updateDetailLOD();
+  updateCarLOD();
   renderer.render(scene, camera);
 }
 buildExterior();
