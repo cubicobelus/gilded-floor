@@ -5786,43 +5786,147 @@ function renderStaffPanel(){
 // Guests, staff and the inspector all share this rig. animateFigure() is driven from animate(): it reads
 // how far the mesh moved since last frame, so no movement code elsewhere needs to know about it.
 const FIG_TROUSERS = [0x2b2f3a, 0x3a3a3f, 0x4a3b2a, 0x1f2d4a, 0x56565c];
-const FIG_EYE_MAT = new THREE.MeshBasicMaterial({ color: 0x1a1410 });
-const FIG_GEO = {
-  torso: new THREE.CylinderGeometry(0.27, 0.22, 0.7, 12),
-  head: new THREE.SphereGeometry(0.22, 14, 12),
-  eye: new THREE.SphereGeometry(0.03, 6, 6),
-  leg: new THREE.CylinderGeometry(0.095, 0.075, 0.58, 8).translate(0, -0.29, 0),
-  shoe: new THREE.BoxGeometry(0.15, 0.08, 0.28).translate(0, -0.62, 0.05),
-  arm: new THREE.CylinderGeometry(0.075, 0.06, 0.46, 8).translate(0, -0.23, 0),
-  hand: new THREE.SphereGeometry(0.065, 8, 8).translate(0, -0.5, 0),
+// Muted shirt palette (guests pick the entry nearest their look's hue, so portraits and figures agree).
+const FIG_SHIRTS = [0x6f8fb0, 0xa86f6f, 0x7a9e7e, 0xc9a86a, 0x8c7aa6, 0x5f9ea0, 0xd9d2c0, 0xb5836a, 0x6b7c8f, 0x9aa66a];
+const FIG_JACKETS = [0x3a3d46, 0x2a3550, 0x5a2a33, 0x2f4a3c];
+const FIG_GOLD = 0xd4af37, FIG_CREAM = 0xe8e2d4, FIG_SHOE = 0x15120f;
+// One shared material for every figure part: colours are baked as vertex colours into cached merged
+// geometries (a handful of meshes per person). The emissive self-glow is scaled by the vertex colour so
+// each part keeps its own colour under the dim casino light (the old per-material figureFill, shared).
+const FIG_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, flatShading: true, emissive: 0xffffff });
+FIG_MAT.emissiveIntensity = 0.2;
+FIG_MAT.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance *= vColor;'); };
+const figCache = {};
+const figOnce = (key, make) => figCache[key] || (figCache[key] = make());
+const figShade = (hex, k) => new THREE.Color(hex).multiplyScalar(k).getHex();
+// A part: geometry transformed in place (scale, then rotations, then translate), colour as hex.
+const fp = (geo, hex, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1, rx = 0, rz = 0) => {
+  geo.scale(sx, sy, sz); if(rx) geo.rotateX(rx); if(rz) geo.rotateZ(rz); geo.translate(x, y, z); return { geo, color: hex };
 };
-// o: { skin, trousers, shirt | shirtMat }. Faces +z. Hair, hats and the like go on rig.head.
-// A little self-glow in each figure's own colour, so people stay readable and keep their colour under
-// the dimmer, tone-mapped casino light instead of going muddy.
-function figureFill(mat, k = 0.22){ mat.emissive.copy(mat.color).multiplyScalar(k); return mat; }
+const figCyl = (r1, r2, h, n = 6) => new THREE.CylinderGeometry(r1, r2, h, n);
+const figBox = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+const figBall = (r, w = 6, h = 5) => new THREE.SphereGeometry(r, w, h);
+// Shared faces (eyes, brows, mouth; glasses variant): the far LOD drops them.
+const FIG_FACE = [false, true].map(gl => {
+  const P = [], eye = 0x1b1612, brow = 0x3b2a1e;
+  [-1, 1].forEach(s => {
+    P.push(fp(figBall(0.02), eye, s * 0.055, 1.595, 0.136, 1, 1.1, 0.7));
+    P.push(fp(figBox(0.05, 0.011, 0.012), brow, s * 0.055, 1.638, 0.134, 1, 1, 1, 0, -s * 0.12));
+    if(gl) P.push(fp(new THREE.TorusGeometry(0.036, 0.006, 4, 8), 0x151515, s * 0.058, 1.595, 0.142));
+  });
+  if(gl) P.push(fp(figBox(0.03, 0.008, 0.008), 0x151515, 0, 1.6, 0.145));
+  P.push(fp(figBox(0.05, 0.009, 0.01), 0x8a4a40, 0, 1.53, 0.134));
+  return gfMerge(P);
+});
+// Torso: chest, neck, collar and the outfit's front pieces as one geometry (shoulders wider than hips).
+function figTorso(o){
+  return figOnce(['t', o.outfit, o.shirt, o.jacket, o.tie, o.bow, o.skin].join('|'), () => {
+    const P = [], of = o.outfit, smart = of === 'jacket' || of === 'whale';
+    const chest = (hex, y0, y1) => { // slice of the tapered chest between heights y0..y1
+      const r = h => 0.165 + 0.05 * (h - 0.64) / 0.72;
+      return fp(figCyl(r(y1), r(y0), y1 - y0, 8), hex, 0, (y0 + y1) / 2, 0, 1.28, 1, 0.78);
+    };
+    P.push(fp(figCyl(0.055, 0.065, 0.14, 6), o.skin, 0, 1.4, 0));
+    if(of === 'dress'){
+      P.push(chest(o.shirt, 0.86, 1.36));
+      P.push(fp(figCyl(0.17, 0.27, 0.4, 10), o.shirt, 0, 0.7, 0, 1, 1, 0.95));
+      P.push(fp(figCyl(0.275, 0.275, 0.03, 10), figShade(o.shirt, 0.8), 0, 0.51, 0, 1, 1, 0.95));
+      P.push(fp(figCyl(0.18, 0.2, 0.05, 8), figShade(o.shirt, 0.8), 0, 0.88, 0, 1.28, 1, 0.78)); // waist band
+    } else P.push(chest(smart ? o.jacket : o.shirt, 0.64, 1.36));
+    if(of === 'tee' || of === 'dress') P.push(fp(figCyl(0.085, 0.095, 0.05, 8), figShade(o.shirt, 0.82), 0, 1.355, 0));
+    if(of === 'uniform'){
+      P.push(fp(figCyl(0.09, 0.1, 0.05, 8), FIG_CREAM, 0, 1.355, 0));
+      P.push(fp(figBox(0.065, 0.32, 0.025), FIG_CREAM, 0, 1.12, 0.17, 1, 1, 1, -0.06));
+      P.push(fp(figBall(0.03, 6, 4), FIG_GOLD, 0.11, 1.2, 0.15)); // badge
+    }
+    if(smart){
+      P.push(fp(figBox(0.16, 0.44, 0.02), FIG_CREAM, 0, 1.13, 0.165, 1, 1, 1, -0.06));
+      P.push(fp(figCyl(0.09, 0.1, 0.05, 8), FIG_CREAM, 0, 1.36, 0));
+      const lap = of === 'whale' ? FIG_GOLD : figShade(o.jacket, 1.35);
+      [-1, 1].forEach(s => P.push(fp(figBox(0.06, 0.32, 0.025), lap, s * 0.09, 1.19, 0.168, 1, 1, 1, -0.06, s * 0.3)));
+      if(of === 'whale') [0.98, 0.86, 0.74].forEach(y => P.push(fp(figBall(0.022, 5, 4), FIG_GOLD, 0.05, y, 0.158)));
+      if(o.tie) P.push(fp(figBox(0.05, 0.3, 0.022), o.tie, 0, 1.1, 0.178, 1, 1, 1, -0.06));
+    }
+    if(o.bow){ // bow tie: wings and a knot at the collar
+      P.push(fp(figBox(0.17, 0.06, 0.03), o.bow, 0, 1.31, 0.17));
+      P.push(fp(figBox(0.04, 0.05, 0.04), figShade(o.bow, 0.7), 0, 1.31, 0.18));
+    }
+    return gfMerge(P);
+  });
+}
+// Head: skull, nose, ears and hair (or hat / cap) as one geometry.
+function figHead(o){
+  return figOnce(['h', o.skin, o.style, o.hair, o.hat, o.cap].join('|'), () => {
+    const P = [], hair = o.hair, ear = figShade(o.skin, 0.95);
+    P.push(fp(figBall(0.15, 10, 8), o.skin, 0, 1.6, 0, 1, 1.08, 1));
+    P.push(fp(figBall(0.026, 5, 4), figShade(o.skin, 0.93), 0, 1.575, 0.146, 1, 1, 1.2));
+    P.push(fp(figBall(0.03, 5, 4), ear, -0.15, 1.59, 0, 0.8, 1.3, 1), fp(figBall(0.03, 5, 4), ear, 0.15, 1.59, 0, 0.8, 1.3, 1));
+    // hair cap tilted so the hairline sits high at the front and low at the nape
+    const capHair = c => fp(new THREE.SphereGeometry(0.165, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.56), c, 0, 1.6, -0.005, 1, 1.08, 1, -0.5);
+    if(!o.cap && o.style !== 'bald'){
+      if(o.style === 'curly') P.push(fp(figBall(0.205, 8, 6), hair, 0, 1.65, -0.02, 1, 0.95, 1));
+      else P.push(capHair(hair));
+      if(o.style === 'long') P.push(fp(figBall(0.17, 8, 6), hair, 0, 1.47, -0.06, 1.05, 1.5, 0.8));
+      if(o.style === 'bob') P.push(fp(figBall(0.175, 8, 6), hair, 0, 1.53, -0.04, 1.05, 1.05, 0.9));
+      if(o.style === 'bun') P.push(fp(figBall(0.07, 6, 5), hair, 0, 1.77, -0.07));
+    }
+    if(o.cap){ // staff cap: crown plus peak
+      P.push(fp(new THREE.SphereGeometry(0.17, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), o.cap, 0, 1.64, 0, 1, 0.9, 1));
+      P.push(fp(figBox(0.2, 0.02, 0.12), figShade(o.cap, 0.8), 0, 1.655, 0.19));
+    }
+    if(o.hat){
+      P.push(fp(figCyl(0.25, 0.25, 0.02, 10), o.hat, 0, 1.7, 0));
+      P.push(fp(figCyl(0.135, 0.15, 0.13, 10), o.hat, 0, 1.77, 0));
+      P.push(fp(figCyl(0.152, 0.152, 0.035, 10), figShade(o.hat, 0.6), 0, 1.74, 0));
+    }
+    return gfMerge(P);
+  });
+}
+// Legs (trousers, or bare skin under a dress) with a darker shoe baked in; left and right share it.
+const figLeg = hex => figOnce('l|' + hex, () => gfMerge([
+  fp(figCyl(0.085, 0.058, 0.58, 6), hex, 0, -0.29, 0),
+  fp(figBox(0.13, 0.075, 0.26), FIG_SHOE, 0, -0.62, 0.05),
+]));
+// Arm hanging from the shoulder pivot: shoulder ball, sleeve (short or long), forearm, cuff and hand.
+const figArm = (sleeve, skin, short, cuff) => figOnce(['a', sleeve, skin, short, cuff].join('|'), () => {
+  const P = [fp(figBall(0.07, 6, 5), sleeve, 0, -0.01, 0)];
+  if(short){
+    P.push(fp(figCyl(0.07, 0.065, 0.2, 6), sleeve, 0, -0.1, 0));
+    P.push(fp(figCyl(0.055, 0.047, 0.28, 6), skin, 0, -0.34, 0));
+  } else {
+    P.push(fp(figCyl(0.07, 0.056, 0.46, 6), sleeve, 0, -0.23, 0));
+    if(cuff) P.push(fp(figCyl(0.062, 0.062, 0.035, 6), cuff, 0, -0.44, 0));
+  }
+  P.push(fp(figBall(0.055, 6, 5), skin, 0, -0.5, 0, 1, 0.95, 0.85));
+  return gfMerge(P);
+});
+// o: { skin, trousers, shirt, outfit: tee|dress|jacket|whale|uniform, jacket, tie, bow, style, hair, hat, cap, glasses }
+// Faces +z. Extra hats and the like can still be added to rig.head. Parts are pre-merged per look, so a
+// figure is 8 meshes (blob, torso, head, face, 2 legs, 2 arms) instead of 13+.
 function buildHumanoid(o){
+  o = Object.assign({ outfit: 'tee', style: 'bald', hair: 0x3b2314, tie: 0, bow: 0, hat: 0, cap: 0, jacket: FIG_JACKETS[0] }, o);
+  if(typeof o.shirt !== 'number') o.shirt = new THREE.Color(o.shirt).getHex();
   const g = new THREE.Group();
   const personBlob = addBlob(g, SHADOW_MAT_PERSON, 1.1, 0.02, 1); // contact shadow; group y is the floor surface, sitting only moves the body
-  const skinMat = new THREE.MeshStandardMaterial({ color: o.skin, roughness: 0.85 });
-  const shirtMat = o.shirtMat || new THREE.MeshStandardMaterial({ color: o.shirt, roughness: 0.9 });
-  const trouMat = new THREE.MeshStandardMaterial({ color: o.trousers, roughness: 0.95 });
-  figureFill(skinMat); figureFill(shirtMat); figureFill(trouMat, 0.15);
-  const shoeMat = new THREE.MeshStandardMaterial({ color: 0x15120f, roughness: 0.55 });
   const body = new THREE.Group(); g.add(body);
-  const torso = new THREE.Mesh(FIG_GEO.torso, shirtMat); torso.position.y = 0.98; torso.scale.z = 0.72; torso.castShadow = true; body.add(torso);
+  const torso = new THREE.Mesh(figTorso(o), FIG_MAT); torso.castShadow = true; body.add(torso);
   const head = new THREE.Group(); body.add(head);
-  const skull = new THREE.Mesh(FIG_GEO.head, skinMat); skull.position.y = 1.55; skull.castShadow = true; head.add(skull);
+  const skull = new THREE.Mesh(figHead(o), FIG_MAT); skull.castShadow = true; head.add(skull);
   const detail = []; // small parts that are dropped when the figure is far from the camera
-  const detail2 = [personBlob]; // hair, hats, ties, arms and the shadow: dropped beyond ~32 m (arms are added below)
-  [-0.075, 0.075].forEach(x => { const e = new THREE.Mesh(FIG_GEO.eye, FIG_EYE_MAT); e.position.set(x, 1.57, 0.195); detail.push(e); head.add(e); });
+  const detail2 = [personBlob]; // shadow and arms: dropped beyond ~32 m (arms are added below)
+  const face = new THREE.Mesh(FIG_FACE[o.glasses ? 1 : 0], FIG_MAT); detail.push(face); head.add(face);
+  const legHex = o.outfit === 'dress' ? o.skin : o.trousers;
   const mkLeg = x => {
     const l = new THREE.Group(); l.position.set(x, 0.66, 0);
-    const p = new THREE.Mesh(FIG_GEO.leg, trouMat); p.castShadow = true;
-    const sh = new THREE.Mesh(FIG_GEO.shoe, shoeMat); detail.push(sh); l.add(p, sh); g.add(l); return l;
+    const p = new THREE.Mesh(figLeg(legHex), FIG_MAT); p.castShadow = true;
+    l.add(p); g.add(l); return l;
   };
+  const long = o.outfit === 'jacket' || o.outfit === 'whale' || o.outfit === 'uniform';
+  const sleeve = (o.outfit === 'jacket' || o.outfit === 'whale') ? o.jacket : o.shirt;
+  const cuff = o.outfit === 'whale' ? FIG_GOLD : o.outfit === 'jacket' ? FIG_CREAM : 0;
   const mkArm = x => {
     const a = new THREE.Group(); a.position.set(x, 1.27, 0);
-    const hd = new THREE.Mesh(FIG_GEO.hand, skinMat); detail.push(hd); a.add(new THREE.Mesh(FIG_GEO.arm, shirtMat), hd);
+    a.add(new THREE.Mesh(figArm(sleeve, o.skin, !long, cuff), FIG_MAT));
     a.rotation.z = x < 0 ? -0.09 : 0.09; body.add(a); return a;
   };
   g.userData.rig = {
@@ -5875,16 +5979,9 @@ function guestPose(npc){
 }
 
 function makeStaffMesh(color){
-  const g = buildHumanoid({ shirt: color, trousers: 0x24262b, skin: pickOf(SKIN_TONES) });
-  const head = g.userData.rig.head;
-  const capMat = new THREE.MeshStandardMaterial({ color });
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.08, 10), capMat); cap.position.y = 1.68;
-  const peak = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.02, 0.14), capMat); peak.position.set(0, 1.66, 0.22);
-  head.add(cap, peak);
-  const tie = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.34, 0.03), new THREE.MeshStandardMaterial({ color: 0xe6e0d0 }));
-  tie.position.set(0, 1.12, 0.2); g.userData.rig.body.add(tie);
-  g.userData.rig.detail2.push(cap, peak, tie);
-  return g;
+  // Uniform in the same low-poly style: staff colour jacket, cream collar and tie, cap baked into the head.
+  const c = new THREE.Color(color).getHex();
+  return buildHumanoid({ shirt: c, outfit: 'uniform', cap: c, trousers: 0x24262b, skin: pickOf(SKIN_TONES) });
 }
 
 function hireStaff(key){
@@ -7519,47 +7616,35 @@ const EXIT_POINT = new THREE.Vector3(0, 0, ROOM_FRONT_Z - 2); // the archway/red
 // ---- Guest looks: every guest gets one; regulars keep theirs, so you can recognise them on the floor ----
 const SKIN_TONES = [0xf1c9a5, 0xe0ac82, 0xc68642, 0x8d5524, 0x5c3a21, 0xffdbac];
 const HAIR_COLORS = [0x1a1410, 0x3b2314, 0x6b4423, 0xb8862b, 0xc8c8c8, 0x8a1f1f, 0x0d0d0d];
-const HAIR_STYLES = ['bald', 'short', 'long', 'curly', 'bun'];
+const HAIR_STYLES = ['bald', 'short', 'long', 'curly', 'bun', 'bob'];
 const ACCESSORIES = ['none', 'none', 'hat', 'glasses', 'bowtie', 'hat'];
 function pickOf(a){ return a[Math.floor(Math.random() * a.length)]; }
 function makeLook(){
   return { skin: pickOf(SKIN_TONES), hair: pickOf(HAIR_COLORS), style: Math.floor(Math.random() * HAIR_STYLES.length), shirtHue: Math.random(), acc: pickOf(ACCESSORIES) };
 }
-function makeGuestMesh(tier=1, look=makeLook()){
-  // Guests share one jointed body; wallet tier (0=cautious..3=high roller) shows through shirt richness,
-  // a tie for the better-off and a small size bump. Skin, hair and accessory come from the guest's look.
-  const sat = 0.38 + tier*0.13;
-  const light = 0.45 + tier*0.03;
-  const shirtColor = new THREE.Color().setHSL(look.shirtHue, sat, light);
-  const shirtMat = new THREE.MeshStandardMaterial({ color: shirtColor, metalness: tier>=3?0.3:0, roughness: tier>=3?0.4:0.9 });
-  const trousers = FIG_TROUSERS[Math.floor(look.shirtHue * 997) % FIG_TROUSERS.length];
-  const g = buildHumanoid({ shirtMat, trousers, skin: look.skin });
-  const rig = g.userData.rig, head = rig.head;
-  const hairMat = figureFill(new THREE.MeshStandardMaterial({ color: look.hair, roughness: 0.9 }), 0.15);
+let figShirtHues = null;
+function figShirtIndex(h){ // palette entry nearest to a look's shirt hue
+  if(!figShirtHues) figShirtHues = FIG_SHIRTS.map(c => { const o = {}; new THREE.Color(c).getHSL(o); return o.h; });
+  let best = 0, bd = 9;
+  figShirtHues.forEach((x, i) => { const d = Math.abs(x - h), dd = Math.min(d, 1 - d); if(dd < bd){ bd = dd; best = i; } });
+  return best;
+}
+function makeGuestMesh(tier=1, look=makeLook(), whale=false){
+  // Guests share one jointed body; wallet tier (0=cautious..3=high roller) shows in the clothes: tees for
+  // the low tiers, jacket and tie (or a dress) for the better-off, gold trim for whales.
+  // Skin, hair and accessory come from the guest's look. Everything is pre-merged and cached (figTorso etc).
+  const si = figShirtIndex(look.shirtHue), shirt = FIG_SHIRTS[si];
   const style = HAIR_STYLES[look.style];
-  if(style !== 'bald'){
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.235, 10, 8, 0, Math.PI*2, 0, Math.PI*0.55), hairMat); cap.position.set(0, 1.56, -0.01); head.add(cap);
-    if(style === 'long'){ const back = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.45, 0.14), hairMat); back.position.set(0, 1.4, -0.15); head.add(back); }
-    if(style === 'curly'){ const fro = new THREE.Mesh(new THREE.SphereGeometry(0.31, 10, 8), hairMat); fro.position.set(0, 1.62, -0.03); head.add(fro); }
-    if(style === 'bun'){ const bun = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 8), hairMat); bun.position.set(0, 1.84, -0.03); head.add(bun); }
-  }
-  if(look.acc === 'hat'){
-    const hatMat = figureFill(new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL((look.shirtHue + 0.5) % 1, 0.5, 0.35) }));
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.03, 14), hatMat); brim.position.y = 1.73;
-    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.21, 0.2, 12), hatMat); crown.position.y = 1.83;
-    head.add(brim, crown);
-  } else if(look.acc === 'glasses'){
-    const gl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.04), new THREE.MeshStandardMaterial({ color: 0x111111 })); gl.position.set(0, 1.58, 0.2); head.add(gl);
-  } else if(look.acc === 'bowtie'){
-    const bt = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.05), new THREE.MeshStandardMaterial({ color: 0xc0202a })); bt.position.set(0, 1.3, 0.18); rig.body.add(bt);
-  }
-  if(tier >= 2 && look.acc !== 'bowtie'){
-    const tie = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.32, 0.03), new THREE.MeshStandardMaterial({ color: tier >= 3 ? 0xd4af37 : 0x7a1f2b, metalness: tier >= 3 ? 0.6 : 0, roughness: 0.5 }));
-    tie.position.set(0, 1.12, 0.2); rig.body.add(tie);
-  }
-  // hair, hats, glasses and ties are far-LOD details too (everything on the head/body beyond the basic parts)
-  head.children.forEach(c => { if(c.isMesh && c.geometry !== FIG_GEO.head && c.geometry !== FIG_GEO.eye) rig.detail2.push(c); });
-  rig.body.children.forEach(c => { if(c.isMesh && c.geometry !== FIG_GEO.torso) rig.detail2.push(c); });
+  const trousers = FIG_TROUSERS[Math.floor(look.shirtHue * 997) % FIG_TROUSERS.length];
+  const o = { skin: look.skin, trousers, shirt, style, hair: look.hair, outfit: 'tee', glasses: look.acc === 'glasses' };
+  const bow = look.acc === 'bowtie' ? 0xa0303a : 0;
+  if(whale){ o.outfit = 'whale'; o.jacket = 0x2b2520; o.tie = bow ? 0 : FIG_GOLD; o.bow = bow ? FIG_GOLD : 0; }
+  else if(tier >= 2){
+    if(style === 'long' || style === 'bun' || style === 'bob') o.outfit = 'dress';
+    else { o.outfit = 'jacket'; o.jacket = FIG_JACKETS[si % FIG_JACKETS.length]; o.tie = bow ? 0 : shirt; o.bow = bow; }
+  } else { if(tier >= 1 && (style === 'long' || style === 'bun' || style === 'bob')) o.outfit = 'dress'; o.bow = bow; }
+  if(look.acc === 'hat') o.hat = figShade(FIG_SHIRTS[(si + 4) % FIG_SHIRTS.length], 0.7);
+  const g = buildHumanoid(o);
   g.scale.setScalar(0.92 + tier*0.06);
   return g;
 }
@@ -7699,7 +7784,7 @@ function makeNPC(opts = {}){
   // A regular keeps the same personality across visits, same as they keep the same look.
   const archetype = opts.regular ? (opts.regular.archetype || (opts.regular.archetype = pickArchetype(tier, isWhale))) : pickArchetype(tier, isWhale);
   const look = opts.regular ? (opts.regular.look || (opts.regular.look = makeLook())) : makeLook();
-  const g = makeGuestMesh(tier, look);
+  const g = makeGuestMesh(tier, look, isWhale);
   scene.add(g);
   const walletLabel = makeWalletLabel(wallet, prefix, (opts.regular || opts.vip || isWhale) ? guestName : '');
   scene.add(walletLabel);
@@ -9742,11 +9827,11 @@ let inspectorTimer = 7 * DAY_LENGTH + Math.random() * DAY_LENGTH;
 let inspectorWarned = false;
 const inspectorLabelEl = document.getElementById('inspectorLabel');
 function makeInspectorMesh(){
-  const g = buildHumanoid({ shirt: 0x55555c, trousers: 0x3c3c42, skin: 0xd9b38c });
+  const g = buildHumanoid({ shirt: 0x55555c, outfit: 'jacket', jacket: 0x55555c, tie: 0x7a1f2b, trousers: 0x3c3c42, skin: 0xd9b38c });
   const rig = g.userData.rig;
   const hatMat = new THREE.MeshStandardMaterial({ color:0x1a1a22 });
-  const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.34,0.03,14), hatMat); hatBrim.position.y = 1.72;
-  const hatTop = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.22,0.2,12), hatMat); hatTop.position.y = 1.83;
+  const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.26,0.03,14), hatMat); hatBrim.position.y = 1.72;
+  const hatTop = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.17,0.17,12), hatMat); hatTop.position.y = 1.8;
   rig.head.add(hatBrim, hatTop);
   const clipboard = new THREE.Mesh(new THREE.BoxGeometry(0.28,0.36,0.03), new THREE.MeshStandardMaterial({ color:0xf0e6d2 }));
   clipboard.position.set(0, -0.5, 0.16); clipboard.rotation.x = 0.9;   // held in the raised right hand, kept upright
