@@ -2500,6 +2500,557 @@ function makeLabel(text){
 
 const machines = []; // {mesh, label, x, z, radius, name, type, cost, income}
 
+// ==== HOLDEM ENGINE START ====
+// No-Limit Texas Hold'em rules engine. Plain JS: no THREE, no DOM, no game globals.
+// Cards are ints 0..51: rank = c>>2 (0 = Two .. 12 = Ace), suit = c&3 (0 c, 1 d, 2 h, 3 s).
+// Chips are integers. The table object is plain data (JSON-serialisable; t.rng is a function and is dropped by
+// JSON.stringify, so re-attach t.rng after loading).
+const HE_RANKS_SING = ['Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Jack','Queen','King','Ace'];
+const HE_RANKS_PLUR = ['Twos','Threes','Fours','Fives','Sixes','Sevens','Eights','Nines','Tens','Jacks','Queens','Kings','Aces'];
+const HE_CAT_NAMES = ['High Card','Pair','Two Pair','Three of a Kind','Straight','Flush','Full House','Four of a Kind','Straight Flush'];
+const HE_RANK_CHARS = '23456789TJQKA';
+const HE_SUIT_CHARS = 'cdhs';
+
+function holdemCardName(c) { return HE_RANK_CHARS[c >> 2] + HE_SUIT_CHARS[c & 3]; }
+function holdemParseCard(s) { return HE_RANK_CHARS.indexOf(s[0]) * 4 + HE_SUIT_CHARS.indexOf(s[1]); }
+
+// ---- hand evaluation ----
+function HE_eval5(cs) {
+  const n = cs.length, cnt = new Array(13).fill(0);
+  let flush = n === 5;
+  for (let i = 0; i < n; i++) { cnt[cs[i] >> 2]++; if ((cs[i] & 3) !== (cs[0] & 3)) flush = false; }
+  const groups = [];
+  for (let r = 12; r >= 0; r--) if (cnt[r]) groups.push([cnt[r], r]);
+  groups.sort((a, b) => b[0] - a[0] || b[1] - a[1]);
+  let straight = false, high = -1;
+  if (n === 5 && groups.length === 5) {
+    if (groups[0][1] - groups[4][1] === 4) { straight = true; high = groups[0][1]; }
+    else if (groups[0][1] === 12 && groups[1][1] === 3) { straight = true; high = 3; } // wheel
+  }
+  let cat, tb;
+  if (straight && flush) { cat = 8; tb = [high]; }
+  else if (groups[0][0] === 4) { cat = 7; tb = groups.map(g => g[1]); }
+  else if (groups[0][0] === 3 && groups.length > 1 && groups[1][0] === 2) { cat = 6; tb = groups.map(g => g[1]); }
+  else if (flush) { cat = 5; tb = groups.map(g => g[1]); }
+  else if (straight) { cat = 4; tb = [high]; }
+  else if (groups[0][0] === 3) { cat = 3; tb = groups.map(g => g[1]); }
+  else if (groups[0][0] === 2 && groups.length > 1 && groups[1][0] === 2) { cat = 2; tb = groups.map(g => g[1]); }
+  else if (groups[0][0] === 2) { cat = 1; tb = groups.map(g => g[1]); }
+  else { cat = 0; tb = groups.map(g => g[1]); }
+  let score = cat * 371293; // 13^5
+  for (let i = 0; i < tb.length && i < 5; i++) score += tb[i] * Math.pow(13, 4 - i);
+  return { rank: cat, score, tb, high, cnt };
+}
+const HE_COMBO_CACHE = {};
+function HE_combos(n) {
+  if (HE_COMBO_CACHE[n]) return HE_COMBO_CACHE[n];
+  const out = [];
+  for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) for (let c = b + 1; c < n; c++)
+    for (let d = c + 1; d < n; d++) for (let e = d + 1; e < n; e++) out.push([a, b, c, d, e]);
+  return (HE_COMBO_CACHE[n] = out);
+}
+function HE_handName(e) {
+  const tb = e.tb;
+  switch (e.rank) {
+    case 0: return 'High Card, ' + HE_RANKS_SING[tb[0]];
+    case 1: return 'Pair of ' + HE_RANKS_PLUR[tb[0]];
+    case 2: return 'Two Pair, ' + HE_RANKS_PLUR[tb[0]] + ' and ' + HE_RANKS_PLUR[tb[1]];
+    case 3: return 'Three of a Kind, ' + HE_RANKS_PLUR[tb[0]];
+    case 4: return 'Straight, ' + HE_RANKS_SING[e.high] + ' high';
+    case 5: return 'Flush, ' + HE_RANKS_SING[tb[0]] + ' high';
+    case 6: return 'Full House, ' + HE_RANKS_PLUR[tb[0]] + ' over ' + HE_RANKS_PLUR[tb[1]];
+    case 7: return 'Four of a Kind, ' + HE_RANKS_PLUR[tb[0]];
+    default: return e.high === 12 ? 'Royal Flush' : 'Straight Flush, ' + HE_RANKS_SING[e.high] + ' high';
+  }
+}
+// Best 5 of 5..7 cards (3 or 4 cards are also accepted; they are scored as-is, used by the AI for board texture).
+function holdemEvaluate(cards) {
+  let best = null, bestCards = null;
+  if (cards.length <= 5) { best = HE_eval5(cards); bestCards = cards.slice(); }
+  else {
+    const combos = HE_combos(cards.length);
+    for (let k = 0; k < combos.length; k++) {
+      const cb = combos[k];
+      const sub = [cards[cb[0]], cards[cb[1]], cards[cb[2]], cards[cb[3]], cards[cb[4]]];
+      const e = HE_eval5(sub);
+      if (!best || e.score > best.score) { best = e; bestCards = sub; }
+    }
+  }
+  const cnt = best.cnt;
+  let sorted;
+  if (best.rank === 4 || best.rank === 8) {
+    sorted = bestCards.slice().sort((a, b) => (b >> 2) - (a >> 2));
+    if (best.high === 3) sorted.push(sorted.shift()); // wheel: ace plays low, goes last
+  } else {
+    sorted = bestCards.slice().sort((a, b) => (cnt[b >> 2] - cnt[a >> 2]) || ((b >> 2) - (a >> 2)) || ((b & 3) - (a & 3)));
+  }
+  return { rank: best.rank, score: best.score, name: HE_handName(best), best5: sorted, tb: best.tb };
+}
+
+// ---- table ----
+function holdemNewTable(o) {
+  o = o || {};
+  const n = Math.max(2, Math.min(6, (o.seats | 0) || 6));
+  const bb = Math.max(2, Math.floor(o.bb || 10));
+  const sb = Math.max(1, Math.floor(o.sb || bb / 2));
+  return {
+    kind: 'holdem', n, sb, bb,
+    rakePct: o.rakePct == null ? 0.05 : o.rakePct,
+    rakeCap: o.rakeCap == null ? bb * 5 : o.rakeCap,
+    rng: o.rng || Math.random,
+    seats: new Array(n).fill(null),
+    button: -1, street: 'idle', board: [], fullBoard: [], pot: 0, curBet: 0, minRaise: bb, toAct: -1,
+    handNo: 0, handRake: 0, rakeTotal: 0, preRaises: 0, limpers: 0, events: [], lastResult: null
+  };
+}
+function holdemSit(t, idx, pl) {
+  if (!(idx >= 0 && idx < t.n) || t.seats[idx] || !pl) return false;
+  const st = Math.floor(pl.stack);
+  if (!(st > 0)) return false;
+  t.seats[idx] = { id: pl.id, stack: st, isHuman: !!pl.isHuman, style: pl.style || 'regular',
+    bet: 0, total: 0, folded: true, allin: false, cards: [], acted: false, actedBet: 0, leaving: false, inHand: false };
+  return true;
+}
+// Between hands: removes the player now and returns {left:true, stack, id}. Mid-hand: marks the seat to leave
+// (auto-folds when its turn comes, removed when the hand ends) and returns {left:false, pending:true}.
+function holdemLeave(t, idx) {
+  const p = t.seats[idx];
+  if (!p) return null;
+  if ((t.street === 'idle' || t.street === 'done') || !p.inHand) {
+    t.seats[idx] = null;
+    return { left: true, stack: p.stack, id: p.id };
+  }
+  p.leaving = true;
+  return { left: false, pending: true };
+}
+function HE_ev(t, o) { o.i = t.events.length; o.hand = t.handNo; t.events.push(o); }
+function HE_nextSeat(t, from, pred) {
+  for (let k = 1; k <= t.n; k++) { const s = (((from + k) % t.n) + t.n) % t.n; if (pred(s)) return s; }
+  return -1;
+}
+function HE_canAct(p) { return !!p && p.inHand && !p.folded && !p.allin; }
+function HE_put(t, p, amt) {
+  amt = Math.min(amt, p.stack);
+  p.stack -= amt; p.bet += amt; p.total += amt; t.pot += amt;
+  if (p.stack === 0) p.allin = true;
+  return amt;
+}
+function HE_needs(t, s) {
+  const p = t.seats[s];
+  if (!HE_canAct(p)) return false;
+  if (p.bet < t.curBet) return true;
+  if (p.acted) return false;
+  for (let i = 0; i < t.n; i++) if (i !== s && HE_canAct(t.seats[i])) return true;
+  return false;
+}
+
+// rig (tests only): {holes:{seat:[c,c]}, board:[c,c,c,c,c]}; unspecified cards come from the shuffled deck.
+function holdemStartHand(t, rig) {
+  if (t.street !== 'idle' && t.street !== 'done') return false;
+  let count = 0;
+  for (let i = 0; i < t.n; i++) if (t.seats[i] && t.seats[i].stack > 0) count++;
+  if (count < 2) return false;
+  t.handNo++; t.events = []; t.board = []; t.pot = 0; t.handRake = 0; t.lastResult = null;
+  t.curBet = 0; t.minRaise = t.bb; t.preRaises = 0; t.limpers = 0; t.toAct = -1;
+  for (let i = 0; i < t.n; i++) {
+    const p = t.seats[i]; if (!p) continue;
+    p.inHand = p.stack > 0; p.folded = !p.inHand; p.bet = 0; p.total = 0; p.allin = false;
+    p.cards = []; p.acted = false; p.actedBet = 0;
+  }
+  const inH = s => !!t.seats[s] && t.seats[s].inHand;
+  t.button = HE_nextSeat(t, t.button, inH);
+  const heads = count === 2;
+  const sbSeat = heads ? t.button : HE_nextSeat(t, t.button, inH);
+  const bbSeat = HE_nextSeat(t, sbSeat, inH);
+  t.sbSeat = sbSeat; t.bbSeat = bbSeat;
+  // deck
+  rig = rig || {};
+  const used = {};
+  if (rig.holes) for (const k in rig.holes) rig.holes[k].forEach(c => { used[c] = 1; });
+  if (rig.board) rig.board.forEach(c => { used[c] = 1; });
+  const deck = [];
+  for (let c = 0; c < 52; c++) if (!used[c]) deck.push(c);
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(t.rng() * (i + 1)); const x = deck[i]; deck[i] = deck[j]; deck[j] = x;
+  }
+  HE_ev(t, { type: 'hand', handNo: t.handNo, button: t.button, sb: sbSeat, bb: bbSeat });
+  const order = [];
+  for (let k = 1; k <= t.n; k++) { const s = (t.button + k) % t.n; if (inH(s)) order.push(s); }
+  for (let r = 0; r < 2; r++) for (const s of order) {
+    const h = rig.holes && rig.holes[s];
+    t.seats[s].cards.push(h ? h[r] : deck.pop());
+  }
+  t.fullBoard = [];
+  for (let i = 0; i < 5; i++) t.fullBoard.push(rig.board && rig.board[i] != null ? rig.board[i] : deck.pop());
+  for (const s of order) HE_ev(t, { type: 'deal', seat: s, cards: t.seats[s].cards.slice() });
+  const sbp = t.seats[sbSeat], bbp = t.seats[bbSeat];
+  const a1 = HE_put(t, sbp, t.sb); HE_ev(t, { type: 'blind', seat: sbSeat, kind: 'sb', amount: a1 });
+  const a2 = HE_put(t, bbp, t.bb); HE_ev(t, { type: 'blind', seat: bbSeat, kind: 'bb', amount: a2 });
+  t.curBet = t.bb;
+  t.street = 'preflop';
+  HE_step(t, heads ? sbSeat : HE_nextSeat(t, bbSeat, () => true));
+  return true;
+}
+
+function HE_step(t, from) {
+  for (let guard = 0; guard < 20; guard++) {
+    let live = 0;
+    for (let i = 0; i < t.n; i++) { const p = t.seats[i]; if (p && p.inHand && !p.folded) live++; }
+    if (live <= 1) { HE_finish(t); return; }
+    const s = HE_nextSeat(t, from - 1, i => HE_needs(t, i));
+    if (s >= 0) {
+      t.toAct = s;
+      const p = t.seats[s];
+      if (p.leaving) holdemAct(t, { type: t.curBet > p.bet ? 'fold' : 'check' });
+      return;
+    }
+    if (t.street === 'river') { HE_finish(t); return; }
+    HE_nextStreet(t);
+    from = t.button + 1;
+  }
+}
+function HE_nextStreet(t) {
+  for (let i = 0; i < t.n; i++) { const p = t.seats[i]; if (p) { p.bet = 0; p.acted = false; p.actedBet = 0; } }
+  t.curBet = 0; t.minRaise = t.bb;
+  const order = ['preflop', 'flop', 'turn', 'river'];
+  t.street = order[order.indexOf(t.street) + 1];
+  const k = t.street === 'flop' ? 3 : 1;
+  const fresh = t.fullBoard.slice(t.board.length, t.board.length + k);
+  fresh.forEach(c => t.board.push(c));
+  HE_ev(t, { type: 'street', street: t.street, cards: fresh, board: t.board.slice(), pot: t.pot });
+}
+
+function holdemLegalActions(t) {
+  const s = t.toAct;
+  if (s < 0 || !t.seats[s] || (t.street !== 'preflop' && t.street !== 'flop' && t.street !== 'turn' && t.street !== 'river')) return null;
+  const p = t.seats[s];
+  const toCall = Math.min(Math.max(t.curBet - p.bet, 0), p.stack);
+  let others = 0;
+  for (let i = 0; i < t.n; i++) if (i !== s && HE_canAct(t.seats[i])) others++;
+  const locked = p.acted && (t.curBet - p.actedBet < t.minRaise);
+  const maxRaiseTo = p.bet + p.stack;
+  const canRaise = !locked && p.stack > toCall && others > 0 && maxRaiseTo > t.curBet;
+  return {
+    seat: s, canCheck: t.curBet <= p.bet, toCall, canRaise,
+    minRaiseTo: canRaise ? Math.min(t.curBet + t.minRaise, maxRaiseTo) : null,
+    maxRaiseTo: canRaise ? maxRaiseTo : null,
+    pot: t.pot, stack: p.stack, curBet: t.curBet, bet: p.bet, locked, noOpponents: others === 0
+  };
+}
+
+function holdemAct(t, a) {
+  const la = holdemLegalActions(t);
+  if (!la) return { ok: false, error: 'no action pending' };
+  const s = la.seat, p = t.seats[s], type = a && a.type;
+  const bad = m => ({ ok: false, error: m });
+  const evt = { type: 'action', seat: s, street: t.street, act: type };
+  if (type === 'fold') {
+    p.folded = true;
+  } else if (type === 'check') {
+    if (!la.canCheck) return bad('cannot check, there is a bet to call');
+    p.acted = true; p.actedBet = t.curBet;
+  } else if (type === 'call') {
+    if (la.canCheck) return bad('nothing to call');
+    evt.amount = HE_put(t, p, la.toCall);
+    p.acted = true; p.actedBet = t.curBet;
+    if (t.street === 'preflop' && t.preRaises === 0) t.limpers++;
+  } else if (type === 'raise' || type === 'allin') {
+    let to = type === 'allin' ? p.bet + p.stack : a.amount;
+    if (!Number.isInteger(to)) return bad('amount must be an integer');
+    // all-in with nobody left to call the extra: it is just a call
+    if (type === 'allin' && to > t.curBet && !la.canRaise && la.noOpponents) to = t.curBet;
+    if (to > t.curBet) {
+      if (!la.canRaise) return bad('raise not allowed');
+      if (to > la.maxRaiseTo) return bad('more than stack');
+      if (to < la.minRaiseTo && to !== la.maxRaiseTo) return bad('below minimum raise');
+    } else if (type === 'raise') return bad('raise must exceed current bet');
+    evt.amount = HE_put(t, p, to - p.bet);
+    const inc = to - t.curBet;
+    if (inc > 0) {
+      if (inc >= t.minRaise) {
+        t.minRaise = inc;
+        for (let i = 0; i < t.n; i++) if (i !== s && t.seats[i]) t.seats[i].acted = false;
+      }
+      t.curBet = to;
+      if (t.street === 'preflop') t.preRaises++;
+    }
+    p.acted = true; p.actedBet = t.curBet;
+    if (p.allin) evt.allin = true;
+  } else return bad('unknown action');
+  evt.to = p.bet; evt.pot = t.pot; evt.stack = p.stack;
+  HE_ev(t, evt);
+  HE_step(t, (s + 1) % t.n);
+  return { ok: true };
+}
+
+function HE_finish(t) {
+  t.street = 'done'; t.toAct = -1;
+  const inHand = [], live = [];
+  for (let i = 0; i < t.n; i++) { const p = t.seats[i]; if (p && p.inHand) { inHand.push(i); if (!p.folded) live.push(i); } }
+  // uncalled bet goes back
+  const arr = inHand.map(i => ({ i, tot: t.seats[i].total })).sort((a, b) => b.tot - a.tot);
+  let returned = 0;
+  if (arr.length > 1 && arr[0].tot > arr[1].tot) {
+    returned = arr[0].tot - arr[1].tot;
+    const p = t.seats[arr[0].i]; p.stack += returned; p.total -= returned; t.pot -= returned;
+    HE_ev(t, { type: 'return', seat: arr[0].i, amount: returned });
+  }
+  const showdown = live.length > 1;
+  const evals = {};
+  if (showdown) {
+    for (const s of live) evals[s] = holdemEvaluate(t.seats[s].cards.concat(t.board));
+    HE_ev(t, { type: 'showdown', seats: live.slice(), hands: live.map(s => ({ seat: s, cards: t.seats[s].cards.slice(), name: evals[s].name })) });
+  }
+  // pots (main + side)
+  const levels = [];
+  live.forEach(s => { const v = t.seats[s].total; if (levels.indexOf(v) < 0) levels.push(v); });
+  levels.sort((a, b) => a - b);
+  const pots = [];
+  let prev = 0;
+  levels.forEach((lv, k) => {
+    const cap = k === levels.length - 1 ? Infinity : lv;
+    let amt = 0;
+    inHand.forEach(s => { const tt = t.seats[s].total; amt += Math.max(0, Math.min(tt, cap) - Math.min(tt, prev)); });
+    prev = lv;
+    const elig = live.filter(s => t.seats[s].total >= lv);
+    if (amt > 0 && elig.length) pots.push({ amount: amt, eligible: elig });
+  });
+  const sawFlop = t.board.length >= 3;
+  let rake = 0;
+  const res = {};
+  const potInfo = [];
+  pots.forEach(pot => {
+    let winners = pot.eligible;
+    if (showdown) {
+      let bestScore = -1;
+      pot.eligible.forEach(s => { if (evals[s].score > bestScore) bestScore = evals[s].score; });
+      winners = pot.eligible.filter(s => evals[s].score === bestScore);
+    }
+    winners = winners.slice().sort((a, b) => ((a - t.button - 1 + 2 * t.n) % t.n) - ((b - t.button - 1 + 2 * t.n) % t.n));
+    const base = Math.floor(pot.amount / winners.length);
+    let rem = pot.amount - base * winners.length;
+    winners.forEach(s => {
+      const p = t.seats[s];
+      let share = base + (rem > 0 ? 1 : 0); if (rem > 0) rem--;
+      let r = 0;
+      if (sawFlop && !p.isHuman) {
+        r = Math.min(Math.floor(share * t.rakePct), Math.max(0, t.rakeCap - rake));
+      }
+      rake += r; share -= r;
+      p.stack += share;
+      if (!res[s]) res[s] = { seat: s, amount: 0, handName: showdown ? evals[s].name : null, best5: showdown ? evals[s].best5.slice() : null };
+      res[s].amount += share;
+    });
+    potInfo.push({ amount: pot.amount, winners: winners.slice() });
+  });
+  t.handRake = rake; t.rakeTotal += rake;
+  const shown = {};
+  if (showdown) live.forEach(s => { shown[s] = t.seats[s].cards.slice(); });
+  const winners = Object.keys(res).map(k => res[k]).sort((a, b) => a.seat - b.seat);
+  t.lastResult = { winners, rake, board: t.board.slice(), shown, pots: potInfo, returned, showdown, sawFlop };
+  t.pot = 0;
+  winners.forEach(w => HE_ev(t, { type: 'win', seat: w.seat, amount: w.amount, handName: w.handName, best5: w.best5 }));
+  for (let i = 0; i < t.n; i++) {
+    const p = t.seats[i];
+    if (p && p.leaving) { HE_ev(t, { type: 'leave', seat: i, id: p.id, stack: p.stack }); t.seats[i] = null; }
+  }
+}
+
+// ---- AI ----
+const HE_STYLES = {
+  tight:   { open: 1.0,  call: 1.0,  three: 1.5,  bluff: 0.02, aggr: 0.8, margin: 1.35, vbet: 0.50, szLo: 0.33, szHi: 0.55, limp: 0 },
+  regular: { open: 0,    call: 0,    three: 0,    bluff: 0.06, aggr: 1.0, margin: 1.15, vbet: 0.45, szLo: 0.40, szHi: 0.66, limp: 0 },
+  loose:   { open: -0.3, call: -0.6, three: -1.5, bluff: 0.12, aggr: 1.3, margin: 1.0,  vbet: 0.38, szLo: 0.50, szHi: 0.75, limp: 0.3 },
+  whale:   { open: -0.8, call: -2.3, three: 0.5,  bluff: 0.04, aggr: 0.7, margin: 0.7,  vbet: 0.55, szLo: 0.33, szHi: 0.50, limp: 0.8 }
+};
+function HE_chen(c1, c2) {
+  const r1 = c1 >> 2, r2 = c2 >> 2, hi = Math.max(r1, r2), lo = Math.min(r1, r2);
+  const pt = r => r === 12 ? 10 : r === 11 ? 8 : r === 10 ? 7 : r === 9 ? 6 : (r + 2) / 2;
+  let s = pt(hi);
+  if (r1 === r2) return Math.ceil(Math.max(5, s * 2));
+  if ((c1 & 3) === (c2 & 3)) s += 2;
+  const gap = hi - lo - 1;
+  s -= gap === 0 ? 0 : gap === 1 ? 1 : gap === 2 ? 2 : gap === 3 ? 4 : 5;
+  if (gap <= 1 && hi < 10) s += 1;
+  return Math.ceil(s);
+}
+// position: score 0..1 (1 = button), tag btn/sb/bb/mid, late flag
+function HE_pos(t, s) {
+  const ord = [];
+  for (let k = 0; k < t.n; k++) { const i = (t.button + k) % t.n; if (t.seats[i] && t.seats[i].inHand) ord.push(i); }
+  const idx = ord.indexOf(s), n = ord.length;
+  if (n === 2) return idx === 0 ? { score: 1, tag: 'btn', late: true } : { score: 0.5, tag: 'bb', late: false };
+  if (idx === 0) return { score: 1, tag: 'btn', late: true };
+  if (idx === 1) return { score: 0.45, tag: 'sb', late: false };
+  if (idx === 2) return { score: 0.5, tag: 'bb', late: false };
+  const m = n - 3, k = idx - 3;
+  return { score: 0.8 * (k + 1) / m, tag: 'mid', late: k === m - 1 };
+}
+function HE_straightOuts(ranks) {
+  const has = new Array(14).fill(false);
+  ranks.forEach(r => { has[r + 1] = true; if (r === 12) has[0] = true; });
+  const res = [];
+  for (let r = 0; r < 13; r++) {
+    if (has[r + 1]) continue;
+    const h = has.slice(); h[r + 1] = true; if (r === 12) h[0] = true;
+    for (let st = 0; st <= 9; st++) {
+      if (h[st] && h[st + 1] && h[st + 2] && h[st + 3] && h[st + 4]) { res.push(r); break; }
+    }
+  }
+  return res;
+}
+// made-hand strength 0..1 (rough equity against a typical betting range)
+function HE_strength(hole, board) {
+  const ev = holdemEvaluate(hole.concat(board)), bev = holdemEvaluate(board);
+  const hr = [hole[0] >> 2, hole[1] >> 2], br = board.map(c => c >> 2);
+  const topB = Math.max.apply(null, br);
+  const hiH = Math.max(hr[0], hr[1]);
+  if (ev.rank <= bev.rank) {
+    if (ev.rank >= 4) return 0.45;
+    return 0.1 + (hiH >= 11 ? 0.05 : hiH >= 9 ? 0.02 : 0);
+  }
+  switch (ev.rank) {
+    case 1: {
+      const pr = ev.tb[0], pocket = hr[0] === hr[1];
+      const sorted = br.slice().sort((a, b) => b - a);
+      if (pocket && pr > topB) return pr >= 10 ? 0.74 : 0.66;
+      if (pr === topB) { const kick = hr[0] === pr ? hr[1] : hr[0]; return 0.52 + (kick >= 10 ? 0.07 : kick >= 8 ? 0.03 : 0); }
+      if (pr >= (sorted[1] != null ? sorted[1] : 0)) return 0.34;
+      return 0.24;
+    }
+    case 2: { const both = hr.indexOf(ev.tb[0]) >= 0 && hr.indexOf(ev.tb[1]) >= 0; return both ? 0.74 : 0.52; }
+    case 3: return hr[0] === hr[1] ? 0.86 : 0.72;
+    case 4: return 0.86;
+    case 5: return hiH === 12 || hr.indexOf(12) >= 0 ? 0.9 : 0.86;
+    case 6: return 0.95;
+    case 7: return 0.98;
+    default: return 1;
+  }
+}
+function HE_draws(hole, board, str) {
+  if (board.length >= 5 || str >= 0.8) return { outs: 0, eq: 0 };
+  const all = hole.concat(board);
+  const sc = [0, 0, 0, 0], hs = [0, 0, 0, 0];
+  all.forEach(c => { sc[c & 3]++; });
+  hole.forEach(c => { hs[c & 3]++; });
+  let fd = false;
+  for (let s = 0; s < 4; s++) if (sc[s] === 4 && hs[s] >= 1) fd = true;
+  const ca = HE_straightOuts(all.map(c => c >> 2)), cb = HE_straightOuts(board.map(c => c >> 2));
+  const sOuts = ca.filter(r => cb.indexOf(r) < 0).length;
+  let outs = (fd ? 9 : 0) + sOuts * 4;
+  if (fd && sOuts) outs -= 2;
+  outs = Math.min(outs, 15);
+  const eq = board.length === 3 ? (outs * 4 - (outs > 8 ? outs - 8 : 0)) / 100 : outs * 2 / 100;
+  return { outs, eq };
+}
+function HE_scary(board) {
+  const sc = [0, 0, 0, 0]; board.forEach(c => { sc[c & 3]++; });
+  if (Math.max.apply(null, sc) >= 3) return true;
+  const rs = Array.from(new Set(board.map(c => c >> 2))).sort((a, b) => a - b);
+  if (rs.length < board.length) return true;
+  for (let i = 0; i + 2 < rs.length; i++) if (rs[i + 2] - rs[i] <= 4) return true;
+  return false;
+}
+function HE_fix(la, it, t) {
+  if (it.type === 'fold' || it.type === 'check') {
+    if (la.canCheck) return { type: 'check' };
+    return { type: 'fold' };
+  }
+  if (it.type === 'call') return la.canCheck ? { type: 'check' } : { type: 'call' };
+  // raise / allin
+  if (!la.canRaise) return la.canCheck ? { type: 'check' } : { type: 'call' };
+  let to = it.type === 'allin' ? la.maxRaiseTo : Math.round(Math.max(la.minRaiseTo, Math.min(it.to, la.maxRaiseTo)));
+  if (to >= la.maxRaiseTo || (la.maxRaiseTo - to) <= to * 0.35) return { type: 'allin', amount: la.maxRaiseTo };
+  return { type: 'raise', amount: to };
+}
+function HE_aiPre(t, p, la, st, rng, pos) {
+  const bb = t.bb, sc = HE_chen(p.cards[0], p.cards[1]);
+  const stackBB = (p.stack + p.bet) / bb;
+  const short = stackBB <= 14;
+  const raiseIt = to => (short ? { type: 'allin' } : { type: 'raise', to });
+  if (t.preRaises === 0) {
+    let thr = (pos.tag === 'sb' ? 5.7 : 7.2 - 3.5 * pos.score) + st.open;
+    if (pos.tag === 'bb') thr = 5.2 + st.open;
+    if (sc >= thr) return raiseIt(bb * (2.5 + rng() * 0.5) + t.limpers * bb);
+    if (la.canCheck) return { type: 'check' };
+    if (pos.tag === 'sb' && sc >= thr - 1.5) return { type: 'call' };
+    if (st.limp > 0 && sc >= thr - 3 && rng() < st.limp) return { type: 'call' };
+    return { type: 'fold' };
+  }
+  const rBB = t.curBet / bb;
+  if (t.preRaises === 1) {
+    const three = 12.5 + st.three;
+    const callThr = 7.4 - 1.2 * pos.score + st.call + Math.max(0, rBB - 3) * 0.5 - (pos.tag === 'bb' ? 1.5 : 0);
+    if (sc >= three) return raiseIt(t.curBet * (pos.score >= 0.9 ? 3 : 3.5) + t.limpers * bb);
+    if (sc >= 7 && sc < callThr && pos.late && rng() < st.bluff * 0.6) return raiseIt(t.curBet * 3);
+    if (short && sc >= callThr - 1 && sc >= 8) return { type: 'allin' };
+    if (sc >= callThr) return { type: 'call' };
+    return { type: 'fold' };
+  }
+  const four = 14.5 + st.three * 0.5;
+  const callThr3 = 11.5 + st.call * 0.6 + (t.preRaises - 2);
+  if (sc >= four) return raiseIt(t.curBet * 2.3);
+  if (sc >= callThr3) return { type: 'call' };
+  return { type: 'fold' };
+}
+function HE_aiPost(t, p, la, st, rng, pos) {
+  const board = t.board, pot = t.pot;
+  let opp = 0;
+  for (let i = 0; i < t.n; i++) if (i !== la.seat && t.seats[i] && t.seats[i].inHand && !t.seats[i].folded) opp++;
+  const str = HE_strength(p.cards, board);
+  const dr = HE_draws(p.cards, board, str);
+  const scary = HE_scary(board);
+  const multi = Math.max(0, opp - 1) * 0.04;
+  const sizeTo = frac => ({ type: 'raise', to: la.curBet + Math.max(t.bb, Math.round(frac * (pot + la.toCall))) });
+  if (la.canCheck) {
+    const vt = st.vbet + multi;
+    if (str >= vt) {
+      const pr = str >= 0.7 ? 0.95 : Math.min(0.9, 0.75 * st.aggr);
+      if (rng() < pr) return sizeTo(str >= 0.8 ? 0.6 + rng() * 0.15 : st.szLo + rng() * (st.szHi - st.szLo));
+    }
+    if (dr.eq >= 0.28 && rng() < 0.45 * st.aggr) return sizeTo(0.4 + rng() * 0.15);
+    if (str < 0.3 && opp <= 2) {
+      const br = st.bluff * (1 + (pos.late ? 0.8 : 0) + (scary ? 0.8 : 0)) * (board.length === 5 ? 0.7 : 1);
+      if (rng() < br) return sizeTo(0.33 + rng() * 0.17);
+    }
+    return { type: 'check' };
+  }
+  const odds = la.toCall / (pot + la.toCall);
+  if (str >= 0.8 && rng() < 0.55 * st.aggr) return sizeTo(0.66 + rng() * 0.24);
+  if (dr.eq >= 0.3 && board.length < 5 && rng() < 0.15 * st.aggr) return sizeTo(0.7);
+  if (str < 0.3 && opp <= 2 && rng() < st.bluff * 0.25) return sizeTo(0.7);
+  const eq = Math.max(str * 0.92 - multi, dr.eq);
+  if (eq >= odds * st.margin) return { type: 'call' };
+  if (st.margin < 1 && str >= 0.2 && odds < 0.4 && rng() < 0.5) return { type: 'call' };
+  return { type: 'fold' };
+}
+function HE_think(t, la, act, rng) {
+  const p = t.seats[la.seat];
+  let amt = 0;
+  if (act.type === 'call') amt = la.toCall;
+  else if (act.type === 'raise') amt = act.amount - p.bet;
+  else if (act.type === 'allin') amt = act.amount - p.bet;
+  const big = Math.min(1, amt / Math.max(t.pot, t.bb * 6));
+  let th = 0.6 + rng() * 0.5 + big * (0.9 + rng() * 0.4);
+  if (t.street !== 'preflop') th += 0.2;
+  else if (act.type === 'fold' && la.toCall <= t.bb) th = 0.6 + rng() * 0.3;
+  return Math.round(Math.max(0.6, Math.min(2.5, th)) * 100) / 100;
+}
+// Returns {type, amount?, think} for the seat to act (null if none). Always legal for holdemAct.
+function holdemAiDecide(t, rng) {
+  rng = rng || t.rng;
+  const la = holdemLegalActions(t);
+  if (!la) return null;
+  const p = t.seats[la.seat];
+  const st = HE_STYLES[p.style] || HE_STYLES.regular;
+  const pos = HE_pos(t, la.seat);
+  const it = t.street === 'preflop' ? HE_aiPre(t, p, la, st, rng, pos) : HE_aiPost(t, p, la, st, rng, pos);
+  const act = HE_fix(la, it, t);
+  act.think = HE_think(t, la, act, rng);
+  return act;
+}
+// ==== HOLDEM ENGINE END ====
+
 const BUILD_ITEMS = {
   slot:      { name:'Slot Machine',     cost:150,  income:3,  radius:0.7,  category:'gambling',
     desc:'Fully random - adjustable payout. Under 80% guests can tell, and that risks a scandal.' },
