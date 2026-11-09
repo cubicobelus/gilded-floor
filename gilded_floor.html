@@ -4,7 +4,10 @@
 <meta charset="UTF-8">
 <title>Gilded Floor — 3D Walkthrough Concept</title>
 <style>
-  html,body{margin:0;padding:0;overflow:hidden;background:#0c0c0c;font-family:Arial, sans-serif;}
+  html,body{margin:0;padding:0;overflow:hidden;background:#0c0c0c;font-family:"Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;}
+  /* Serif for titles only; system fonts, nothing downloaded. Inline styles never set font-family so this wins. */
+  h1,h2,h3,#startOverlay h1{font-family:Georgia, "Palatino Linotype", "Book Antiqua", serif;}
+  #hud b{font-variant-numeric:tabular-nums;}
   canvas{display:block;}
   #hud{
     position:fixed; top:14px; left:14px; color:#f0e6d2;
@@ -19,16 +22,44 @@
     box-shadow:0 0 3px rgba(0,0,0,0.6);
     pointer-events:none;
   }
-  .sideTab{
-    background:rgba(18,36,29,0.9); border:1px solid #c9a227; color:#f0e6d2;
-    padding:10px 8px; font-size:11px; text-align:center; cursor:pointer;
-    line-height:1.5; min-width:64px;
+  /* Shared look for HUD buttons/panels: 6px radius, soft gradient, faint gold hairline, gold on hover/active. */
+  .sideTab, .hotbarSlot, #settingsBtn, #helpBtn, #minimap, #checklist, #unlockHint,
+  #staffPanel, #statsPanel, #helpPanel, #machineConfigPanel, #keybindPanel, #settingsPanel, #riggingPanel,
+  #hotelPanel, #roomPanel, #buildingPanel, #regularsPanel, #clubPanel, #devPanel{
+    background:linear-gradient(180deg, rgba(22,42,34,0.94), rgba(12,26,20,0.94)) !important;
+    border:1px solid rgba(201,162,39,0.55) !important; border-radius:6px !important;
+    box-shadow:0 2px 8px rgba(0,0,0,0.45);
   }
+  #checklist, #unlockHint{ border-color:rgba(201,162,39,0.35) !important; }
+  .sideTab:hover, .hotbarSlot:hover, #settingsBtn:hover, #helpBtn:hover, #minimap:hover{ border-color:#c9a227 !important; }
+  #modeBtn{ background:linear-gradient(180deg,#d6b13a,#b8921f) !important; border-radius:6px !important; box-shadow:0 2px 8px rgba(0,0,0,0.45); }
+  #modeBtn:hover{ background:linear-gradient(180deg,#e6c34a,#c9a227) !important; }
+  .hotbarSlot.active, .hotbarSlot.active:hover{ border-color:#e6c34a !important; background:linear-gradient(180deg, rgba(201,162,39,0.3), rgba(201,162,39,0.14)) !important; }
+  #settingsBtn, #helpBtn{ display:inline-flex; align-items:center; gap:6px; }
+  /* Icons come from one SVG sprite (see #iconSprite); stroke follows the text colour. */
+  .ic{ width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; flex:none; vertical-align:middle; }
+  #settingsBtn .ic, #helpBtn .ic{ width:16px; height:16px; color:#e6c34a; }
+  .sideTab{
+    color:#f0e6d2; padding:clamp(2px,0.8vh,9px) 4px; font-size:clamp(9px,1.4vh,11px); text-align:center; cursor:pointer;
+    line-height:1.25; width:68px; box-sizing:border-box; min-height:0; flex:1 1 0; max-height:72px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden;
+  }
+  .sideTab .ic{ color:#e6c34a; width:clamp(16px,2.4vh,20px); height:clamp(16px,2.4vh,20px); }
+  .sideTab.locked .ic{ color:inherit; }
+  .sideTab:hover:not(.locked){ background:linear-gradient(180deg, rgba(40,70,55,0.96), rgba(22,42,34,0.96)) !important; }
+  .sideTab.locked:hover{ border-color:rgba(90,90,74,0.8) !important; }
+  .sideTab .tabName{ white-space:normal; line-height:1.1; font-size:min(1em,10px); }
+  /* Very short windows: icon + key only (the title attribute keeps the name). */
+  @media (max-height:680px){ .sideTab .tabName{ display:none; } .sideTab{ gap:1px; } }
   /* Still visible so a new player can see there's more to the game, but dimmed and non-interactive
      (see tabLockedClick) until the requirement's met - same "locked" language as .itemCard.locked. */
-  .sideTab.locked{ opacity:0.4; cursor:default; border-color:#5a5a4a; }
-  #sideTabsLeft .sideTab{ border-left:none; border-radius:0 6px 6px 0; }
-  .sideTabKey{ color:#9fb3a8; font-size:9px; }
+  .sideTab.locked{ opacity:0.4; cursor:default; border-color:rgba(90,90,74,0.8) !important; }
+  #sideTabsLeft .sideTab{ border-left:none !important; border-radius:0 6px 6px 0 !important; margin:1px 0; }
+  /* One column for the checklist and the next-tab hint so they stack instead of overlapping. */
+  #tipStack{ position:fixed; left:84px; bottom:60px; z-index:5; display:flex; flex-direction:column; gap:6px; pointer-events:none; }
+  #tipStack > div{ pointer-events:auto; position:static !important; }
+  #eventLog{ max-height:calc(100vh - 360px); overflow:hidden; }
+  .sideTabKey{ color:#9fb3a8; font-size:9px; line-height:1; }
   .itemGrid{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
   @media (max-width:700px){ .itemGrid{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
   /* flex column so the select button/lock note lands on the same baseline across a row regardless of
@@ -85,7 +116,7 @@
     display:flex; align-items:center; justify-content:center;
     flex-direction:column; color:#f0e6d2; z-index:10; cursor:pointer;
   }
-  #startOverlay h1{color:#e6c34a; font-weight:normal; letter-spacing:1px; margin-bottom:6px;}
+  #startOverlay h1{font-family:Georgia, "Palatino Linotype", "Book Antiqua", serif; color:#e6c34a; font-weight:normal; letter-spacing:1px; margin-bottom:6px;}
   #startOverlay p{margin:3px 0; font-size:14px; color:#c8bfa9;}
   #devPanel{
     position:fixed; top:14px; right:14px; background:rgba(18,36,29,0.9);
@@ -108,10 +139,10 @@
   <p style="color:#9fb3a8;">Press Tab anytime to toggle Look Mode / UI Mode · ` for dev tools</p>
 </div>
 
+<svg id="iconSprite" width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="i-build" viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-2 2-5-5z"/><path d="M12.5 6.5L5 14"/><path d="M5 14l-1.5 5.5L9 18l7.5-7.5"/></symbol><symbol id="i-club" viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="2.6"/><path d="M3.5 18c0-3 2.2-5 5-5s5 2 5 5"/><circle cx="16.5" cy="9" r="2.1"/><path d="M15 13.2c3.2-.4 5.5 1.3 5.5 4.3"/></symbol><symbol id="i-staff" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5.5 20c0-3.8 2.8-6 6.5-6s6.5 2.2 6.5 6z"/><path d="M12 14.5l-1.3 1.8 1.3 3.2 1.3-3.2z"/></symbol><symbol id="i-stats" viewBox="0 0 24 24"><path d="M4 20h16"/><rect x="5.5" y="12" width="3" height="8" rx=".6"/><rect x="10.5" y="5" width="3" height="15" rx=".6"/><rect x="15.5" y="9" width="3" height="11" rx=".6"/></symbol><symbol id="i-building" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="1"/><path d="M8.5 7.5h1.5M14 7.5h1.5M8.5 11h1.5M14 11h1.5"/><path d="M10 20.5v-4.5h4v4.5"/></symbol><symbol id="i-regulars" viewBox="0 0 24 24"><path d="M12 3.5l2.5 5.3 5.7.7-4.2 4 1.1 5.7L12 16.4 6.9 19.2 8 13.5l-4.2-4 5.7-.7z"/></symbol><symbol id="i-rigging" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/></symbol><symbol id="i-hotel" viewBox="0 0 24 24"><path d="M12 5v1.5"/><path d="M5 17a7 7 0 0 1 14 0z"/><path d="M3.5 19.5h17"/><path d="M10.5 5h3"/></symbol><symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.3 9.4a2.8 2.8 0 0 1 5.4.9c0 1.9-2.7 2.3-2.7 4"/><circle cx="12" cy="17.3" r=".6"/></symbol><symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="11" width="13" height="9" rx="1.8"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></symbol></defs></svg>
 <div id="hud">
   Cash: <b id="cashDisp">$2,000</b> · Day <b id="dayVal">1</b> · <b id="clockLabel">8:00 AM</b> <span id="peakLabel" style="color:#e6c34a;"></span> <span id="inspectorLabel" style="color:#ffb347;"></span> <span id="parkingLabel" style="color:#ff9f7a;"></span><br>
-  Mode: <b id="modeIndicator">UI Mode</b><br>
-  <span style="font-size:11px;color:#9fb3a8;">build, sell, and watch guests gamble</span>
+  Mode: <b id="modeIndicator">UI Mode</b>
 </div>
 <div id="closedBanner" style="display:none;position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(122,31,43,0.92);border:1px solid #e08a8a;border-radius:6px;padding:6px 22px;color:#f0e6d2;font-weight:bold;letter-spacing:2px;z-index:7;pointer-events:none;">CASINO CLOSED</div>
 <div id="debtBox" style="display:none;position:fixed;top:52px;left:50%;transform:translateX(-50%);background:rgba(60,20,26,0.95);border:1px solid #e08a8a;border-radius:6px;padding:6px 12px;color:#f0e6d2;font-size:12px;z-index:7;text-align:center;max-width:460px;">
@@ -137,8 +168,8 @@
   <button class="hotbarSlot speedBtn" data-speed="4" style="min-width:40px;">4x</button>
 </div>
 <button id="modeBtn" style="position:fixed;bottom:14px;right:14px;background:#c9a227;border:none;color:#1a1410;font-weight:bold;padding:8px 14px;border-radius:6px;cursor:pointer;z-index:6;">Toggle Look Mode (Tab)</button>
-<button id="settingsBtn" style="position:fixed;top:14px;right:14px;background:#12241d;border:1px solid #c9a227;color:#f0e6d2;font-weight:bold;padding:8px 12px;border-radius:6px;cursor:pointer;z-index:6;">⚙ Settings</button>
-<button id="helpBtn" style="position:fixed;top:14px;right:118px;background:#12241d;border:1px solid #c9a227;color:#f0e6d2;font-weight:bold;padding:8px 12px;border-radius:6px;cursor:pointer;z-index:6;">❓ Help</button>
+<button id="settingsBtn" style="position:fixed;top:14px;right:14px;background:#12241d;border:1px solid #c9a227;color:#f0e6d2;font-weight:bold;padding:8px 12px;border-radius:6px;cursor:pointer;z-index:6;"><svg class="ic"><use href="#i-gear"/></svg>Settings</button>
+<button id="helpBtn" style="position:fixed;top:14px;right:118px;background:#12241d;border:1px solid #c9a227;color:#f0e6d2;font-weight:bold;padding:8px 12px;border-radius:6px;cursor:pointer;z-index:6;"><svg class="ic"><use href="#i-help"/></svg>Help</button>
 <div id="staffPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.95);border:1px solid #c9a227;border-radius:6px;padding:12px 14px;color:#f0e6d2;font-size:12px;display:none;z-index:6;width:min(520px,94vw);max-height:90vh;overflow-y:auto;box-sizing:border-box;overscroll-behavior:contain;">
   <h3 style="margin:0 0 8px 0;color:#e6c34a;font-size:13px;font-weight:normal;">Staff</h3>
   <div id="staffList"></div>
@@ -268,7 +299,7 @@
   <input type="file" id="importFile" accept=".json,application/json" style="display:none;">
   <button id="resetBtn" class="hotbarSlot" style="width:100%;border-color:#7a1f2b;color:#e08a8a;">🔄 Reset</button>
 </div>
-<style>body.photoMode #checklist, body.photoMode #hud, body.photoMode #eventLog, body.photoMode #speedControls, body.photoMode #modeBtn, body.photoMode #settingsBtn, body.photoMode #helpBtn, body.photoMode #sideTabsLeft, body.photoMode #minimap, body.photoMode #hint, body.photoMode #unlockHint, body.photoMode #closedBanner, body.photoMode #debtBox, body.photoMode #sellProgress, body.photoMode #blackjackPrompt, body.photoMode #crosshair, body.photoMode #inspectorLabel, body.photoMode #unlockPopup, body.photoMode #brokenIndicator { display:none !important; }</style>
+<style>body.photoMode #tipStack, body.photoMode #checklist, body.photoMode #hud, body.photoMode #eventLog, body.photoMode #speedControls, body.photoMode #modeBtn, body.photoMode #settingsBtn, body.photoMode #helpBtn, body.photoMode #sideTabsLeft, body.photoMode #minimap, body.photoMode #hint, body.photoMode #unlockHint, body.photoMode #closedBanner, body.photoMode #debtBox, body.photoMode #sellProgress, body.photoMode #blackjackPrompt, body.photoMode #crosshair, body.photoMode #inspectorLabel, body.photoMode #unlockPopup, body.photoMode #brokenIndicator { display:none !important; }</style>
 <div id="crosshair" style="display:none;"></div>
 <div id="photoHint" style="display:none;position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:9;color:#f0e6d2;background:rgba(10,14,12,0.55);border-radius:6px;padding:5px 14px;font-size:11px;letter-spacing:1px;">PHOTO MODE - WASD + Space/Ctrl to fly, P to exit</div>
 <div id="unlockPopup" style="display:none;position:fixed;top:68px;left:50%;transform:translateX(-50%);background:rgba(18,36,29,0.96);border:1px solid #c9a227;border-radius:8px;padding:10px 18px;color:#f0e6d2;font-size:13px;z-index:10;max-width:min(440px,88vw);text-align:center;box-shadow:0 4px 18px rgba(0,0,0,0.4);cursor:pointer;"><div id="unlockPopupText"></div><div style="font-size:9px;color:#9fb3a8;margin-top:3px;">click to dismiss</div></div>
@@ -285,18 +316,20 @@
 <!-- Bounded top+bottom (not a pure vertical-center) and centered within that band via justify-content:
      with all 8 tabs always shown now (v85), a pure center-of-viewport list got tall enough that its
      bottom end (Hotel) could reach down into the bottom-left checklist/tip boxes and get drawn over. -->
-<div id="sideTabsLeft" style="position:fixed; top:70px; bottom:180px; left:0; display:flex; flex-direction:column; justify-content:center; z-index:6;">
-  <button id="tabBuild" class="sideTab">🛠<br>Build<br><span class="sideTabKey">[1]</span></button>
-  <button id="tabClub" class="sideTab locked">💬<br>Club &amp; Guests<br><span class="sideTabKey">[2]</span></button>
-  <button id="tabStaff" class="sideTab locked">👤<br>Staff<br><span class="sideTabKey">[3]</span></button>
-  <button id="tabStats" class="sideTab locked">📊<br>Stats<br><span class="sideTabKey">[4]</span></button>
-  <button id="tabBuilding" class="sideTab locked">🏗<br>Building<br><span class="sideTabKey">[5]</span></button>
-  <button id="tabRegulars" class="sideTab locked">⭐<br>Regulars<br><span class="sideTabKey">[6]</span></button>
-  <button id="tabRigging" class="sideTab locked">🎲<br>Rigging<br><span class="sideTabKey">[7]</span></button>
-  <button id="tabHotel" class="sideTab locked">🛎<br>Hotel<br><span class="sideTabKey">[8]</span></button>
+<div id="sideTabsLeft" style="position:fixed; top:66px; bottom:62px; left:0; display:flex; flex-direction:column; justify-content:center; z-index:6;">
+  <button id="tabBuild" title="Build" class="sideTab"><svg class="ic"><use href="#i-build"/></svg><span class="tabName">Build</span><span class="sideTabKey">[1]</span></button>
+  <button id="tabClub" title="Club &amp; Guests" class="sideTab locked"><svg class="ic"><use href="#i-club"/></svg><span class="tabName">Club &amp; Guests</span><span class="sideTabKey">[2]</span></button>
+  <button id="tabStaff" title="Staff" class="sideTab locked"><svg class="ic"><use href="#i-staff"/></svg><span class="tabName">Staff</span><span class="sideTabKey">[3]</span></button>
+  <button id="tabStats" title="Stats" class="sideTab locked"><svg class="ic"><use href="#i-stats"/></svg><span class="tabName">Stats</span><span class="sideTabKey">[4]</span></button>
+  <button id="tabBuilding" title="Building" class="sideTab locked"><svg class="ic"><use href="#i-building"/></svg><span class="tabName">Building</span><span class="sideTabKey">[5]</span></button>
+  <button id="tabRegulars" title="Regulars" class="sideTab locked"><svg class="ic"><use href="#i-regulars"/></svg><span class="tabName">Regulars</span><span class="sideTabKey">[6]</span></button>
+  <button id="tabRigging" title="Rigging" class="sideTab locked"><svg class="ic"><use href="#i-rigging"/></svg><span class="tabName">Rigging</span><span class="sideTabKey">[7]</span></button>
+  <button id="tabHotel" title="Hotel" class="sideTab locked"><svg class="ic"><use href="#i-hotel"/></svg><span class="tabName">Hotel</span><span class="sideTabKey">[8]</span></button>
 </div>
-<div id="checklist" style="position:fixed;left:8px;bottom:98px;z-index:5;width:212px;font-size:11px;color:#cfd9d0;background:rgba(18,36,29,0.88);border:1px solid #2a4a3c;border-radius:6px;padding:6px 8px;display:none;"></div>
-<div id="unlockHint" style="position:fixed;left:8px;bottom:58px;z-index:5;max-width:210px;font-size:11px;color:#cfd9d0;background:rgba(18,36,29,0.8);border:1px solid #2a4a3c;border-radius:6px;padding:4px 8px;display:none;"></div>
+<div id="tipStack">
+<div id="checklist" style="width:212px;font-size:11px;color:#cfd9d0;background:rgba(18,36,29,0.88);border:1px solid #2a4a3c;border-radius:6px;padding:6px 8px;display:none;"></div>
+<div id="unlockHint" style="max-width:210px;font-size:11px;color:#cfd9d0;background:rgba(18,36,29,0.8);border:1px solid #2a4a3c;border-radius:6px;padding:4px 8px;display:none;"></div>
+</div>
 <div id="riggingPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:14px 16px;color:#f0e6d2;font-size:12px;display:none;z-index:8;width:min(720px,94vw);max-height:90vh;overflow-y:auto;"></div>
 <div id="hotelPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:14px 16px;color:#f0e6d2;font-size:12px;display:none;z-index:8;width:min(860px,95vw);max-height:90vh;overflow-y:auto;box-sizing:border-box;"></div>
 <div id="roomPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:14px 16px;color:#f0e6d2;font-size:12px;display:none;z-index:8;width:min(620px,94vw);max-height:90vh;overflow-y:auto;box-sizing:border-box;"></div>
@@ -6299,13 +6332,15 @@ function setBuildType(key){
 }
 
 // ---------------- Progressive tabs: a new casino only sees Machines, Amenities and Decor ----------------
+// Same sprite symbols as the static markup (#iconSprite); tabs are re-rendered from JS on unlock.
+const ICON_HTML = k => `<svg class="ic"><use href="#i-${k}"/></svg>`;
 const TAB_UNLOCKS = [
   // Guest complaints are meant to be how a new player learns what the floor needs, not a reward for
   // spending on the Player's Club first - unlocks alongside Restrooms (same $250 lifetime revenue
   // threshold, read directly off isUnlocked so the two can never drift apart), well before the Player's
   // Club Desk is even affordable. Buying into the Club itself still happens from inside the tab
   // (upgradeClub, still gated on owning the desk) - only *seeing* complaints doesn't need a purchase.
-  { id:'tabClub',     name:'Club & Guests', key:'2', icon:'💬', need:'earn $250 in lifetime revenue',     ok: ()=> isUnlocked('restroom') },
+  { id:'tabClub',     name:'Club & Guests', key:'2', icon:ICON_HTML('club'), need:'earn $250 in lifetime revenue',     ok: ()=> isUnlocked('restroom') },
   // Staff and Regulars used to gate on something unrelated to revenue (machine count / having a happy
   // regular) - two fully independent systems occasionally finishing at the exact same moment purely by
   // coincidence (reported twice: Rigging+Regulars together, and separately 3 machines racing ahead of
@@ -6313,17 +6348,17 @@ const TAB_UNLOCKS = [
   // structural - it needs an upper floor to exist, not a dollar figure) now reads the same single,
   // strictly-increasing, monotonic lifetimeRevenue() ladder, so two different tabs landing on the exact
   // same instant is no longer something that can just happen by chance the way it could before.
-  { id:'tabStaff',    name:'Staff',    key:'3', icon:'👤', need:'earn $500 in lifetime revenue',                     ok: ()=> lifetimeRevenue() >= 500 },
-  { id:'tabStats',    name:'Stats',    key:'4', icon:'📊', need:'earn $750 in lifetime revenue',                     ok: ()=> lifetimeRevenue() >= 750 },
-  { id:'tabBuilding', name:'Building', key:'5', icon:'🏗', need:'earn $2,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 2000 },
+  { id:'tabStaff',    name:'Staff',    key:'3', icon:ICON_HTML('staff'), need:'earn $500 in lifetime revenue',                     ok: ()=> lifetimeRevenue() >= 500 },
+  { id:'tabStats',    name:'Stats',    key:'4', icon:ICON_HTML('stats'), need:'earn $750 in lifetime revenue',                     ok: ()=> lifetimeRevenue() >= 750 },
+  { id:'tabBuilding', name:'Building', key:'5', icon:ICON_HTML('building'), need:'earn $2,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 2000 },
   // Regulars now unlocks before Rigging (was the other way around) - a new player used to get the
   // temptation to cheat before ever being introduced to the loyalty system a rigged machine actually
   // puts at risk (a caught-out regular's affinity takes the hit same as anyone's mood does). Understand
   // what you stand to lose before you're handed the tool that risks it, same reasoning as Club-before-
   // Staff above. Key numbers and thresholds swapped together so key order still tracks difficulty.
-  { id:'tabRegulars', name:'Regulars', key:'6', icon:'⭐', need:'earn $3,500 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 3500 },
-  { id:'tabRigging',  name:'Rigging',  key:'7', icon:'🎲', need:'earn $5,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 5000 },
-  { id:'tabHotel',    name:'Hotel',    key:'8', icon:'🛎', need:'build an upper floor (Building tab)',               ok: ()=> upperBuilt },
+  { id:'tabRegulars', name:'Regulars', key:'6', icon:ICON_HTML('regulars'), need:'earn $3,500 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 3500 },
+  { id:'tabRigging',  name:'Rigging',  key:'7', icon:ICON_HTML('rigging'), need:'earn $5,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 5000 },
+  { id:'tabHotel',    name:'Hotel',    key:'8', icon:ICON_HTML('hotel'), need:'build an upper floor (Building tab)',               ok: ()=> upperBuilt },
 ];let unlockedTabs = new Set(['tabBuild']);
 function tabUnlocked(id){ return (typeof devUnlockAll !== 'undefined' && devUnlockAll) || sandbox || unlockedTabs.has(id); }
 const unlockHintEl = document.getElementById('unlockHint');
@@ -6333,7 +6368,7 @@ function applyTabVisibility(){
   TAB_UNLOCKS.forEach(u => {
     const btn = document.getElementById(u.id), unlocked = tabUnlocked(u.id);
     btn.classList.toggle('locked', !unlocked);
-    btn.innerHTML = `${unlocked ? u.icon : '\u{1F512}'}<br>${u.name}<br><span class="sideTabKey">[${u.key}]</span>`;
+    btn.innerHTML = `${unlocked ? u.icon : ICON_HTML('lock')}<span class="tabName">${u.name}</span><span class="sideTabKey">[${u.key}]</span>`;
   });
   const next = TAB_UNLOCKS.find(u => !tabUnlocked(u.id));
   unlockHintEl.style.display = next ? 'block' : 'none';
