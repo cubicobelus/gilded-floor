@@ -2705,6 +2705,92 @@ function makeBillboardSign(text, w, h, opts = {}){
 }
 function cssHex(n){ return '#' + n.toString(16).padStart(6, '0'); }
 
+// ---- Casino furniture dressing (shared, cached geometry/materials: hundreds of machines on the floor) ----
+const gfCache = {};
+function gfOnce(key, make){ return gfCache[key] || (gfCache[key] = make()); }
+// Merges parts [{geo, x,y,z, color?}] into one BufferGeometry (r128 has no BufferGeometryUtils inline).
+// Colour is baked as a vertex colour when any part has one.
+function gfMerge(parts){
+  const pos = [], nor = [], col = [], idx = [];
+  let vc = 0, useCol = parts.some(p=>p.color !== undefined), c = new THREE.Color();
+  parts.forEach(p=>{
+    const g = p.geo, pa = g.attributes.position, na = g.attributes.normal;
+    if(p.color !== undefined) c.setHex(p.color);
+    for(let i=0;i<pa.count;i++){
+      pos.push(pa.getX(i)+(p.x||0), pa.getY(i)+(p.y||0), pa.getZ(i)+(p.z||0));
+      nor.push(na.getX(i), na.getY(i), na.getZ(i));
+      if(useCol) col.push(c.r, c.g, c.b);
+    }
+    const ia = g.index;
+    for(let i=0;i<ia.count;i++) idx.push(ia.getX(i)+vc);
+    vc += pa.count;
+  });
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(nor,3));
+  if(useCol) out.setAttribute('color', new THREE.Float32BufferAttribute(col,3));
+  out.setIndex(idx);
+  return out;
+}
+const gfBox = (w,h,d,x,y,z)=>({ geo:new THREE.BoxGeometry(w,h,d), x, y, z });
+const gfMats = {
+  gold: ()=> gfOnce('mGold', ()=>new THREE.MeshStandardMaterial({ color:0xd9b232, emissive:0x4a3808, emissiveIntensity:0.5, metalness:0.5, roughness:0.3 })),
+  leather: ()=> gfOnce('mLeather', ()=>new THREE.MeshStandardMaterial({ color:0x24120e, roughness:0.55 })),
+  dark: ()=> gfOnce('mDark', ()=>new THREE.MeshStandardMaterial({ color:0x15110e, metalness:0.3, roughness:0.45 })),
+  chips: ()=> gfOnce('mChips', ()=>new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.5 })),
+};
+// Chaser bulbs: one pair of basic (unlit) materials per glow colour; the update loop swaps their
+// colours on a timer, so lamps chase without touching any individual bulb.
+const gfChasers = [];
+function gfChaserMats(glow){
+  return gfOnce('chaser'+glow, ()=>{
+    const a = new THREE.MeshBasicMaterial({ color:0xfff0b0 }), b = new THREE.MeshBasicMaterial({ color:glow });
+    const m = { a, b, onHex:0xfff0b0, offHex:new THREE.Color(glow).multiplyScalar(0.3).getHex() };
+    b.color.setHex(m.offHex);
+    gfChasers.push(m);
+    return m;
+  });
+}
+let gfChaserT = 0, gfChaserPhase = false;
+function updateChasers(dt){
+  gfChaserT += dt;
+  if(gfChaserT < 0.4) return;
+  gfChaserT = 0; gfChaserPhase = !gfChaserPhase;
+  for(const m of gfChasers){ m.a.color.setHex(gfChaserPhase ? m.onHex : m.offHex); m.b.color.setHex(gfChaserPhase ? m.offHex : m.onHex); }
+}
+// A merged ring of bulbs split into two alternating sets (one mesh each) lit by the shared chaser materials.
+function gfBulbSets(key, glow, points){
+  const geos = gfOnce('bulbs'+key, ()=>{
+    const mk = off => gfMerge(points.filter((_,i)=>i%2===off).map(p=>({ geo:new THREE.SphereGeometry(p[3]||0.03,6,4), x:p[0], y:p[1], z:p[2] })));
+    return [mk(0), mk(1)];
+  });
+  const m = gfChaserMats(glow);
+  return [new THREE.Mesh(geos[0], m.a), new THREE.Mesh(geos[1], m.b)];
+}
+// Padded leather rail + thin gold line for round tables
+function addRoundRail(g, R, y, tube, goldR){
+  const rail = new THREE.Mesh(gfOnce('rail'+R+'_'+tube, ()=>{ const t = new THREE.TorusGeometry(R,tube,6,32); t.rotateX(Math.PI/2); return t; }), gfMats.leather());
+  rail.position.y = y;
+  const line = new THREE.Mesh(gfOnce('gline'+goldR, ()=>{ const t = new THREE.TorusGeometry(goldR,0.014,4,32); t.rotateX(Math.PI/2); return t; }), gfMats.gold());
+  line.position.y = y - 0.015;
+  g.add(rail, line);
+}
+// Two small chip stacks (vertex-coloured, one mesh) at the dealer's spot
+function addChipStacks(g, x, y, z){
+  const geo = gfOnce('chipstacks', ()=>{
+    const cols = [0xc03030,0x2c6cc0,0xf0f0e0,0x2a2a2a,0x2e9a4e];
+    const parts = [];
+    for(let s=0;s<5;s++){
+      const n = 3 + (s%3)*2;
+      for(let k=0;k<n;k++){ const c = new THREE.CylinderGeometry(0.045,0.045,0.016,10); parts.push({ geo:c, x:(s-2)*0.11, y:k*0.017, z:0, color:cols[s] }); }
+    }
+    return gfMerge(parts);
+  });
+  const chips = new THREE.Mesh(geo, gfMats.chips());
+  chips.position.set(x,y,z);
+  g.add(chips);
+}
+
 // Builds any slot cabinet from its catalog entry: `reels` columns by `rows` symbols,
 // with the cabinet widened for 5-reel machines and a taller window for 3-row ones.
 function buildSlotCabinet(cfg, nick){
@@ -2762,6 +2848,31 @@ function buildSlotCabinet(cfg, nick){
   const leverGroup = new THREE.Group();
   leverGroup.add(leverArm, leverKnob);
   g.add(plinth, cabinet, trimL, trimR, reelWindow, ...reels.map(r=>r.mesh), marquee, marqueeGlow, nameplate, ...buttons, leverGroup);
+  // furniture dressing: all geometry cached per size, materials shared, 6 extra meshes
+  {
+    const ck = scale+'_'+nReels+'_'+rows;
+    // rounded topper: a flattened cylinder lying along x, lower half hidden inside the marquee
+    const cap = new THREE.Mesh(gfOnce('cap'+ck, ()=>{ const c = new THREE.CylinderGeometry(1,1,1,14); c.rotateZ(Math.PI/2); return c; }), cabinetMat);
+    cap.scale.set(0.85*scale*wide, 0.09*scale, 0.35*scale);
+    cap.position.y = 1.64*scale;
+    // gold frame around the reel window
+    const fw = 0.58*wide*scale, fh = winH*scale, ft = 0.035*scale;
+    const frame = new THREE.Mesh(gfOnce('frame'+ck, ()=>gfMerge([
+      gfBox(fw+2*ft, ft, 0.03*scale, 0, fh/2+ft/2, 0), gfBox(fw+2*ft, ft, 0.03*scale, 0, -fh/2-ft/2, 0),
+      gfBox(ft, fh, 0.03*scale, -fw/2-ft/2, 0, 0), gfBox(ft, fh, 0.03*scale, fw/2+ft/2, 0, 0)])), trimMat2);
+    frame.position.set(0, winY*scale, 0.338*scale);
+    // button deck ledge under the window, with four lit buttons on top
+    const btnY = (rows===1?0.78:0.66)*scale;
+    const ledge = new THREE.Mesh(gfOnce('ledge'+ck, ()=>gfMerge([gfBox(0.7*wide*scale, 0.04*scale, 0.12*scale, 0, 0, 0), gfBox(0.7*wide*scale, 0.015*scale, 0.125*scale, 0, 0.0275*scale, 0)])), gfMats.dark());
+    ledge.position.set(0, btnY-0.065*scale, 0.385*scale);
+    const lamp = new THREE.Mesh(gfOnce('lamps'+ck, ()=>gfMerge([0,1,2,3].map(i=>({ geo:new THREE.CylinderGeometry(0.022*scale,0.022*scale,0.016*scale,8), x:(-0.15+i*0.1)*scale*wide, y:0.04*scale, z:0, color:[0xff5050,0x50d0ff,0xffe050,0x60ff80][i] })))), gfOnce('lampMat', ()=>new THREE.MeshBasicMaterial({ vertexColors:true })));
+    lamp.position.copy(ledge.position);
+    // chaser bulbs along the topper's front edge
+    const nb = Math.round(7*wide);
+    const pts = []; for(let i=0;i<nb;i++) pts.push([(-0.4+0.8*i/(nb-1))*scale*wide, 1.655*scale, 0.355*scale, 0.022*scale]);
+    const bulbs = gfBulbSets('slot'+ck, cfg.glow, pts);
+    g.add(cap, frame, ledge, lamp, ...bulbs);
+  }
   // payline overlay: drawn right over the reel window so extra lines are visible on the machine itself
   const ovW = 0.54*wide*scale, ovH = (winH-0.06)*scale;
   const ovCanvas = document.createElement('canvas');
@@ -2881,6 +2992,8 @@ function buildMachineMesh(key, nick){
     chipTray.rotation.x = Math.PI/2;
     chipTray.position.y = 0.9;
     g.add(skirt, felt, rim, shoe, chipTray);
+    addRoundRail(g, 1.55, 0.94, 0.08, 1.45);
+    addChipStacks(g, 0, 0.905, -0.8);
     mesh = g; radius = 1.55; name = 'Blackjack Table';
   } else if(type === 'roulette'){
     const g = new THREE.Group();
@@ -2940,7 +3053,9 @@ function buildMachineMesh(key, nick){
     // ball
     const ball = new THREE.Mesh(new THREE.SphereGeometry(0.04,12,12), new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.15, metalness:0.2}));
     ball.position.set(0.62, 1.075, 0.1);
-    g.add(pedestal, rail, bowl, track, wheel, ball);    mesh = g; radius = 1.05; name = 'Roulette Wheel';
+    g.add(pedestal, rail, bowl, track, wheel, ball);
+    addRoundRail(g, 1.04, 0.9, 0.06, 0.96);
+    mesh = g; radius = 1.05; name = 'Roulette Wheel';
     parts = { wheel, ball };
   } else if(type === 'poker'){
     const g = new THREE.Group();
@@ -2958,6 +3073,8 @@ function buildMachineMesh(key, nick){
     chipTray.rotation.x = Math.PI/2;
     chipTray.position.y = 0.9;
     g.add(skirt, felt, rim, chipTray);
+    addRoundRail(g, 1.55, 0.94, 0.08, 1.45);
+    addChipStacks(g, 0, 0.905, -0.7);
     mesh = g; radius = 1.55; name = 'Poker Table';
   } else if(type === 'craps'){
     const g = new THREE.Group();
@@ -2981,6 +3098,11 @@ function buildMachineMesh(key, nick){
     die2.position.set(0.2, 1.005, -0.08);
     setDieFaceUp(die2, 2, -0.5);
     g.add(base, felt, railTop, railBottom, railLeft, railRight, die1, die2);
+    // padded leather rail around the box top
+    const pad = new THREE.Mesh(gfOnce('crapsPad', ()=>gfMerge([gfBox(3.4,0.1,0.12,0,0,0.79), gfBox(3.4,0.1,0.12,0,0,-0.79), gfBox(0.12,0.1,1.46,1.64,0,0), gfBox(0.12,0.1,1.46,-1.64,0,0)])), gfMats.leather());
+    pad.position.y = 0.96;
+    g.add(pad);
+    addChipStacks(g, 0, 0.905, -0.55);
     mesh = g; radius = 1.9; name = 'Craps Table';
     parts = { dice: [die1, die2] };
   } else if(type === 'sicbo'){
@@ -3001,6 +3123,8 @@ function buildMachineMesh(key, nick){
       setDieFaceUp(d, [4,1,6][i], (i-1)*0.5); return d;
     });
     g.add(base, felt, rail, ...dice);
+    addRoundRail(g, 1.08, 0.96, 0.07, 0.96);
+    addChipStacks(g, 0, 0.905, -0.65);
     mesh = g; radius = 1.3; name = 'Sic Bo';
     parts = { dice };
   } else if(type === 'bar'){
@@ -3120,6 +3244,8 @@ function buildMachineMesh(key, nick){
     shoe.position.set(0, 1.0, -1.0);
     shoe.rotation.x = -0.25;
     g.add(skirt2, felt2, rim2, shoe);
+    addRoundRail(g, 1.5, 0.94, 0.08, 1.4);
+    addChipStacks(g, 0, 0.905, -0.6);
     mesh = g; radius = 1.5; name = 'Baccarat Table';
   } else if(type === 'bigwheel'){
     // A big weathered wooden prize wheel standing upright on a plank backboard.
@@ -3174,6 +3300,9 @@ function buildMachineMesh(key, nick){
     pointer.rotation.z = Math.PI;
     pointer.position.set(0, cy + R + 0.02, 0.12);
     g.add(board, post, foot, rim, face, pointer);
+    // marquee bulbs ringing the wheel, chasing in two alternating sets
+    const bpts = []; for(let i=0;i<24;i++){ const a = i/24*Math.PI*2; bpts.push([Math.cos(a)*1.76, cy+Math.sin(a)*1.76, 0.08, 0.045]); }
+    g.add(...gfBulbSets('bigwheel', 0xffcc44, bpts));
     mesh = g; radius = 1.9; name = 'Big Wheel';
     parts = { wheel: face };
 
@@ -11772,6 +11901,7 @@ function updateBrokenArrow(){
 function animate(){        // machine - a standing banner says so regardless of where the camera's pointed
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
+  updateChasers(dt);
   updateMinimap(dt);
   updateBrokenArrow();
   staffPanelRefreshT -= dt;
