@@ -293,7 +293,8 @@
 
   <div style="color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin:0 0 5px;">Display</div>
   <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;">Always show nametags <input type="checkbox" id="nametagsAlwaysToggle"></label>
-  <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;">Show unlock popups <input type="checkbox" id="unlockPopupsToggle" checked></label>
+  <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;">Show unlock popups <input type="checkbox" id="unlockPopupsToggle" checked></label>
+  <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;">Table view <select id="tableViewSelect"><option value="overhead">Overhead</option><option value="seated">Seated</option></select></label>
 
   <div style="color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin:0 0 5px;">Game</div>
   <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;">Sandbox mode <input type="checkbox" id="sandboxToggle"></label>
@@ -6492,6 +6493,7 @@ const BIND_DEFS = [
   { a:'minimap',  group:'Casino',   name:'Minimap on / off',        def:'KeyM' },
   { a:'mapFloor', group:'Casino',   name:'Minimap: which floor',    def:'KeyN' },
   { a:'photo',    group:'Casino',   name:'Photo mode',              def:'KeyP' },
+  { a:'tableView',group:'Casino',   name:'Table camera: overhead / seated', def:'KeyV' },
   { a:'tab1',     group:'Tabs',     name:'Build',                   def:'Digit1' },
   { a:'tab2',     group:'Tabs',     name:'Club & Guests',           def:'Digit2' },
   { a:'tab3',     group:'Tabs',     name:'Staff',                   def:'Digit3' },
@@ -7290,6 +7292,67 @@ document.addEventListener('mouseup', (e)=>{
   if(e.button === 2) mouseHeldSell = false;
 });
 
+// ---- table camera: overhead (default) or seated, both fitted to the table's real footprint ----
+let tableViewMode = 'overhead'; // 'overhead' | 'seated' - player preference, saved apart from the casino save
+const PREFS_KEY = 'gilded_floor_prefs_v1';
+function loadPrefs(){ try{ const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); if(p.tableView === 'seated' || p.tableView === 'overhead') tableViewMode = p.tableView; }catch(e){} }
+function savePrefs(){ try{ localStorage.setItem(PREFS_KEY, JSON.stringify({ tableView: tableViewMode })); }catch(e){} }
+loadPrefs();
+const TABLE_HALF = { blackjack:[1.63,1.63], poker:[1.63,1.63], baccarat:[1.58,1.58], roulette:[1.1,1.1], sicbo:[1.15,1.15], craps:[1.7,0.85] }; // outer rail, local x / z
+const TABLE_TOP_Y = 0.93;
+function tableViewpoint(m, mode, frontDir, off){
+  const half = TABLE_HALF[m.type] || [m.radius + 0.08, m.radius + 0.08];
+  const hx = half[0], hz = half[1];
+  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), A = camera.aspect || 1.6;
+  const front = frontDir;
+  const rt = new THREE.Vector3(front.z, 0, -front.x); // local +x in world terms (screen right when seen from the front)
+  const centre = new THREE.Vector3(m.x, TABLE_TOP_Y + off, m.z);
+  if(mode === 'overhead'){
+    // straight down; the top 88% of the screen holds the table with a small margin, the bottom 12% stays clear for the prompt
+    const dH = Math.max(hx * 1.65 / (t * A), hz * 1.06 / (0.88 * t));
+    const Vh = 2 * dH * t;
+    const pos = new THREE.Vector3(m.x + front.x * Vh * 0.06, TABLE_TOP_Y + off + dH, m.z + front.z * Vh * 0.06);
+    return { viewPos: pos, viewYaw: Math.atan2(front.x, front.z), viewPitch: -Math.PI/2 + 0.02 };
+  }
+  // seated: from the front side, looking down about 50 degrees at the centre; fit the rim points, then re-centre vertically
+  const pts = [];
+  for(let i = 0; i < 48; i++){
+    const a = i / 48 * Math.PI * 2;
+    let lx, lz;
+    if(hx === hz){ lx = Math.cos(a) * hx; lz = Math.sin(a) * hz; }
+    else { const c = Math.cos(a), s = Math.sin(a), k = Math.max(Math.abs(c) / hx, Math.abs(s) / hz); lx = c / k; lz = s / k; }
+    pts.push(new THREE.Vector3(m.x + rt.x * lx + front.x * lz, TABLE_TOP_Y + off + 0.08, m.z + rt.z * lx + front.z * lz));
+  }
+  const cam = new THREE.PerspectiveCamera(camera.fov, A, 0.1, 200); cam.rotation.order = 'YXZ';
+  const yaw = Math.atan2(front.x, front.z);
+  let pitch = -0.88, L = 2.5, best = null;
+  const project = (L_, pit) => {
+    // camera sits on the front side, aimed so the table centre is on the view axis tilted by (pit - basePitch)
+    const base = -0.88;
+    const D = Math.cos(-base) * L_, H = Math.sin(-base) * L_;
+    cam.position.set(centre.x + front.x * D, centre.y + H, centre.z + front.z * D);
+    cam.rotation.set(pit, yaw, 0, 'YXZ'); cam.updateMatrixWorld(true); cam.updateProjectionMatrix();
+    let minY = 9, maxY = -9, maxX = 0;
+    for(const p of pts){ const q = p.clone().project(cam); minY = Math.min(minY, q.y); maxY = Math.max(maxY, q.y); maxX = Math.max(maxX, Math.abs(q.x)); }
+    return { minY, maxY, maxX };
+  };
+  const BOT = -0.72, TOP = 0.93, SIDE = 0.86; // bottom band stays clear for the prompt
+  for(let iter = 0; iter < 3; iter++){
+    for(L = 1.2; L < 14; L += 0.04){
+      best = project(L, pitch);
+      if(best.minY >= BOT && best.maxY <= TOP && best.maxX <= SIDE) break;
+    }
+    const mid = (best.minY + best.maxY) / 2, want = (BOT + TOP) / 2;
+    pitch += Math.atan((mid - want) * t) * 0.9; // tilt up when the table sits too high on screen
+    pitch = Math.max(-1.25, Math.min(-0.5, pitch));
+  }
+  for(L = 1.2; L < 14; L += 0.04){
+    best = project(L, pitch);
+    if(best.minY >= BOT && best.maxY <= TOP && best.maxX <= SIDE) break;
+  }
+  const base = -0.88, D = Math.cos(-base) * L, H = Math.sin(-base) * L;
+  return { viewPos: new THREE.Vector3(centre.x + front.x * D, centre.y + H, centre.z + front.z * D), viewYaw: yaw, viewPitch: pitch };
+}
 let managerCameraLock = null; // { game, viewPos, viewYaw, viewPitch, returnPos, returnYaw, returnPitch }
 function computeGameViewpoint(m){
   // Stand on the machine's own "front" side (based on its placed rotation), looking straight at it -
@@ -7310,12 +7373,9 @@ function computeGameViewpoint(m){
     return { viewPos: back, viewYaw: Math.atan2(-(m.x - back.x), -(m.z - back.z)), viewPitch: 0.12 };
   }
   if(!isSlotMachine(m)){
-    // Table games get a bird's-eye view, so cards lying flat on the felt (and the whole
-    // table) are easy to read. Slots stay front-facing.
-    const height = 0.9 + m.radius*1.6 + off;
-    const overhead = new THREE.Vector3(m.x + frontDir.x*0.3, height, m.z + frontDir.z*0.3);
-    const overheadYaw = Math.atan2(-(m.x - overhead.x), -(m.z - overhead.z));
-    return { viewPos: overhead, viewYaw: overheadYaw, viewPitch: -Math.PI/2 + 0.02 };
+    // Table games: two views (player preference, key toggles it). Both frame the table's real footprint.
+    const tv = tableViewpoint(m, tableViewMode, frontDir, off);
+    return tv;
   }
   // Slots: frame the cabinet's own play area (top of the reel window down to the stake display) instead
   // of a fixed standing eye height, so a small 3-reel and a tall Golden Jackpot both fill the view. The
@@ -7333,6 +7393,22 @@ function computeGameViewpoint(m){
   }
   return { viewPos, viewYaw, viewPitch: -0.12 };
 }
+function setTableView(mode){
+  tableViewMode = mode === 'seated' ? 'seated' : 'overhead';
+  savePrefs();
+  const sel = document.getElementById('tableViewSelect'); if(sel) sel.value = tableViewMode;
+  const lk = managerCameraLock, gm = lk && lk.game && lk.game.m;
+  if(gm && !isSlotMachine(gm) && gm.type !== 'bigwheel'){
+    const vp = computeGameViewpoint(gm);
+    lk.viewPos = vp.viewPos; lk.viewYaw = vp.viewYaw; lk.viewPitch = vp.viewPitch;
+  }
+}
+window.addEventListener('keydown', (e)=>{
+  if(!isBind(e, 'tableView') || e.repeat || bindingAction) return;
+  const gm = managerCameraLock && managerCameraLock.game && managerCameraLock.game.m;
+  if(!gm || isSlotMachine(gm) || gm.type === 'bigwheel') return;
+  setTableView(tableViewMode === 'overhead' ? 'seated' : 'overhead');
+});
 function lockCameraForGame(game, m){
   const vp = computeGameViewpoint(m);
   managerCameraLock = {
@@ -9442,7 +9518,7 @@ function updateActiveGames(dt){
     const bg = managerGame, fmt = v => v >= 10 ? Math.round(v) : v.toFixed(2);
     const credits = bg.unit ? Math.round(bg.bet/bg.unit) : 0;
     const detail = bg.unit ? ` (${credits} credit${credits===1?'':'s'} - ${bg.m.lines} line${bg.m.lines===1?'':'s'} x $${fmt(bg.m.denom)})` : '';
-    blackjackPromptEl.textContent = bg.unit ? `Bet $${fmt(bg.bet)}${detail}  -  [\u2191/\u2193] credits  [\u2190/\u2192] denomination${(SLOT_CATALOG[bg.m.type] && SLOT_CATALOG[bg.m.type].lines.length > 1) ? '  [L] lines' : ''}  [Enter] spin  [F] leave` : `Bet: $${fmt(bg.bet)} - [\u2191/\u2193] adjust  [Enter] confirm  [F] cancel`;
+    blackjackPromptEl.textContent = bg.unit ? `Bet $${fmt(bg.bet)}${detail}  -  [\u2191/\u2193] credits  [\u2190/\u2192] denomination${(SLOT_CATALOG[bg.m.type] && SLOT_CATALOG[bg.m.type].lines.length > 1) ? '  [L] lines' : ''}  [Enter] spin  [F] leave` : `Bet: $${fmt(bg.bet)} - [\u2191/\u2193] adjust  [Enter] confirm  [F] cancel${(bg.m.type !== 'bigwheel') ? `  [${bindKey('tableView')}] view` : ''}`;
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && (managerGame.kind === 'blackjack' || managerGame.kind === 'poker') && (managerGame.phase === 'waiting' || managerGame.phase === 'dealing')){
     blackjackPromptEl.textContent = managerGame.phase === 'waiting' ? 'Waiting for the next deal...' : 'Dealing...';
@@ -10713,6 +10789,7 @@ function updateHelpPanel(){
 
     ${pane('playing',
       row(K('interact'), 'sit down at whatever you are looking at. Press it again to get up.') +
+      row('Table view', K('tableView') + ' switches the table camera between overhead and seated. Your choice is remembered (Settings > Display).') +
       row('Bets', lit('\u2191') + ' / ' + lit('\u2193') + ' change your stake; at a slot ' + lit('\u2190') + ' / ' + lit('\u2192') + ' change the denomination and ' + lit('L') + ' the number of lines. ' + lit('Enter') + ' plays.') +
       row('Blackjack', lit('H') + ' hit, ' + lit('S') + ' stand, ' + lit('D') + ' double, ' + lit('P') + ' split, ' + lit('U') + ' surrender') +
       row('Roulette', lit('R') + ' red, ' + lit('B') + ' black, ' + lit('G') + ' green') +
@@ -11851,6 +11928,8 @@ function updateDevDebugInfo(){
 document.getElementById('mainSensSlider').addEventListener('input', (e)=>{ mouseSens = parseFloat(e.target.value) * 0.0005; });
 document.getElementById('soundVolumeSlider').addEventListener('input', (e)=>{ soundVolume = parseFloat(e.target.value) / 10; applyVolumes(); });
 document.getElementById('soundMuteToggle').addEventListener('change', (e)=>{ soundMuted = e.target.checked; applyVolumes(); });
+document.getElementById('tableViewSelect').value = tableViewMode;
+document.getElementById('tableViewSelect').addEventListener('change', (e)=>{ setTableView(e.target.value); });
 document.getElementById('ambienceToggle').addEventListener('change', (e)=>{ ambienceOn = e.target.checked; });
 document.getElementById('ambienceVolumeSlider').addEventListener('input', (e)=>{ ambienceVolume = parseFloat(e.target.value) / 10; });
 document.getElementById('nametagsAlwaysToggle').addEventListener('change', (e)=>{ nametagsAlwaysOn = e.target.checked; });
