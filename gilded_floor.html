@@ -7106,6 +7106,10 @@ const BIND_DEFS = [
   { a:'mapFloor', group:'Casino',   name:'Minimap: which floor',    def:'KeyN' },
   { a:'photo',    group:'Casino',   name:'Photo mode',              def:'KeyP' },
   { a:'tableView',group:'Casino',   name:'Table camera: overhead / seated', def:'KeyV' },
+  { a:'holdemFold', group:'Casino',  name:"Hold'em: fold",           def:'KeyX' },
+  { a:'holdemCall', group:'Casino',  name:"Hold'em: check / call",   def:'KeyC' },
+  { a:'holdemRaise',group:'Casino',  name:"Hold'em: bet / raise to the amount shown", def:'KeyR' },
+  { a:'holdemAllin',group:'Casino',  name:"Hold'em: all-in",         def:'KeyZ' },
   { a:'tab1',     group:'Tabs',     name:'Build',                   def:'Digit1' },
   { a:'tab2',     group:'Tabs',     name:'Club & Guests',           def:'Digit2' },
   { a:'tab3',     group:'Tabs',     name:'Staff',                   def:'Digit3' },
@@ -7987,6 +7991,11 @@ function computeGameViewpoint(m){
   if(!isSlotMachine(m)){
     // Table games: two views (player preference, key toggles it). Both frame the table's real footprint.
     const tv = tableViewpoint(m, tableViewMode, frontDir, off);
+    if(m.type === 'holdem' && managerCameraLock && managerCameraLock.game && managerCameraLock.game.m === m && managerCameraLock.seat != null){
+      // slide the camera sideways toward your seat so your own cards sit near the middle of the screen
+      const rt = new THREE.Vector3(frontDir.z, 0, -frontDir.x);
+      tv.viewPos.addScaledVector(rt, Math.sin(HOLDEM_SEAT_ANG[managerCameraLock.seat]) * (tableViewMode === 'seated' ? 0.75 : 0.45));
+    }
     return tv;
   }
   // Slots: frame the cabinet's own play area (top of the reel window down to the stake display) instead
@@ -8028,8 +8037,9 @@ function lockCameraForGame(game, m){
     viewPos: vp.viewPos, viewYaw: vp.viewYaw, viewPitch: vp.viewPitch,
     returnPos: player.pos.clone(), returnYaw: player.yaw, returnPitch: player.pitch,
   };
-  if(isSeatedTable(m)) managerCameraLock.seat = claimSeat(m, 'manager', [2,1,3,0,4]);
+  if(isSeatedTable(m)) managerCameraLock.seat = claimSeat(m, 'manager', m.type === 'holdem' ? [2,3,1,4,0,5] : [2,1,3,0,4]); // (a Hold'em table: the two front seats first, so your cards sit near the bottom centre of the view)
   if(m.label) m.label.visible = false; // the floating name tag would sit right on top of the overhead view
+  if(m.type === 'holdem') setTableView(tableViewMode);   // (now that the seat is known, frame the view toward it)
 }
 // Ends the machine session: hands back your seat and puts the camera/player back where they were.
 function endManagerLock(){
@@ -8045,6 +8055,7 @@ function endManagerLock(){
 function cancelManagerGame(){
   if(!managerCameraLock) return;
   const game = managerCameraLock.game;
+  if(game.kind === 'holdem') holdemPlayerLeave(game);   // your stack goes back to cash (mid-hand: when the hand ends)
   // Walking away with a round still in flight forfeits the bet - the house keeps it.
   const inFlight = game.shared ? (game.phase === 'placed' && !game.resolved) : (game.phase !== 'done' && game.phase !== 'waiting');
   if(game.kind !== 'betChoice' && game.bet > 0 && !game.resolved && inFlight){
@@ -8107,7 +8118,7 @@ window.addEventListener('keydown', (e)=>{
     if(m && m.category === 'gambling' && m.closed){ unrigAndReopen(m); return; } // walk up + F = unrig and reopen
     if(m && m.category === 'gambling' && (m.broken || needsService(m))){ repairMachine(m); return; } // walk up + F = pay for a repair
     if(m && m.category === 'gambling'){
-      if(m.type === 'holdem'){ logEvent(`${m.name}: guests only for now - you cannot sit down yet`, '#9fb3a8'); return; }
+      if(m.type === 'holdem'){ startHoldemSit(m); return; }
       if(isSeatedTable(m) && freeSeatCount(m) === 0){ logEvent(`${m.name} is full - no free seat`, '#9fb3a8'); return; }
       if(isSlotLike(m) && ((m.occupants||0) > 0 || m.spinning)){ logEvent(`Someone is already playing this ${m.name}`, '#9fb3a8'); return; }
       const betGame = startBetChoice(m);
@@ -9390,7 +9401,7 @@ function seatIsFree(m, i){ return !m.seatOwners[i] && !tableHands(m).some(g => g
 function freeSeatCount(m){ let n = 0; for(let i=0;i<seatCount(m);i++) if(seatIsFree(m,i)) n++; return n; }
 // Reserves a seat for `owner` (an NPC, or the string 'manager'). Returns the seat index or -1.
 function claimSeat(m, owner, preferredOrder){
-  const order = preferredOrder || (m.type === 'holdem' ? [0,1,2,3,4,5] : [0,1,2,3,4]).sort(()=>Math.random()-0.5);
+  const order = preferredOrder || (m.type === 'holdem' ? [0,1,4,5].sort(()=>Math.random()-0.5).concat([2,3].sort(()=>Math.random()-0.5)) : [0,1,2,3,4].sort(()=>Math.random()-0.5)); // (guests leave a Hold'em table's two front seats for you until the others are full)
   for(const i of order){
     if(seatIsFree(m, i)){ m.seatOwners[i] = owner; return i; }
   }
@@ -9969,7 +9980,7 @@ function finishBlackjack(game){
 const blackjackPromptEl = document.getElementById('blackjackPrompt');
 // Prompts are written as plain text with [Key] markers; render the keys as small boxed chips (like the title screen)
 Object.defineProperty(blackjackPromptEl, 'promptText', { set(v){
-  blackjackPromptEl.innerHTML = String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\[([^\]]+)\]/g, '<b class="kbd">$1</b>').replace(/ {2,}/g, ' ');
+  blackjackPromptEl.innerHTML = String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\[([^\]]+)\]/g, '<b class="kbd">$1</b>').replace(/\n/g, '<br>').replace(/ {2,}/g, ' ');
 } });
 window.addEventListener('keydown', (e)=>{
   if(!managerGame || managerGame.kind !== 'blackjack') return;
@@ -10138,6 +10149,7 @@ function holdemAbortHand(hd){
   for(let i = 0; i < 6; i++){ const p = t.seats[i]; if(p && p.inHand){ p.stack += p.total; p.total = 0; p.bet = 0; } }
   t.pot = 0; t.street = 'done'; t.toAct = -1; t.lastResult = null;
   hd.phase = 'wait'; hd.timer = 0; hd.pending = null; hd.revealed = false; hd.dealShown = 0; hd.boardShown = 0;
+  if(hd.human && hd.human.leaving){ const r = holdemLeave(t, hd.human.seat); if(r && r.left) addCash(r.stack); hd.human = null; }
 }
 // Takes the guest's stack back to their wallet. (The normal exits wait for the hand to end; this is also reached when the
 // table is shut or moved, which voids a hand in progress.)
@@ -10180,7 +10192,7 @@ function hdStartHand(m, hd){
   hd.phase = 'deal'; hd.dealT = 0; hd.dealShown = 0; hd.boardShown = 0; hd.bt = 0; hd.revealed = false; hd.pending = null;
 }
 function hdSettle(m, hd){
-  const t = hd.t, L = t.lastResult;
+  const t = hd.t, L = t.lastResult, humanSeat = hd.human ? hd.human.seat : -1;
   for(let i = 0; i < 6; i++){
     const g = hd.npc[i], p = t.seats[i];
     if(!g || !p || hd.snap[i] === undefined || !p.inHand) continue;
@@ -10193,19 +10205,200 @@ function hdSettle(m, hd){
   bookHoldemRake(m, L.rake, pot);
   const lift = 1.9 + mLevelY(m);
   L.winners.forEach(w => {
+    if(w.seat === humanSeat) return;   // (your own result is reported below)
     const a = HOLDEM_SEAT_ANG[w.seat], p = localToWorld(m, Math.sin(a) * 1.3, Math.cos(a) * 1.0);
     spawnFloatingText('+$' + w.amount + (w.handName ? ' ' + w.handName : ''), new THREE.Vector3(p.x, lift, p.z), '#8fd6a8');
   });
+  if(hd.human){   // your own hand: the result goes to your own ledger (never the house's), your pots are never raked
+    const s2 = hd.human.seat, lv = t.events.find(e => e.type === 'leave' && e.seat === s2), hp = t.seats[s2];
+    const fin = lv ? lv.stack : (hp ? hp.stack : null);
+    if(fin !== null && hd.snap[s2] !== undefined && (lv || (hp && hp.inHand))){
+      const d = fin - hd.snap[s2], pp = localToWorld(m, 0, 0.9), mine = L.winners.find(w => w.seat === s2);
+      hd.lastHumanDelta = d;   // the prompt's result line shows your gain, same as the log
+      const how = mine && mine.handName ? ' with ' + mine.handName : '';
+      if(d > 0){
+        ledger.personalWon += d;
+        logEvent('You win ' + hdMoney(d) + how, '#8fd6a8');
+        spawnFloatingText('+$' + Math.round(d).toLocaleString() + (mine && mine.handName ? ' ' + mine.handName : ''), new THREE.Vector3(pp.x, lift, pp.z), '#8fd6a8'); playSound('win');
+      } else if(d < 0){
+        ledger.personalLost += -d;
+        logEvent('You lose ' + hdMoney(-d), '#e08a8a');
+        spawnFloatingText('-$' + Math.round(-d).toLocaleString(), new THREE.Vector3(pp.x, lift, pp.z), '#e08a8a'); playSound('lose');
+      }
+    }
+    if(lv){ addCash(lv.stack); logEvent('You leave the table with ' + hdMoney(lv.stack), '#e6c34a'); hd.human = null; }
+  }
   if(L.rake > 0){ const p = localToWorld(m, 0, -0.5); spawnFloatingText('+$' + L.rake + ' rake', new THREE.Vector3(p.x, 1.5 + mLevelY(m), p.z), '#e6c34a'); }
   hd.phase = 'showdown'; hd.timer = L.showdown ? 2.6 : 1.0; hd.revealed = !!L.showdown; hd.pending = null;
 }
+// ---- you at a Hold'em table: buy in, play your turns with the keys, cash out when you leave ----
+// Sitting: the interact key at a table with a free seat and a dealer opens a buy-in prompt (a 'holdemBuyIn' game, so the
+// existing camera lock holds); Enter takes the chips out of your cash and seats you (an isHuman seat in the engine).
+// You sit out until the next hand if you arrive mid-hand. The stack returns to cash when you leave (between hands at
+// once, mid-hand you fold now and the stack comes back when the hand ends).
+function hdMoney(v){ return '$' + Math.round(v).toLocaleString(); }
+function hdCardText(c){ return ['2','3','4','5','6','7','8','9','10','J','Q','K','A'][c >> 2] + String.fromCharCode([9827, 9830, 9829, 9824][c & 3]); }
+function startHoldemSit(m){
+  if(managerGame) return;
+  const hd = holdemRuntime(m), bb = hd.t.bb;
+  if(freeSeatCount(m) === 0){ logEvent(`${m.name} is full - no free seat`, '#9fb3a8'); return; }
+  if(!isStaffed(m)){ logEvent(`${m.name} has no dealer at it right now - it needs one before anyone can play`, '#9fb3a8'); return; }
+  if(cash < bb * 40){ logEvent(`Hold'em here needs a buy-in of at least ${hdMoney(bb * 40)} (40 big blinds) - you have ${hdMoney(Math.max(0, cash))}`, '#e08a8a'); return; }
+  const maxBB = Math.min(100, Math.floor(cash / bb));
+  const game = { kind:'holdemBuyIn', m, buyBB:maxBB, maxBB, sprites:[] };
+  activeGames.push(game);
+  managerGame = game;
+  lockCameraForGame(game, m);
+}
+function holdemConfirmBuyIn(g){
+  const m = g.m, hd = holdemRuntime(m), t = hd.t, seat = managerCameraLock && managerCameraLock.seat;
+  const stack = g.buyBB * t.bb;
+  if(stack > cash){ logEvent(`You only have ${hdMoney(cash)} - lower the buy-in`, '#e08a8a'); return; }
+  if(seat === undefined || seat === null || t.seats[seat] || !holdemSit(t, seat, { id:'You', stack, isHuman:true, style:'regular' })){
+    logEvent('That seat was taken - try again', '#e08a8a'); cancelManagerGame(); return;
+  }
+  addCash(-stack);
+  hd.human = { seat, leaving:false };
+  hd.npc[seat] = null;
+  g.kind = 'holdem'; g.seat = seat; g.raiseTo = null; g.turnKey = '';
+  playSound('click'); playedAMachine = true;
+  logEvent(`You sit down at ${m.nick || m.name} with ${hdMoney(stack)} (${g.buyBB} big blinds)`, '#e6c34a');
+}
+// Leaving (the interact / cancel key): between hands the stack goes straight back to cash; mid-hand you fold now and it
+// comes back when the hand ends (the engine's pending leave).
+function holdemPlayerLeave(game){
+  const m = game.m, hd = m.hd;
+  if(!hd || !hd.human) return;
+  const t = hd.t, s = hd.human.seat, p = t.seats[s];
+  if(p && p.inHand && hd.phase !== 'wait' && t.street !== 'done'){
+    hd.human.leaving = true;
+    holdemLeave(t, s);
+    if(t.toAct === s) holdemAct(t, { type:'fold' });
+    logEvent('You fold and get up - your chips come back when the hand ends', '#9fb3a8');
+  } else {
+    const r = holdemLeave(t, s);
+    if(r && r.left){ addCash(r.stack); logEvent(`You leave the table with ${hdMoney(r.stack)}`, '#e6c34a'); }
+    hd.human = null;
+  }
+}
+function holdemPlayerAct(type){
+  const g = managerGame;
+  if(!g || g.kind !== 'holdem') return;
+  const hd = g.m.hd, t = hd.t, la = holdemLegalActions(t);
+  if(!la || la.seat !== g.seat || hd.phase !== 'act' || hd.boardShown < t.board.length) return;
+  let a;
+  if(type === 'fold') a = { type:'fold' };
+  else if(type === 'call') a = { type: la.canCheck ? 'check' : 'call' };
+  else if(type === 'allin') a = la.canRaise ? { type:'allin' } : { type: la.canCheck ? 'check' : 'call' };
+  else {
+    if(!la.canRaise){ logEvent("You can't raise here - the betting is closed to a raise", '#9fb3a8'); return; }
+    const to = Math.max(la.minRaiseTo, Math.min(la.maxRaiseTo, Math.round(g.raiseTo || la.minRaiseTo)));
+    a = to >= la.maxRaiseTo ? { type:'allin' } : { type:'raise', amount:to };
+  }
+  const r = holdemAct(t, a);
+  if(!r.ok){ logEvent('Not allowed: ' + r.error, '#e08a8a'); return; }
+  hd.pending = null; g.raiseTo = null;
+  playSound('click');
+}
+function holdemRaiseSize(g, kind){
+  const hd = g.m.hd, la = holdemLegalActions(hd.t);
+  if(!la || la.seat !== g.seat || !la.canRaise) return;
+  const full = hd.t.pot + la.toCall;
+  if(kind === 'half') g.raiseTo = la.curBet + Math.round(full * 0.5);
+  else if(kind === 'pot') g.raiseTo = la.curBet + full;
+  else if(kind === 'max') g.raiseTo = la.maxRaiseTo;
+  g.raiseTo = Math.max(la.minRaiseTo, Math.min(la.maxRaiseTo, g.raiseTo));
+}
+function holdemActionWords(hd, e){
+  const who = e.seat === (hd.human && hd.human.seat) ? 'You' : (hd.npc[e.seat] ? hd.npc[e.seat].name : 'Someone');
+  if(e.act === 'fold') return who + ' folded';
+  if(e.act === 'check') return who + ' checked';
+  if(e.act === 'call') return who + ' called ' + hdMoney(e.amount || 0);
+  return who + (e.allin ? ' went all-in to ' : ' raised to ') + hdMoney(e.to);
+}
+function holdemPlayerPromptText(g){
+  const m = g.m, hd = m.hd, t = hd.t, s = g.seat, p = t.seats[s];
+  if(!p) return 'Leaving the table...';
+  const key = a => `[${bindKey(a)}]`;
+  const inIt = p.inHand && !p.folded && hd.phase !== 'wait';
+  const l1 = [];
+  if(inIt && p.cards.length && hd.dealShown >= hd.dealOrder.length * 2) l1.push('Your cards: ' + p.cards.map(hdCardText).join(' '));
+  if(hd.boardShown > 0) l1.push('Board: ' + t.board.slice(0, hd.boardShown).map(hdCardText).join(' '));
+  if(hd.phase !== 'wait' && t.pot > 0) l1.push('Pot ' + hdMoney(t.pot));
+  l1.push('Stack ' + hdMoney(p.stack));
+  const la = (hd.phase === 'act' && hd.boardShown >= t.board.length) ? holdemLegalActions(t) : null;
+  let l2;
+  if(la && la.seat === s){
+    const turnKey = t.handNo + ':' + t.street + ':' + t.events.length;
+    if(g.turnKey !== turnKey){ g.turnKey = turnKey; g.raiseTo = la.canRaise ? la.minRaiseTo : null; }
+    if(la.canRaise) g.raiseTo = Math.max(la.minRaiseTo, Math.min(la.maxRaiseTo, g.raiseTo || la.minRaiseTo));
+    l1.push('To call ' + hdMoney(la.toCall));
+    l2 = `Your turn: ${key('holdemFold')} Fold  ${key('holdemCall')} ${la.canCheck ? 'Check' : 'Call ' + hdMoney(la.toCall)}`;
+    if(la.canRaise) l2 += `  ${key('holdemRaise')} ${t.curBet > 0 ? 'Raise' : 'Bet'} to ${hdMoney(g.raiseTo)} [Up/Down] size  [1] half pot  [2] pot  [3] max  ${key('holdemAllin')} All-in ${hdMoney(la.maxRaiseTo)}`;
+  } else if(hd.phase === 'wait'){
+    let seated = 0; for(let i = 0; i < 6; i++) if(t.seats[i] && t.seats[i].stack > 0) seated++;
+    l2 = seated < 2 ? 'Waiting for another player...' : 'Next hand coming up...';
+  } else if(hd.phase === 'showdown'){
+    const L = t.lastResult;
+    l2 = L && L.winners.length ? L.winners.map(w => (w.seat === s ? 'You' : (hd.npc[w.seat] ? hd.npc[w.seat].name : 'Someone')) + ' won ' + hdMoney(w.seat === s && hd.lastHumanDelta > 0 ? hd.lastHumanDelta : w.amount) + (w.handName ? ' with ' + w.handName : '')).join(' · ') : 'Hand over';
+  } else if(!p.inHand){
+    l2 = 'Sitting out until the next hand...';
+  } else {
+    const who = t.toAct >= 0 && hd.npc[t.toAct] ? hd.npc[t.toAct].name : null;
+    const last = (() => { for(let i = t.events.length - 1; i >= 0; i--) if(t.events[i].type === 'action') return t.events[i]; return null; })();
+    l2 = (p.folded ? 'You folded. ' : '') + (who ? who + ' is thinking...' : 'Dealing...') + (last ? '  (' + holdemActionWords(hd, last) + ')' : '');
+  }
+  const out = (hd.phase === 'wait' || hd.phase === 'showdown' || !inIt) ? `${key('interact')} Leave the table` : `${key('interact')} Fold and leave`;
+  return l1.join(' · ') + '\n' + l2 + '   ' + out;
+}
+function holdemBuyInPromptText(g){
+  const bb = g.m.hd ? g.m.hd.t.bb : holdemBB(g.m);
+  return `Buy in for ${hdMoney(g.buyBB * bb)} (${g.buyBB} big blinds of ${hdMoney(bb)}) · [Up/Down] 10 big blinds  [Enter] sit down  [${bindKey('interact')}] cancel`;
+}
+window.addEventListener('keydown', (e)=>{
+  const g = managerGame;
+  if(!g) return;
+  if(g.kind === 'holdemBuyIn'){
+    if(e.code === 'ArrowUp' || e.code === 'Equal'){ e.preventDefault(); g.buyBB = Math.min(g.maxBB, g.buyBB + 10); }
+    else if(e.code === 'ArrowDown' || e.code === 'Minus'){ e.preventDefault(); g.buyBB = Math.max(Math.min(40, g.maxBB), g.buyBB - 10); }
+    else if(e.code === 'Enter'){ e.preventDefault(); holdemConfirmBuyIn(g); }
+    return;
+  }
+  if(g.kind !== 'holdem') return;
+  if(isBind(e, 'holdemFold')) holdemPlayerAct('fold');
+  else if(isBind(e, 'holdemCall')) holdemPlayerAct('call');
+  else if(isBind(e, 'holdemRaise')) holdemPlayerAct('raise');
+  else if(isBind(e, 'holdemAllin')) holdemPlayerAct('allin');
+  else if(e.code === 'ArrowUp' || e.code === 'ArrowDown'){
+    e.preventDefault();
+    const la = holdemLegalActions(g.m.hd.t);
+    if(la && la.seat === g.seat && la.canRaise){
+      const bb = g.m.hd.t.bb;
+      g.raiseTo = Math.max(la.minRaiseTo, Math.min(la.maxRaiseTo, (g.raiseTo || la.minRaiseTo) + (e.code === 'ArrowUp' ? bb : -bb)));
+    }
+  }
+  else if(!pendingChoiceEvent && e.code === 'Digit1') holdemRaiseSize(g, 'half');
+  else if(!pendingChoiceEvent && e.code === 'Digit2') holdemRaiseSize(g, 'pot');
+  else if(!pendingChoiceEvent && e.code === 'Digit3') holdemRaiseSize(g, 'max');
+});
+// What a save should record while you are seated: your stack (and anything you have in the pot) counts as cash, as if you had left.
+function holdemSeatedCash(){
+  let sum = 0;
+  machines.forEach(m => {
+    if(m.type !== 'holdem' || !m.hd || !m.hd.human) return;
+    const p = m.hd.t.seats[m.hd.human.seat];
+    if(p) sum += p.stack + (p.inHand && m.hd.t.street !== 'done' ? p.total : 0);
+  });
+  return sum;
+}
+
 function updateHoldemTable(m, dt){
   const hd = m.hd;
   if(!hd) return;
   const t = hd.t;
   if(hd.phase === 'wait'){
     let seated = 0;
-    for(let i = 0; i < 6; i++) if(hd.npc[i] && t.seats[i] && t.seats[i].stack > 0) seated++;
+    for(let i = 0; i < 6; i++) if((hd.npc[i] || (hd.human && hd.human.seat === i)) && t.seats[i] && t.seats[i].stack > 0) seated++;
     if(seated >= 2 && isStaffed(m) && !m.broken && !m.closed){
       hd.lonely = 0; hd.timer += dt;
       if(hd.timer >= 1.5) hdStartHand(m, hd);
@@ -10227,6 +10420,8 @@ function updateHoldemTable(m, dt){
       if(hd.bt >= 0.8){ hd.bt = 0; hd.boardShown = hd.boardShown === 0 ? 3 : hd.boardShown + 1; }
     } else if(t.street === 'done'){
       hdSettle(m, hd);
+    } else if(hd.human && !hd.human.leaving && t.toAct === hd.human.seat){
+      // your turn: nothing moves until you act (see holdemPlayerAct)
     } else {
       if(!hd.pending){
         hd.pending = holdemAiDecide(t, Math.random);
@@ -10240,7 +10435,13 @@ function updateHoldemTable(m, dt){
     }
   } else if(hd.phase === 'showdown'){
     hd.timer -= dt;
-    if(hd.timer <= 0){ hd.phase = 'wait'; hd.timer = 0; hd.revealed = false; hd.dealShown = 0; hd.boardShown = 0; }
+    if(hd.timer <= 0){
+      hd.phase = 'wait'; hd.timer = 0; hd.revealed = false; hd.dealShown = 0; hd.boardShown = 0;
+      if(hd.human && !hd.human.leaving){   // out of chips: you cannot top up, so you are done for the night
+        const hp = t.seats[hd.human.seat];
+        if(!hp || hp.stack < t.bb){ if(managerGame && managerGame.kind === 'holdem' && managerGame.m === m){ logEvent("You're out of chips - you leave the table", '#e08a8a'); cancelManagerGame(); } }
+      }
+    }
   }
   if(m.lodState === 0 && hd.phase !== 'wait' && !hd.vis) hdEnsureVis(m, hd);
   if(hd.vis) hdRender(m, hd);
@@ -10293,7 +10494,7 @@ function hdRender(m, hd){
       const show = active && !!p && p.inHand && !p.folded && idx >= 0 && (k * n + idx) < hd.dealShown && p.cards[k] != null;
       if(c.visible !== show) c.visible = show;
       if(show){
-        const want = (hd.revealed && L && L.shown && L.shown[i]) ? hdFaceMat(p.cards[k]) : hdBackMat();
+        const want = ((hd.human && hd.human.seat === i) || (hd.revealed && L && L.shown && L.shown[i])) ? hdFaceMat(p.cards[k]) : hdBackMat();   // your own cards are always face up
         if(c.material !== want) c.material = want;
       }
     }
@@ -10362,6 +10563,12 @@ function updateActiveGames(dt){
     const e = evaluate3Card(managerGame.playerCards);
     const handNames = ['High card','Pair','Flush','Straight','Three of a kind','Straight flush'];
     blackjackPromptEl.promptText = `Your hand: ${handNames[e.category]} · [S] Play (match the ante)  [U] Fold`;
+    blackjackPromptEl.style.display = 'block';
+  } else if(managerGame && managerGame.kind === 'holdemBuyIn'){
+    blackjackPromptEl.promptText = holdemBuyInPromptText(managerGame);
+    blackjackPromptEl.style.display = 'block';
+  } else if(managerGame && managerGame.kind === 'holdem'){
+    blackjackPromptEl.promptText = holdemPlayerPromptText(managerGame);
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && managerGame.kind === 'betChoice'){
     const bg = managerGame, fmt = v => v >= 10 ? Math.round(v) : v.toFixed(2);
@@ -11654,6 +11861,7 @@ function updateHelpPanel(){
       row('Roulette', lit('R') + ' red, ' + lit('B') + ' black, ' + lit('G') + ' green') +
       row('Baccarat', lit('P') + ' player, ' + lit('K') + ' banker, ' + lit('T') + ' tie') +
       row('Three card poker', lit('S') + ' play, ' + lit('U') + ' fold') +
+      row("Hold'em", 'buy in for 40-100 big blinds, then on your turn ' + K('holdemFold') + ' fold, ' + K('holdemCall') + ' check / call, ' + K('holdemRaise') + ' bet or raise to the amount shown (' + lit('Up') + ' / ' + lit('Down') + ' change it, ' + lit('1') + ' half pot, ' + lit('2') + ' pot, ' + lit('3') + ' max), ' + K('holdemAllin') + ' all-in. ' + K('interact') + ' leaves: between hands your stack goes back to cash, mid-hand you fold first.') +
       row('Big Wheel', 'one key per colour, listed on screen') +
       row('Fair play', 'you are a player like anyone else: rigging a machine can only ever work against you.'))}
 
@@ -11684,7 +11892,7 @@ function saveGame(){
   try{
     const data = {
       version: 2,
-      cash, reputation, parkingCapacity, parkingUpgradeCost, clubLevel, loanPrincipal, loanOwed, loanRate, loanMissed,
+      cash: cash + holdemSeatedCash(), reputation, parkingCapacity, parkingUpgradeCost, clubLevel, loanPrincipal, loanOwed, loanRate, loanMissed,
       totalGamblingRevenue, revenueHigh, statHistory: statHistory.slice(-2400).map(s=>[Math.round(s.t*10)/10, Math.round(s.cash), Math.round(s.rev), +s.rep.toFixed(1), s.guests, Math.round(s.happy), Math.round(s.loyalty)]), totalGuestsServed,
       currentDay, dayStartCash, dayStartGuestsServed, dayTime,
       floorExpansions, roomBackZ: ROOM_BACK_Z, roomLeftX: ROOM_LEFT_X, roomRightX: ROOM_RIGHT_X, wallpaperKey, upperBuilt, unlockedTabs: Array.from(unlockedTabs), keybinds: {...keybinds}, checklistDone, playedAMachine, hotel: { rateMult: hotel.rateMult, dynamic: hotel.dynamic, fromH: hotel.fromH, toH: hotel.toH },
@@ -12888,7 +13096,7 @@ function updateHint(){
       return;
     }
     if(isSlotLike(closest)) text += ` · RTP ${Math.round(closest.payout*100)}%` + (closest.denom ? ` · ${closest.lines}x$${fmtStake(closest.denom)}` : '');
-    else if(closest.type === 'holdem') text += ` · rake only · ${seatCount(closest) - freeSeatCount(closest)}/${seatCount(closest)} seats taken`;
+    else if(closest.type === 'holdem') text += ` · rake only · ${seatCount(closest) - freeSeatCount(closest)}/${seatCount(closest)} seats taken` + (freeSeatCount(closest) > 0 && isStaffed(closest) ? ` · press ${bindKey('interact')} to sit down (buy in 40-100 bb)` : '');
     else if(isSeatedTable(closest)) text += ` · rig ${Math.round(closest.edge*100)}% · ${TABLE_SEAT_COUNT - freeSeatCount(closest)}/${TABLE_SEAT_COUNT} seats taken`;
     else if(closest.category === 'gambling') text += ` · rig ${Math.round(closest.edge*100)}% · ${closest.occupants||0}/${maxOccupantsFor(closest)} playing`;
     hintEl.textContent = text;
