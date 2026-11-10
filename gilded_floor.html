@@ -58,6 +58,9 @@
   .pips{ display:inline-flex; gap:3px; vertical-align:middle; margin-left:6px; }
   .pip{ width:8px; height:8px; border-radius:50%; border:1px solid #c9a227; box-sizing:border-box; }
   .pip.on{ background:#c9a227; }
+  #slotStake .ssl{ font-size:11px; font-weight:700; letter-spacing:0.12em; color:#8fa39a; }
+  #slotStake .ssv{ font-size:22px; font-weight:700; line-height:1.15; }
+  #slotStake .ssc{ font-size:11px; color:#8fa39a; }
   #blackjackPrompt .kbd{ color:#e6c34a; font-weight:600; border:1px solid rgba(201,162,39,0.45); border-radius:4px; padding:1px 6px; margin:0 5px 0 0; font-size:12px; }
   #blackjackPrompt .kbd:not(:first-child){ margin-left:14px; }
   #settingsBtn .ic, #helpBtn .ic{ width:16px; height:16px; color:#e6c34a; }
@@ -294,6 +297,7 @@
 <div id="helpPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:16px 18px;color:#f0e6d2;font-size:12px;display:none;z-index:9;width:min(780px,95vw);max-height:90vh;overflow-y:auto;box-sizing:border-box;line-height:1.55;"></div>
 <div id="machineConfigPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:16px 18px;color:#f0e6d2;font-size:12px;display:none;z-index:8;min-width:280px;"></div>
 <div id="daySummaryPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.98);border:1px solid #e6c34a;border-radius:8px;padding:20px 24px;color:#f0e6d2;font-size:13px;display:none;z-index:9;width:min(380px,92vw);box-sizing:border-box;max-height:92vh;overflow-y:auto;text-align:center;"></div>
+<div id="slotStake" style="display:none;position:fixed;bottom:calc(9% + 50px);left:50%;transform:translateX(-50%);background:#05060c;border:2px solid #c9a227;border-radius:6px;padding:6px 8px;color:#f0e6d2;font-family:'Segoe UI',Arial,sans-serif;z-index:6;pointer-events:none;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,0.5);"><div style="display:flex;"><div style="width:92px"><div class="ssl">LINES</div><div class="ssv" id="ssLines" style="color:#ff9d5c"></div></div><div style="width:92px"><div class="ssl">DENOM</div><div class="ssv" id="ssDenom" style="color:#7dffb0"></div></div><div style="width:92px"><div class="ssl">BET</div><div class="ssv" id="ssBet" style="color:#ffd23d"></div><div class="ssc" id="ssCredits"></div></div></div></div>
 <div id="blackjackPrompt" style="display:none;position:fixed;bottom:9%;left:50%;transform:translateX(-50%);background:rgba(18,36,29,0.92);border:1px solid #c9a227;border-radius:6px;padding:8px 16px;color:#f0e6d2;font-size:13px;z-index:6;white-space:nowrap;"></div>
 <div id="choiceEventPanel" style="display:none;position:fixed;bottom:18%;left:50%;transform:translateX(-50%);background:rgba(18,36,29,0.96);border:1px solid #c9a227;border-radius:8px;padding:12px 16px;color:#f0e6d2;font-size:12px;z-index:7;max-width:min(480px,90vw);text-align:center;box-shadow:0 4px 18px rgba(0,0,0,0.4);">
   <div id="choiceEventText" style="margin-bottom:8px;line-height:1.4;"></div>
@@ -334,7 +338,7 @@
   <input type="file" id="importFile" accept=".json,application/json" style="display:none;">
   <button id="resetBtn" class="hotbarSlot" style="width:100%;border-color:#7a1f2b;color:#e08a8a;"><svg class="ic inl"><use href="#i-reset"/></svg>Reset</button>
 </div>
-<style>body.photoMode #tipStack, body.photoMode #checklist, body.photoMode #hud, body.photoMode #eventLog, body.photoMode #speedControls, body.photoMode #modeBtn, body.photoMode #settingsBtn, body.photoMode #helpBtn, body.photoMode #sideTabsLeft, body.photoMode #minimap, body.photoMode #hint, body.photoMode #unlockHint, body.photoMode #closedBanner, body.photoMode #debtBox, body.photoMode #sellProgress, body.photoMode #blackjackPrompt, body.photoMode #crosshair, body.photoMode #inspectorLabel, body.photoMode #unlockPopup, body.photoMode #brokenIndicator { display:none !important; }</style>
+<style>body.photoMode #tipStack, body.photoMode #checklist, body.photoMode #hud, body.photoMode #eventLog, body.photoMode #speedControls, body.photoMode #modeBtn, body.photoMode #settingsBtn, body.photoMode #helpBtn, body.photoMode #sideTabsLeft, body.photoMode #minimap, body.photoMode #hint, body.photoMode #slotStake, body.photoMode #unlockHint, body.photoMode #closedBanner, body.photoMode #debtBox, body.photoMode #sellProgress, body.photoMode #blackjackPrompt, body.photoMode #crosshair, body.photoMode #inspectorLabel, body.photoMode #unlockPopup, body.photoMode #brokenIndicator { display:none !important; }</style>
 <div id="crosshair" style="display:none;"></div>
 <div id="photoHint" style="display:none;position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:9;color:#f0e6d2;background:rgba(10,14,12,0.55);border-radius:6px;padding:5px 14px;font-size:11px;letter-spacing:1px;">PHOTO MODE - WASD + Space/Ctrl to fly, P to exit</div>
 <div id="unlockPopup" style="display:none;position:fixed;top:68px;left:50%;transform:translateX(-50%);background:rgba(18,36,29,0.96);border:1px solid #c9a227;border-radius:8px;padding:10px 18px;color:#f0e6d2;font-size:13px;z-index:10;max-width:min(440px,88vw);text-align:center;box-shadow:0 4px 18px rgba(0,0,0,0.4);cursor:pointer;"><div id="unlockPopupText"></div><div style="font-size:9px;color:#9fb3a8;margin-top:3px;">click to dismiss</div></div>
@@ -3640,7 +3644,7 @@ function buildSlotCabinet(cfg, nick){
   const display = new THREE.Mesh(new THREE.PlaneGeometry(dW, dH), new THREE.MeshBasicMaterial({ map: dTex }));
   display.position.set(0, (rows===1?0.5:0.455)*scale, 0.331*scale); // 3-row cabinets sit lower so the button ledge does not clip the top of the labels from the seated camera
   g.add(display); det.push(display);
-  g.userData.slotDisplay = { canvas:dCanvas, tex:dTex, overlayCanvas:ovCanvas, overlayTex:ovTex, glow:cssHex(cfg.glow), reels:nReels, rows };
+  g.userData.slotDisplay = { mesh:display, canvas:dCanvas, tex:dTex, overlayCanvas:ovCanvas, overlayTex:ovTex, glow:cssHex(cfg.glow), reels:nReels, rows };
   det.push(trimL, trimR, nameplate, ...buttons, leverGroup);
   gfDetail(g, det);
   if(cfg.gold){
@@ -4563,7 +4567,7 @@ function placeMachine(key, x, z, rotation=0, nickArg, level=0){
     edge: isTableGame ? 0 : undefined,                 // adjustable rigging, carries inspection risk
     suspicion: isTableGame ? 0 : undefined,
     lifetimeIncome: 0,                                 // for the stats dashboard
-    up: isGambling ? { speed:0, appeal:0, care:0 } : undefined, wear: 0, broken: false,
+    up: isGambling ? { speed:0, appeal:0, care:0 } : undefined, wear: 0, services: 0, broken: false,
     mealPrice: type === 'restaurant' ? MEAL_BASE : undefined, covers: 0, diners: type === 'dinertable' ? 0 : undefined,
     feePct: type === 'cashier' ? CAGE_FEE : undefined, queue: [],
     drinkPrice: type === 'bar' ? DRINK_BASE : undefined, drinkers: type === 'bar' ? 0 : undefined, users: type === 'restroom' ? 0 : undefined,
@@ -6793,7 +6797,10 @@ function upgradeCost(key, level, m){
 function upLevel(m, key){ return (m.up && m.up[key]) || 0; }
 function machineSpeedFactor(m){ return 1 - 0.13 * upLevel(m, 'speed'); }
 function machineAppeal(m){ return 1 + 0.18 * upLevel(m, 'appeal'); }
-function wearRate(m){ return 0.06 * (1 - 0.25 * upLevel(m, 'care')); }
+// A new machine runs in gently: its first life (before its first service) wears at a quarter of the rate and its
+// second life at half; from the third life on it wears at the full rate. Each service (manual or mechanic) counts.
+function lifeMultiplier(m){ const n = m.services || 0; return n <= 0 ? 0.25 : n === 1 ? 0.5 : 1; }
+function wearRate(m){ return 1.2 * lifeMultiplier(m) * (1 - 0.25 * upLevel(m, 'care')); }
 function machineCondition(m){ return Math.max(0, 100 - (m.wear || 0)); }
 function needsService(m){ return (m.wear || 0) >= 70; }
 function repairCost(m){ return Math.round(m.cost * 0.06 + 40); }
@@ -6804,7 +6811,7 @@ function repairMachine(m, free){
     addCash(-c); ledger.upkeep += c;
     logEvent(`Repaired ${m.nick || m.name} for $${c}`, '#8fd6a8');
   } else logEvent(`A mechanic serviced ${m.nick || m.name}`, '#8fd6a8');
-  m.wear = 0; m.broken = false; setBrokenSign(m, false);
+  m.wear = 0; m.broken = false; m.services = (m.services || 0) + 1; setBrokenSign(m, false);
   spawnFloatingText('Serviced', new THREE.Vector3(m.x, mLevelY(m) + 2.4, m.z), '#8fd6a8');
   playSound('place');
   return true;
@@ -7272,7 +7279,7 @@ function machineState(m){
   return {
     type: m.key || m.type, x: m.x, z: m.z, rotation: m.rotation || 0, level: m.level || 0,
     payout: m.payout, edge: m.edge, lifetimeIncome: m.lifetimeIncome || 0, colorway: m.colorway || 0, st: m.st,
-    denom: m.denom, lines: m.lines, nick: m.nick, closed: !!m.closed, up: m.up, wear: m.wear || 0, broken: !!m.broken,
+    denom: m.denom, lines: m.lines, nick: m.nick, closed: !!m.closed, up: m.up, wear: m.wear || 0, services: m.services || 0, broken: !!m.broken,
     mealPrice: m.mealPrice, drinkPrice: m.drinkPrice, feePct: m.feePct, covers: m.covers || 0,
     room: m.room ? { opts: m.room.opts, dirty: m.room.dirty, revenue: m.room.revenue, nights: m.room.nights } : undefined,
   };
@@ -7287,7 +7294,7 @@ function applyMachineState(m, md){
   if(md.feePct !== undefined && m.feePct !== undefined) m.feePct = md.feePct;
   if(md.up && m.up) Object.assign(m.up, md.up);
   m.covers = md.covers || 0;
-  m.wear = md.wear || 0; m.broken = !!md.broken;
+  m.wear = md.wear || 0; m.services = md.services || 0; m.broken = !!md.broken;
   if(m.broken) setBrokenSign(m, true);
   if(m.parts && m.parts.slotDisplay) refreshSlotDisplay(m);
   if(md.room && m.room){ Object.assign(m.room.opts, md.room.opts); m.room.dirty = !!md.room.dirty; m.room.revenue = md.room.revenue || 0; m.room.nights = md.room.nights || 0; rebuildRoomInterior(m); updateRoomLamp(m); }
@@ -8028,19 +8035,25 @@ function computeGameViewpoint(m){
     }
     return tv;
   }
-  // Slots: frame the cabinet's own play area (top of the reel window down to the stake display) instead
-  // of a fixed standing eye height, so a small 3-reel and a tall Golden Jackpot both fill the view. The
-  // camera sits level with the middle of that area (about seated eye height) and backs off until it
-  // fills ~66% of the frame, which keeps the stake display clear of the bet prompt at the bottom and
-  // low enough to see under the button ledge. Heights mirror buildSlotCabinet.
+  // Slots: the crosshair (screen centre) sits on the exact middle of the reel window, so it reads the
+  // reels' payline row. The camera is raised above that point and backed off, looking slightly down, until
+  // the top of the machine (its topper with the nameplate, plus the crown on the gold cabinet) just fits
+  // near the top edge. The stake display and buttons may fall below the screen edge (the HUD repeats the
+  // stake). Heights mirror buildSlotCabinet.
   const cfg = SLOT_CATALOG[m.type];
   if(cfg){
-    const sc = cfg.scale, winH = cfg.rows === 1 ? 0.42 : 0.6, winY = cfg.rows === 1 ? 1.05 : 1.08;
-    const top = (winY + winH/2) * sc, bottom = 0.425 * sc, mid = (top + bottom) / 2;
-    const halfTan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-    const dist = 0.33*sc + ((top - bottom) / 2) / (halfTan * 0.6);
-    const seat = new THREE.Vector3(m.x + frontDir.x*dist, mid - 0.06*sc + off, m.z + frontDir.z*dist);
-    return { viewPos: seat, viewYaw, viewPitch: 0.04 };
+    const sc = cfg.scale, winY = cfg.rows === 1 ? 1.05 : 1.08;
+    const centre = winY * sc, topY = (cfg.gold ? 1.79 : 1.73) * sc;
+    const T = topY - centre, h = 0.25 * sc;
+    const want = THREE.MathUtils.degToRad(camera.fov / 2) * 0.84;   // the top sits ~16% of the half-height below the screen edge
+    let lo = 0.2, hi = 20;
+    for(let i = 0; i < 40; i++){
+      const d = (lo + hi) / 2;
+      if(Math.atan((T - h) / d) + Math.atan(h / d) > want) lo = d; else hi = d;
+    }
+    const d = hi, dist = d + 0.34 * sc;
+    const seat = new THREE.Vector3(m.x + frontDir.x*dist, centre + h + off, m.z + frontDir.z*dist);
+    return { viewPos: seat, viewYaw, viewPitch: -Math.atan(h / d) };
   }
   return { viewPos, viewYaw, viewPitch: -0.12 };
 }
@@ -10556,8 +10569,42 @@ function hdRender(m, hd){
   }
 }
 
+// The seated slot player's stake readout (lines / denomination / bet), kept in step with the machine's own display.
+const slotStakeEl = document.getElementById('slotStake');
+let slotStakeKey = '';
+let slotStakeHidden = null;   // the machine whose own stake display is hidden while the player sits at it
+function setOwnStakeHidden(m){
+  if(slotStakeHidden && slotStakeHidden !== m){
+    const o = slotStakeHidden.parts && slotStakeHidden.parts.slotDisplay;
+    if(o && o.mesh) o.mesh.visible = true;
+    slotStakeHidden = null;
+  }
+  if(m){
+    const sd = m.parts && m.parts.slotDisplay;
+    if(sd && sd.mesh && sd.mesh.visible) sd.mesh.visible = false;
+    slotStakeHidden = m;
+  }
+}
+function updateSlotStakePanel(){
+  const lk = managerCameraLock, m = lk && lk.game && lk.game.m;
+  if(!m || !isSlotMachine(m) || !SLOT_CATALOG[m.type]){ setOwnStakeHidden(null); if(slotStakeEl.style.display !== 'none') slotStakeEl.style.display = 'none'; slotStakeKey = ''; return; }
+  const g = managerGame && managerGame.m === m ? managerGame : lk.game;
+  const unit = slotUnit(m), bet = g && g.bet > 0 ? g.bet : unit;
+  const credits = Math.max(1, Math.round(bet / unit));
+  const key = m.lines + '|' + m.denom + '|' + bet + '|' + credits;
+  if(key !== slotStakeKey){
+    slotStakeKey = key;
+    document.getElementById('ssLines').textContent = String(m.lines);
+    document.getElementById('ssDenom').textContent = '$' + fmtStake(m.denom);
+    document.getElementById('ssBet').textContent = '$' + fmtStake(bet);
+    document.getElementById('ssCredits').textContent = credits + ' credit' + (credits === 1 ? '' : 's');
+  }
+  if(slotStakeEl.style.display !== 'block') slotStakeEl.style.display = 'block';
+  setOwnStakeHidden(m);
+}
 function updateActiveGames(dt){
   updateCoinBits(dt);
+  updateSlotStakePanel();
   if(managerGame && managerGame.kind === 'blackjack' && (managerGame.phase === 'playerTurn' || managerGame.phase === 'playerTurn2')){
     const isHand2 = managerGame.phase === 'playerTurn2';
     const cards = isHand2 ? managerGame.hand2Cards : managerGame.playerCards;
@@ -10600,9 +10647,7 @@ function updateActiveGames(dt){
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && managerGame.kind === 'betChoice'){
     const bg = managerGame, fmt = v => v >= 10 ? Math.round(v) : v.toFixed(2);
-    const credits = bg.unit ? Math.round(bg.bet/bg.unit) : 0;
-    const detail = bg.unit ? ` (${credits} credit${credits===1?'':'s'} - ${bg.m.lines} line${bg.m.lines===1?'':'s'} x $${fmt(bg.m.denom)})` : '';
-    blackjackPromptEl.promptText = bg.unit ? `Bet $${fmt(bg.bet)}${detail}  ·  [\u2191/\u2193] credits  [\u2190/\u2192] denomination${(SLOT_CATALOG[bg.m.type] && SLOT_CATALOG[bg.m.type].lines.length > 1) ? '  [L] lines' : ''}  [Enter] spin  [${bindKey('interact')}] leave` : `Bet: $${fmt(bg.bet)} · [\u2191/\u2193] adjust  [Enter] confirm  [${bindKey('interact')}] cancel${(bg.m.type !== 'bigwheel') ? `  [${bindKey('tableView')}] view` : ''}`;
+    blackjackPromptEl.promptText = bg.unit ? `[\u2191/\u2193] credits  [\u2190/\u2192] denomination${(SLOT_CATALOG[bg.m.type] && SLOT_CATALOG[bg.m.type].lines.length > 1) ? '  [L] lines' : ''}  [Enter] spin  [${bindKey('interact')}] leave` : `Bet: $${fmt(bg.bet)} · [\u2191/\u2193] adjust  [Enter] confirm  [${bindKey('interact')}] cancel${(bg.m.type !== 'bigwheel') ? `  [${bindKey('tableView')}] view` : ''}`;
     blackjackPromptEl.style.display = 'block';
   } else if(managerGame && (managerGame.kind === 'blackjack' || managerGame.kind === 'poker') && (managerGame.phase === 'waiting' || managerGame.phase === 'dealing')){
     blackjackPromptEl.promptText = managerGame.phase === 'waiting' ? 'Waiting for the next deal...' : 'Dealing...';
