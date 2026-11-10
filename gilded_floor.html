@@ -441,6 +441,7 @@
 <script>
 // ---------------- Setup ----------------
 const scene = new THREE.Scene();
+scene.matrixAutoUpdate = false; // the scene root never moves; without this every object's world matrix is rebuilt every frame
 scene.background = new THREE.Color(0x0c0c0c);
 scene.fog = new THREE.Fog(0x0c0c0c, 20, 60);
 function updateFogRange(){
@@ -1119,7 +1120,7 @@ function roomCols(x, z, rot, tierKey, forPlacement){
 }
 function refreshRoomDoors(){
   hotelRooms().forEach(m=>{
-    m.cols = makeColliders(m.key, m.x, m.z, m.rotation || 0, m.radius);
+    m.cols = makeColliders(m.key, m.x, m.z, m.rotation || 0, m.radius); machGrid = null;
     if(m.parts && m.parts.door) m.parts.door.visible = !casinoClosed; // open casino: the door is shut; closed: you can walk in
   });
 }
@@ -1243,6 +1244,7 @@ function buildFrontDeskMesh(){
 function rebuildRoomInterior(m){
   const p = m.parts, T = ROOM_TIERS[m.room.tier], o = m.room.opts, w = T.w, d = T.d, grp = p.interior;
   while(grp.children.length) grp.remove(grp.children[0]);
+  gfDisposeMerged(grp);
   const std = (c, r = 0.8, mt = 0) => new THREE.MeshStandardMaterial({ color:c, roughness:r, metalness:mt });
   const add = (geo, mat, x, y, z, ry = 0)=>{ const me = new THREE.Mesh(geo, mat); me.position.set(x, y, z); me.rotation.y = ry; me.castShadow = true; grp.add(me); return me; };
   const B = (x, y, z) => new THREE.BoxGeometry(x, y, z);
@@ -1294,6 +1296,10 @@ function rebuildRoomInterior(m){
     add(new THREE.CylinderGeometry(1.05, 1.05, 0.5, 20), std(0xe8e8ec, 0.2), w/2 - 1.6, 0.27, d/2 - 1.9);
     add(new THREE.CylinderGeometry(0.88, 0.88, 0.02, 20), new THREE.MeshStandardMaterial({ color:0x3aa0d0, emissive:0x1a6a9a, emissiveIntensity:0.6, roughness:0.1 }), w/2 - 1.6, 0.53, d/2 - 1.9);
   }
+  // the furnishings never move: merge them per material and compute their matrices once (the machine's matrix pass
+  // skips this group; it is flagged to update just this once)
+  gfMergeStatic(grp, null, []);
+  grp.traverse(o=>{ o.updateMatrix(); o.matrixAutoUpdate = false; });
 }
 // The lamp over the door shows the room's status: green = free, red = someone's in it, amber = needs cleaning.
 function updateRoomLamp(m){
@@ -2524,6 +2530,7 @@ function makeLabel(text){
 }
 
 const machines = []; // {mesh, label, x, z, radius, name, type, cost, income}
+let machGrid = null; // walkers' spatial index of machines (see machGridGet)
 
 // ==== HOLDEM ENGINE START ====
 // No-Limit Texas Hold'em rules engine. Plain JS: no THREE, no DOM, no game globals.
@@ -3318,16 +3325,18 @@ function refreshSlotDisplay(m, bet, msg){
 
 // A reel is one canvas column showing `rows` symbols stacked; the middle row is the payline.
 function drawReelColumn(reel, symbols){
-  const ctx = reel.ctx, cellH = reel.canvas.height / reel.rows;
+  const ctx = reel.ctx, cellH = reel.canvas.height / reel.rows, ox = reel.ox || 0, cw = reel.cw || reel.canvas.width; // (a reel is one column of its machine's shared canvas)
+  ctx.save(); ctx.beginPath(); ctx.rect(ox, 0, cw, reel.canvas.height); ctx.clip(); // nothing spills into the next reel's column
   ctx.fillStyle = '#0a0a12';
-  ctx.fillRect(0,0,reel.canvas.width, reel.canvas.height);
+  ctx.fillRect(ox,0,cw, reel.canvas.height);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   symbols.forEach((symbol, r)=>{
     const isPayline = reel.rows === 1 || r === Math.floor(reel.rows/2);
     ctx.fillStyle = isPayline ? '#f0e6d2' : '#8f8a7c';
     ctx.font = symbol.length > 1 ? 'bold 16px Arial' : 'bold 30px Arial';
-    ctx.fillText(symbol, reel.canvas.width/2, cellH*r + cellH/2);
+    ctx.fillText(symbol, ox + cw/2, cellH*r + cellH/2);
   });
+  ctx.restore();
   reel.texture.needsUpdate = true;
 }
 function drawReelSymbol(reel, symbol){ drawReelColumn(reel, [symbol]); }
@@ -3677,7 +3686,8 @@ function gfMergeStatic(root, partsObj, cwHexes){
       const mat = b.kind === 'u' ? gfUberMat(b.mat.side, b.mat.toneMapped) : b.kind === 'b' ? gfBasicVcMat(b.mat) : b.mat;
       const geo = gfBake(parts, useCol, useUv, uber);
       made.push(geo);
-      part.add(new THREE.Mesh(geo, mat));
+      const out = new THREE.Mesh(geo, mat); out.castShadow = b.list[0].castShadow; out.receiveShadow = b.list[0].receiveShadow;
+      part.add(out);
       b.list.forEach(o=>o.parent.remove(o));
     });
   });
@@ -3685,6 +3695,30 @@ function gfMergeStatic(root, partsObj, cwHexes){
 function gfDisposeMerged(root){
   const made = root && root.userData && root.userData.mergedGeos;
   if(made){ made.forEach(g=>g.dispose()); root.userData.mergedGeos = null; }
+}
+// A placed machine never moves (moving one rebuilds it), so its matrices are computed once instead of every frame.
+// Whatever the game animates through `parts` keeps updating; anything added later (upgrade dressing, signs) is a
+// fresh object with the default auto-update.
+function gfFreezeMachine(m){
+  const dyn = new Set();
+  const add = (v, d)=>{
+    if(!v || d > 3) return;
+    if(v.isObject3D){ dyn.add(v); return; }
+    if(Array.isArray(v)) v.forEach(x=>add(x, d+1));
+    else if(Object.getPrototypeOf(v) === Object.prototype) for(const k in v) add(v[k], d+1);
+  };
+  add(m.parts, 0);
+  if(m.parts && m.parts.interior) dyn.delete(m.parts.interior); // hotel interior: static, frozen when (re)built
+  m.mesh.traverse(o=>{ if(dyn.has(o)) return; o.updateMatrix(); o.matrixAutoUpdate = false; });
+  // Once its own matrix is settled, the per-frame matrix pass skips the frozen subtree and only visits the animated
+  // parts and anything added to the machine's root later (signs, upgrade dressing).
+  const root = m.mesh, live = [...dyn].filter(o=>o !== root);
+  root.updateMatrixWorld = function(force){
+    if(this.matrixWorldNeedsUpdate || force){ THREE.Object3D.prototype.updateMatrixWorld.call(this, force); return; }
+    const ch = this.children;
+    for(let i = 0; i < ch.length; i++) if(ch[i].matrixAutoUpdate || ch[i].matrixWorldNeedsUpdate) ch[i].updateMatrixWorld(false);
+    for(let i = 0; i < live.length; i++) live[i].updateMatrixWorld(false);
+  };
 }
 
 // Builds any slot cabinet from its catalog entry: `reels` columns by `rows` symbols,
@@ -3711,14 +3745,27 @@ function buildSlotCabinet(cfg, nick){
   reelWindow.position.set(0,winY*scale,0.325*scale);
   const reels = [];
   const span = 0.54*wide, reelW = span/nReels;
+  // all the reels share one canvas (a column each) and one mesh of side-by-side quads: one draw call, not one per reel
+  const canvas = document.createElement('canvas');
+  canvas.width = 48*nReels; canvas.height = 64*rows;
+  const rctx = canvas.getContext('2d');
+  const texture = new THREE.CanvasTexture(canvas);
+  const qpos = [], quv = [], qidx = [], qw = (reelW-0.02)*scale, qh = (winH-0.06)*scale;
   for(let i=0;i<nReels;i++){
-    const canvas = document.createElement('canvas');
-    canvas.width = 48; canvas.height = 64*rows;
-    const rctx = canvas.getContext('2d');
-    const texture = new THREE.CanvasTexture(canvas);
-    const reelMesh = new THREE.Mesh(new THREE.PlaneGeometry((reelW-0.02)*scale,(winH-0.06)*scale), new THREE.MeshBasicMaterial({ map: texture }));
-    reelMesh.position.set((-span/2 + reelW*(i+0.5))*scale, winY*scale, 0.34*scale);
-    const reelObj = { mesh: reelMesh, canvas, ctx: rctx, texture, rows, flickerTimer: 0 };
+    const cx = (-span/2 + reelW*(i+0.5))*scale, u0 = i/nReels, u1 = (i+1)/nReels;
+    qpos.push(cx-qw/2, qh/2, 0, cx+qw/2, qh/2, 0, cx-qw/2, -qh/2, 0, cx+qw/2, -qh/2, 0);
+    quv.push(u0, 1, u1, 1, u0, 0, u1, 0);
+    qidx.push(i*4, i*4+2, i*4+1, i*4+2, i*4+3, i*4+1);
+  }
+  const reelGeo = new THREE.BufferGeometry();
+  reelGeo.setAttribute('position', new THREE.Float32BufferAttribute(qpos, 3));
+  reelGeo.setAttribute('normal', new THREE.Float32BufferAttribute(qpos.map((_, k) => k % 3 === 2 ? 1 : 0), 3));
+  reelGeo.setAttribute('uv', new THREE.Float32BufferAttribute(quv, 2));
+  reelGeo.setIndex(qidx);
+  const reelMesh = new THREE.Mesh(reelGeo, new THREE.MeshBasicMaterial({ map: texture }));
+  reelMesh.position.set(0, winY*scale, 0.34*scale);
+  for(let i=0;i<nReels;i++){
+    const reelObj = { mesh: reelMesh, canvas, ctx: rctx, texture, rows, flickerTimer: 0, ox: 48*i, cw: 48 };
     drawReelColumn(reelObj, Array.from({length:rows}, randomSymbol));
     reels.push(reelObj);
   }
@@ -3744,7 +3791,7 @@ function buildSlotCabinet(cfg, nick){
   leverKnob.position.set(leverX*scale, 1.35*scale, 0);
   const leverGroup = new THREE.Group();
   leverGroup.add(leverArm, leverKnob);
-  g.add(plinth, cabinet, trimL, trimR, reelWindow, ...reels.map(r=>r.mesh), marquee, marqueeGlow, nameplate, ...buttons, leverGroup);
+  g.add(plinth, cabinet, trimL, trimR, reelWindow, reelMesh, marquee, marqueeGlow, nameplate, ...buttons, leverGroup);
   // furniture dressing: all geometry cached per size, materials shared, 6 extra meshes
   {
     const ck = scale+'_'+nReels+'_'+rows;
@@ -4720,6 +4767,7 @@ function placeMachine(key, x, z, rotation=0, nickArg, level=0){
   if(type === 'stairs' || type === 'lift') refreshLevels();
   refreshPilasters();
   if(type === 'room'){ const rm = machines[machines.length-1]; rm.room = newRoomState(item.tier); rebuildRoomInterior(rm); updateRoomLamp(rm); rm.parts.door.visible = !casinoClosed; }
+  gfFreezeMachine(machines[machines.length-1]); machGrid = null;
   // The desk comes with Bronze already running - there's no reason to sell someone the stand and then
   // separately charge them to switch it on. Only bumps clubLevel up, never down, so re-placing a second
   // desk (or loading a save where it's already ahead) can never undo further upgrades.
@@ -4727,10 +4775,11 @@ function placeMachine(key, x, z, rotation=0, nickArg, level=0){
 }
 
 function removeMachine(m){
-  scene.remove(m.mesh); gfDisposeMerged(m.mesh);
+  scene.remove(m.mesh); gfDisposeMerged(m.mesh); if(m.upFx) gfDisposeMerged(m.upFx.dress); if(m.parts && m.parts.interior) gfDisposeMerged(m.parts.interior);
   scene.remove(m.label);
   const idx = machines.indexOf(m);
   if(idx !== -1) machines.splice(idx, 1);
+  machGrid = null;
   if(m.type === 'wall') recomputeWallChains();
   if(m.type === 'stairs' || m.type === 'lift') refreshLevels();
   refreshPilasters();
@@ -7119,8 +7168,8 @@ function renameMachine(m, text){
   m.nick = text;
   const old = m.mesh, built = buildMachineMesh(m.key, text);
   built.mesh.position.copy(old.position); built.mesh.rotation.copy(old.rotation);
-  scene.remove(old); gfDisposeMerged(old); scene.add(built.mesh);
-  m.mesh = built.mesh; m.parts = built.parts;
+  scene.remove(old); gfDisposeMerged(old); if(m.upFx) gfDisposeMerged(m.upFx.dress); scene.add(built.mesh);
+  m.mesh = built.mesh; m.parts = built.parts; gfFreezeMachine(m);
   m.upFx = null; m._cwMats = null; m._cwApplied = undefined; m.brokenSign = null;
   if(m.broken) setBrokenSign(m, true);
   if(SLOT_CATALOG[m.type]) refreshSlotDisplay(m);
@@ -7177,6 +7226,10 @@ function buildUpgradeFx(m, sig){
       [top2, leg, glass].forEach(o => { o.position.set(sx, 0, 0.15); dress.add(o); });
     }
   }
+  // the dressing is static too: bake its small static parts (chips, lamp, side table) per material, give each stool one
+  // mesh (stools still hide on their own), and compute its matrices once
+  gfMergeStatic(dress, { stools: fx.stools, frontStool: fx.frontStool }, []);
+  g.traverse(o=>{ o.updateMatrix(); o.matrixAutoUpdate = false; });
   m.mesh.add(g);
   return fx;
 }
@@ -7191,7 +7244,7 @@ function syncUpgradeLooks(dt){
     if(!m.up) return;
     const sig = (m.up.speed | 0) + '.' + (m.up.appeal | 0) + '.' + (m.up.care | 0);
     if(m.upFx ? m.upFx.sig === sig : sig === '0.0.0') return;
-    if(m.upFx){ m.mesh.remove(m.upFx.group); m.upFx = null; }
+    if(m.upFx){ m.mesh.remove(m.upFx.group); gfDisposeMerged(m.upFx.dress); m.upFx = null; }
     if(sig !== '0.0.0') m.upFx = buildUpgradeFx(m, sig);
   });
 }
@@ -8350,6 +8403,7 @@ function makeCar(color){
   g.traverse(o=>{ if(o.isMesh){ o.castShadow = true; } });
   // wheels and lamps only matter up close (see updateDetailLOD); body and glass stay
   gfDetail(g, g.children.filter(o => o !== body && o !== cabin), 'far');
+  g.traverse(o=>{ if(o !== g){ o.updateMatrix(); o.matrixAutoUpdate = false; } }); // only the car as a whole moves
   return g;
 }
 
@@ -9052,6 +9106,24 @@ function machineReach(m){
   if(m._reachFor !== cols){ let r = 0; for(let i = 0; i < cols.length; i++) r = Math.max(r, Math.hypot(cols[i].x - m.x, cols[i].z - m.z) + cols[i].r); m._reachFor = cols; m._reach = r; }
   return m._reach;
 }
+// Walkers only need the machines near them: a grid of cells (6 m) each listing, in machine order, every machine whose
+// collision reach (+1.2 m, +1.5 m slack for the step) touches the cell. Rebuilt whenever machines or colliders change.
+const MG_CELL = 6, MG_NONE = [];
+const mgKey = (cx, cz) => (cx + 2000) * 8192 + (cz + 2000);
+function machGridGet(){
+  if(machGrid) return machGrid;
+  const g = new Map();
+  machines.forEach(m=>{
+    const r = machineReach(m) + 1.2 + 1.5;
+    const x0 = Math.floor((m.x - r) / MG_CELL), x1 = Math.floor((m.x + r) / MG_CELL), z0 = Math.floor((m.z - r) / MG_CELL), z1 = Math.floor((m.z + r) / MG_CELL);
+    for(let cx = x0; cx <= x1; cx++) for(let cz = z0; cz <= z1; cz++){ const k = mgKey(cx, cz); const a = g.get(k); if(a) a.push(m); else g.set(k, [m]); }
+  });
+  return (machGrid = g);
+}
+function machCandidates(npc, dt){
+  if(npc.speed * dt > 1.4) return machines; // (a very long sub-step: fall back to checking everything)
+  return machGridGet().get(mgKey(Math.floor(npc.pos.x / MG_CELL), Math.floor(npc.pos.z / MG_CELL))) || MG_NONE;
+}
 function stepToward(npc, dt, ignoreMachine){
   const steps = Math.min(6, Math.max(1, Math.ceil(npc.speed * dt / 0.25)));
   for(let i = 0; i < steps; i++){ if(stepTowardOnce(npc, dt / steps, ignoreMachine)) return true; }
@@ -9070,7 +9142,8 @@ function stepTowardOnce(npc, dt, ignoreMachine){
   else npc.path = null;
   const ux = wp ? wp.x - npc.pos.x : dx, uz = wp ? wp.z - npc.pos.z : dz, ul = Math.sqrt(ux*ux + uz*uz) || 1;
   let dirX = ux/ul, dirZ = uz/ul, touchedWall = false;
-  machines.forEach(m=>{
+  const cand = machCandidates(npc, dt);
+  cand.forEach(m=>{
     if(m === ignoreMachine && m.type !== 'room') return; // (a room's walls always count: its door point is outside them)
     { const reach = machineReach(m) + 1.2, rx = m.x - npc.pos.x, rz = m.z - npc.pos.z; if(rx*rx + rz*rz > reach*reach) return; } // too far away to matter
     if(m.type === 'stairs'){ if(viaActive) return; }                       // only walk onto a staircase on purpose
@@ -9105,7 +9178,7 @@ function stepTowardOnce(npc, dt, ignoreMachine){
   npc.pos.z += dirZ * npc.speed * dt;
   // Hard collision: nothing solid can be walked into. Machines you are walking up to (the target sits
   // right beside them) are the one exception, so neighbours never box in someone's stand spot.
-  machines.forEach(m=>{
+  cand.forEach(m=>{
     // (chandelier's own m.cols is empty - see makeColliders - so it naturally never collides here either)
     { const reach = machineReach(m) + 1.2, rx = m.x - npc.pos.x, rz = m.z - npc.pos.z; if(rx*rx + rz*rz > reach*reach) return; }
     const room = m.type === 'room';
