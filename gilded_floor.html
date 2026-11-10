@@ -6566,7 +6566,7 @@ function buildHumanoid(o){
   g.userData.rig = {
     legL: mkLeg(-0.11), legR: mkLeg(0.11), armL: mkArm(-0.33), armR: mkArm(0.33), body, head, detail, detail2, far: false, far2: false,
     v: 0, phase: Math.random() * 6.28, t: Math.random() * 20, seed: Math.random() * 10,
-    cur: { lL: 0, lR: 0, aL: 0, aR: 0 },
+    cur: { lL: 0, lR: 0, aL: 0, aR: 0, zR: 0.09, hx: 0 },
   };
   detail2.push(g.userData.rig.armL, g.userData.rig.armR);
   return g;
@@ -6591,15 +6591,20 @@ function animateFigure(mesh, dt, pose){
   r.phase += r.v * dt * 4.4;
   r.t += dt;
   const t = r.t, sw = Math.sin(r.phase) * walk;
-  let lL = sw * 0.6, lR = -sw * 0.6, aL = -sw * 0.5, aR = sw * 0.5;
+  let lL = sw * 0.6, lR = -sw * 0.6, aL = -sw * 0.5, aR = sw * 0.5, zR = 0.09, hx = 0;
   if(pose === 'slot'){ aL = -1.0 + Math.sin(t * 5.3) * 0.05; aR = -1.15 + Math.sin(t * 7.1) * 0.09; }
   else if(pose === 'table'){ aL = -0.75; aR = -0.7 + Math.sin(t * 1.7) * 0.06; }
   else if(pose === 'eat'){ aR = -1.35 + Math.sin(t * 2.6) * 0.45; aL = -0.5 + Math.sin(t * 2.6 + 1) * 0.12; }
-  else if(pose === 'drink'){ aR = -1.9 + Math.sin(t * 0.9) * 0.3; }
+  else if(pose === 'drink'){
+    // The arm is one stiff piece (no elbow), so a sip is faked: the whole arm angled forward and across the chest, hand
+    // held low in front of the chest, then a short lift upward and back every ~5.5 s. Never level with the shoulder.
+    const u = (t + r.seed) % 5.5, lift = u < 2.2 ? Math.sin(Math.PI * u / 2.2) : 0;
+    aL = -0.12; aR = -0.7 - 0.3 * lift; zR = -0.45 - 0.2 * lift; hx = -0.12 * lift;
+  }
   else if(pose === 'clip'){ aR = -0.9; }
   const k = Math.min(1, dt * 10), c = r.cur;
-  c.lL += (lL - c.lL) * k; c.lR += (lR - c.lR) * k; c.aL += (aL - c.aL) * k; c.aR += (aR - c.aR) * k;
-  r.legL.rotation.x = c.lL; r.legR.rotation.x = c.lR; r.armL.rotation.x = c.aL; r.armR.rotation.x = c.aR;
+  c.lL += (lL - c.lL) * k; c.lR += (lR - c.lR) * k; c.aL += (aL - c.aL) * k; c.aR += (aR - c.aR) * k; c.zR += (zR - c.zR) * k; c.hx += (hx - c.hx) * k;
+  r.legL.rotation.x = c.lL; r.legR.rotation.x = c.lR; r.armL.rotation.x = c.aL; r.armR.rotation.x = c.aR; r.armR.rotation.z = c.zR; r.head.rotation.x = c.hx;
   r.body.position.y = Math.abs(Math.cos(r.phase)) * 0.04 * walk + Math.sin(t * 1.7 + r.seed) * 0.004;
   r.body.rotation.y = sw * 0.07;                                   // shoulders counter-swing
   const look = (pose === 'slot' || pose === 'table') ? 0.1 : 1;    // people at a machine keep their eyes on it
@@ -9674,6 +9679,49 @@ function animateRouletteBall(r, p, wheelAngle){
   const ang = wheelAngle + rel;
   ball.position.set(Math.sin(ang) * rad, y, Math.cos(ang) * rad);
 }
+// Craps throw: both dice leave the shooter's end (local -x end), fly low along the long axis of the
+// table to the far end rail, bounce back a short way with a couple of hops and settle with the rolled faces up. The
+// result is decided before the throw; everything here is pure animation. One reused set of objects, nothing is
+// allocated per frame. Local table coordinates: felt is x +-1.6, z +-0.75; inner face of the far end rail is x = +1.55.
+const CRAPS_THROW_T = 1.1, CRAPS_PAUSE = 0.2, CRAPS_X_WALL = 1.42, CRAPS_Y = 1.005, CRAPS_TA = 0.55;
+const CRAPS_TH = [0, 1].map(() => ({ x0:0, z0:0, zw:0, xr:0, zr:0, a:[0,0,0], w:[0,0,0], qf:new THREE.Quaternion(), qt:new THREE.Quaternion(), e:new THREE.Euler() }));
+function crapsThrowStart(dice, d1, d2, far){
+  const sz = 0.2 + (Math.random() - 0.5) * 0.3, cz = (Math.random() - 0.5) * 0.3, rx = 0.9 + (Math.random() - 0.5) * 0.2;
+  for(let i = 0; i < 2; i++){
+    const th = CRAPS_TH[i], sgn = i ? 1 : -1; // die 1 starts and lands on the +z (player's) side of die 0
+    th.x0 = -1.2 + (Math.random() - 0.5) * 0.2 + sgn * 0.03; th.z0 = sz + sgn * 0.11;
+    th.zw = cz + sgn * (0.12 + Math.random() * 0.12);       // where it meets the far end rail
+    th.xr = rx + (Math.random() - 0.5) * 0.2; th.zr = cz + sgn * (0.2 + Math.random() * 0.12); // rest: far third, clear of the chips and the stars
+    for(let k = 0; k < 3; k++){ th.a[k] = Math.random() * 6.283; th.w[k] = (Math.random() < 0.5 ? -1 : 1) * (12 + Math.random() * 8); }
+    setDieFaceUp(dice[i], i ? d2 : d1, sgn * (0.4 + Math.random() * 0.8));
+    th.qf.copy(dice[i].quaternion);
+  }
+  crapsThrowStep(dice, far ? CRAPS_THROW_T : 0);
+}
+function crapsThrowStep(dice, tt){
+  const T = CRAPS_THROW_T, tn = Math.min(1, tt / T);
+  for(let i = 0; i < 2; i++){
+    const th = CRAPS_TH[i], d = dice[i];
+    let x, z, y;
+    if(tt >= T){ x = th.xr; z = th.zr; y = CRAPS_Y; d.quaternion.copy(th.qf); d.position.set(x, y, z); continue; }
+    const w = 1 - Math.min(1, Math.max(0, (tn - 0.55) / 0.45)), ws = w * w * (3 - 2 * w); // 1 while tumbling, 0 once flat
+    if(tt < CRAPS_TA){
+      const s = tt / CRAPS_TA;
+      x = th.x0 + (CRAPS_X_WALL - th.x0) * s; z = th.z0 + (th.zw - th.z0) * s;
+      y = CRAPS_Y + 0.075 + 0.09 * (1 - s) + 0.12 * Math.sin(Math.PI * s);
+    } else {
+      const u = (tt - CRAPS_TA) / (T - CRAPS_TA), f = 1 - Math.pow(1 - u, 2.2), hop = 0.14 * (1 - u) * (1 - u) * Math.abs(Math.sin(3 * Math.PI * u));
+      x = CRAPS_X_WALL + (th.xr - CRAPS_X_WALL) * f; z = th.zw + (th.zr - th.zw) * f;
+      y = CRAPS_Y + 0.075 * ws + hop;
+    }
+    const g = tt * (1 - 0.5 * tt / T);
+    th.e.set(th.a[0] + th.w[0] * g, th.a[1] + th.w[1] * g, th.a[2] + th.w[2] * g);
+    th.qt.setFromEuler(th.e);
+    const b = Math.min(1, Math.max(0, (tn - 0.5) / 0.5));
+    th.qt.slerp(th.qf, b * b * (3 - 2 * b));
+    d.quaternion.copy(th.qt); d.position.set(x, y, z);
+  }
+}
 function updateSpinTable(m, dt){
   let r = m.spin;
   if(!r){
@@ -9779,18 +9827,17 @@ function updateSpinTable(m, dt){
   }
   if(r.phase === 'rolling'){ // craps: come-out roll, then chase the point
     const dice = m.parts.dice;
+    if(!r.roll){ // a new throw: the result is decided now, the dice then travel to it (throw plus a short pause = 1.3 s)
+      r.roll = resolveCrapsRoll(r);
+      r.rollTimer = r.totalTime = CRAPS_THROW_T + CRAPS_PAUSE;
+      if(dice) crapsThrowStart(dice, r.roll.d1, r.roll.d2, m.lodState > 0); // far tables: dice are just placed at rest
+    }
     r.rollTimer -= dt;
-    if(dice){
-      const k = Math.min(1, 1 - r.rollTimer / r.totalTime);
-      dice.forEach((d,i)=>{ d.rotation.x += dt*(20+i*3); d.rotation.y += dt*(17-i*2); d.position.y = 1.005 + Math.sin(Math.PI*k)*0.38; });
-    }
+    if(dice && m.lodState === 0) crapsThrowStep(dice, r.totalTime - r.rollTimer);
     if(r.rollTimer > 0) return;
-    const { d1, d2, sum } = resolveCrapsRoll(r);
-    if(dice){
-      setDieFaceUp(dice[0], d1, 0.4 + Math.random()*0.8);
-      setDieFaceUp(dice[1], d2, -0.4 - Math.random()*0.8);
-      dice.forEach(d => { d.position.y = 1.005; });
-    }
+    const { d1, d2, sum } = r.roll;
+    r.roll = null;
+    if(dice) crapsThrowStep(dice, CRAPS_THROW_T); // make sure they are exactly at rest (covers a table that was far during the throw)
     let outcome = null; // null = keep rolling
     if(r.point === null){
       if(sum===7 || sum===11) outcome = 'win';
@@ -9807,7 +9854,7 @@ function updateSpinTable(m, dt){
         g.houseNet = win ? -g.bet : g.bet;
       });
       settleSpinBets(r);
-    } else r.rollTimer = 1.0;
+    } else r.rollTimer = 1.0; // (a fresh throw sets its own timer; r.roll is already cleared)
     return;
   }
   if(r.phase === 'settle'){
