@@ -322,8 +322,6 @@
   <div style="color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin:0 0 5px;">Game</div>
   <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;">Sandbox mode <input type="checkbox" id="sandboxToggle"></label>
   <div style="font-size:10px;color:#9db8a8;margin:0 0 8px;line-height:1.35;">Unlimited cash, everything unlocked, no bankruptcy. Switch it off and your real cash comes back.</div>
-  <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;">Difficulty <select id="difficultySelect"><option value="relaxed">Relaxed</option><option value="normal">Normal</option><option value="hard">Hard</option></select></label>
-  <div id="difficultyNote" style="font-size:10px;color:#9db8a8;margin:0 0 12px;line-height:1.35;"></div>
   <label style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;">Big spenders <span id="bigSpenderVal" style="color:#e6c34a;">8%</span></label>
   <input type="range" id="bigSpenderSlider" min="0" max="100" value="8" style="width:100%;">
   <div style="font-size:10px;color:#9db8a8;margin:4px 0 12px;line-height:1.35;">How many of your guests are high rollers, out of everyone who walks in. Higher means more money, faster - an easier ride if you want one.</div>
@@ -1535,7 +1533,6 @@ function updateHotel(dt){
   if(hotelTick > 0) return;
   hotelTick = 0.5;
   hotelRooms().forEach(m=>{
-    if(m.room.dirty && !m.room.cleaner){ m.room.dirtyT += 0.5; if(m.room.dirtyT > 240){ m.room.dirty = false; m.room.dirtyT = 0; } } // slowly airs itself out - housekeepers are far quicker
     updateRoomLamp(m);
   });
   if(hotel.dynamic && officeOn('revmgr')){
@@ -2354,7 +2351,7 @@ const GRIPES = {
   steepFee:   { text:'The cage takes too big a cut',                      fix:'Drop the exchange fee below 4%' },
   brokenKit:  { text:'Playing on machines that are falling apart',        fix:'Repair them yourself (F) or hire a Mechanic' },
   nothingNew: { text:'Nothing here they fancy playing',                   fix:'Add more machines, or a wider spread of games' },
-  crowded:    { text:'Turned away at the door - the lot is full',          fix:'Expand parking (Building); a Lounge softens a packed floor' },
+  crowded:    { text:'Turned away at the door - the lot is full',          fix:'Expand parking (Building) or add Valet Parking' },
   tightOdds:  { text:'The games feel rigged',                             fix:'Ease the rigging back in the Rigging tab' },
   dirtyRooms: { text:'Rooms not made up',                                 fix:'Hire a Housekeeper' },
   noRooms:    { text:'Wanted a room, none free',                          fix:'Build more guest rooms (Hotel)' },
@@ -3127,7 +3124,7 @@ const BUILD_ITEMS = {
   restroom:  { name:'Restrooms',        cost:500, income:0,  radius:1.1,  category:'amenity',
     desc:'Guests stick around and play longer per visit, and a few more come (+2% each, up to five).' },
   lounge:    { name:'Lounge',           cost:700, income:0,  radius:1.4,  category:'amenity',
-    desc:'Guests linger and play longer per visit, a crowded floor bothers them less, and a few more come (+3% each, up to three).' },
+    desc:'Guests linger and play longer per visit, and a few more come (+3% each, up to three).' },
   cashier:   { name:"Cashier's Cage", cost:900, income:0,  radius:1.7,  category:'amenity',
     desc:'Where guests turn their chips back into money on the way out. Click it to set the exchange fee. A clerk behind the glass keeps the line short.' },
   atm:       { name:'ATM',              cost:300, income:0,  radius:0.4,  category:'amenity',
@@ -4830,18 +4827,12 @@ setInterval(() => { try { ambienceTick(); } catch(e){} }, 250);
 document.addEventListener('visibilitychange', () => { if(audioCtx && document.hidden) ambBus.gain.setTargetAtTime(0, audioCtx.currentTime, 0.05); });
 
 // ---------------- Economy ----------------
-// Guests spend a little more than the original tuning (BASE_SPEND), and Settings can tilt the whole game easier or harder.
+// Guests spend a little more than the original tuning (BASE_SPEND).
 const BASE_SPEND = 1.15;
-const DIFFICULTIES = {
-  relaxed: { name:'Relaxed', spend:1.3,  build:0.75, note:'Guests spend more and floor expansions cost less.' },
-  normal:  { name:'Normal',  spend:1,    build:1,    note:'The intended balance.' },
-  hard:    { name:'Hard',    spend:0.85, build:1.25, note:'Guests spend less and floor expansions cost more.' },
-};
-let difficulty = 'normal';
-function spendScale(){ return BASE_SPEND * DIFFICULTIES[difficulty].spend; }
-// A second, more direct lever than Difficulty: what share of new guests land in the "high roller" wallet
+function spendScale(){ return BASE_SPEND; }
+// A lever in Settings: what share of new guests land in the "high roller" wallet
 // tier (tier 3 below), tucked into Settings for anyone who wants an easier ride without touching the
-// spend/build economy the Difficulty dropdown controls. Defaults to 8, matching the tier's original
+// spend/build economy. Defaults to 8, matching the tier's original
 // fixed 8% share exactly, so a game that never touches the slider plays identically to before it existed.
 const BASE_BIG_SPENDER_PCT = 8;
 let bigSpenderPct = BASE_BIG_SPENDER_PCT;
@@ -5665,7 +5656,7 @@ let parkingUpgradeCost = 500;
 let floorExpansions = 0;
 const FLOOR_EXPANSION_DEPTH = 16;
 const FLOOR_EXPANSION_BASE_COST = 3000;
-function floorExpansionCost(){ return Math.round(FLOOR_EXPANSION_BASE_COST * Math.pow(1.4, floorExpansions) * DIFFICULTIES[difficulty].build); }
+function floorExpansionCost(){ return Math.round(FLOOR_EXPANSION_BASE_COST * Math.pow(1.4, floorExpansions)); }
 const EXPAND_LIMITS = { back:4, left:3, right:3 };
 const EXPAND_SIZE = { back:16, left:12, right:12 };
 const expansionCounts = { back:0, left:0, right:0 };
@@ -6227,7 +6218,7 @@ function simulateSlot(bet, payout, pWin=0.35){
 const STAFF_TYPES = {
   security: { name:'Security Guard', hireCost:200, wage:22, color:0x2b3a4a, desc:'Cuts down on scams, nudging the odds back your way.' },
   dealer:   { name:'Dealer',         hireCost:250, wage:25, color:0x1a1a1a, desc:'Tables need one to open. Runs their own table and one neighbouring table (extras wander): guests bet ~15% more and are drawn to it.' },
-  waitress: { name:'Waiter',         hireCost:180, wage:18, color:0xb03a5b, desc:'Works one bar (extras walk the floor): staffed bars boost spending and keep guests seated.' },
+  waitress: { name:'Waiter',         hireCost:180, wage:18, color:0xb03a5b, desc:'Works a bar or a dining table. You need one per bar and one per 3 dining tables (extras walk the floor, but do nothing useful): staffed bars boost spending and keep guests seated.' },
   clerk:       { name:'Clerk',            hireCost:220, wage:22, color:0x2a4a6a, desc:'Works the front desk and the cashier cage - without one, the line crawls.' },
   chef:        { name:'Chef',             hireCost:300, wage:29, color:0xe8e4d8, desc:'Works a Kitchen. No chef on it, no food served.' },
   mechanic:    { name:'Mechanic',         hireCost:260, wage:25, color:0x7a6a3a, desc:'Services worn machines and fixes breakdowns before you notice them.' },
@@ -6291,7 +6282,7 @@ function roleLoad(role){
   try { // called once at initial script load (renderStaffPanel's first draw), before every global
         // below is necessarily declared yet - same class of issue devUnlockActive() guards against.
     if(role === 'dealer') posts = Math.ceil(machines.filter(m => m.category === 'gambling' && !isSlotLike(m)).length / 2); // one dealer covers two neighbouring tables
-    else if(role === 'waitress') posts = machines.filter(m => m.type === 'bar' || m.type === 'dinertable').length;
+    else if(role === 'waitress') posts = machines.filter(m => m.type === 'bar').length + Math.ceil(machines.filter(m => m.type === 'dinertable').length / 3); // one waiter per bar and one per 3 dining tables
     else if(role === 'clerk') posts = machines.filter(m => m.type === 'frontdesk' || m.type === 'cashier' || m.type === 'mktoffice').length;
     else if(role === 'chef') posts = kitchens().length;
     else if(role === 'housekeeper') posts = Math.ceil(hotelRooms().length / 15); // one housekeeper can turn about 15 rooms (cleaning takes ~6 s plus the walk, a room turns over about twice a day)
@@ -6660,9 +6651,9 @@ function fireStaff(key){
 renderStaffPanel();
 
 // Dealers work a table (one per table) and waitresses work a bar (one per bar) while
-// there are enough of them to go around; any extras just walk the floor. Guests use
-// unstaffed tables and bars too - a staffed one just earns a bonus (see computeBet and
-// amenitySpendMultiplier).
+// there are enough of them to go around; any extras just walk the floor and
+// give no bonus. Guests use unstaffed tables and bars too - a staffed one just earns a bonus (see
+// computeBet and amenitySpendMultiplier).
 function dealerPostOffset(m){ return m.type === 'craps' ? 1.25 : m.radius + 0.4; }
 function staffPostPos(m, type){
   // Cashier's Cage clerks: -1.3 put them behind the cage's own back wall (z=-1.0) rather than inside
@@ -6675,7 +6666,6 @@ function staffPostPos(m, type){
   return type === 'dealer' ? localToWorld(m, 0, -dealerPostOffset(m)) : type === 'clerk' ? localToWorld(m, 0, clerkZ) : type === 'chef' ? localToWorld(m, 0, 0.2) : type === 'waitress' && m.type === 'dinertable' ? localToWorld(m, 0, -1.7) : localToWorld(m, 0, -0.6);
 }
 function isStaffed(m){ return !!(m.staffer && m.staffer.atPost); }
-function roamingStaff(type){ return staffNPCs.filter(s => s.type === type && !s.postMachine).reduce((n,s)=> n + staffPower(s), 0); }
 function securityStrength(){ return staffNPCs.filter(s => s.type === 'security').reduce((n,s)=> n + staffPower(s), 0); }
 const DEALER_REACH = 9; // a dealer also runs one other table whose centre is within this distance of their own
 function needsDealer(m){ return m.category === 'gambling' && !isSlotLike(m); }
@@ -7401,7 +7391,7 @@ const TAB_UNLOCKS = [
   // temptation to cheat before ever being introduced to the loyalty system a rigged machine actually
   // puts at risk (a caught-out regular's affinity takes the hit same as anyone's mood does). Understand
   // what you stand to lose before you're handed the tool that risks it, same reasoning as Club-before-
-  // Staff above. Key numbers and thresholds swapped together so key order still tracks difficulty.
+  // Staff above. Key numbers and thresholds swapped together so key order still tracks the thresholds.
   { id:'tabRegulars', name:'Regulars', key:'6', icon:ICON_HTML('regulars'), need:'earn $3,500 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 3500 },
   { id:'tabRigging',  name:'Rigging',  key:'7', icon:ICON_HTML('rigging'), need:'earn $5,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 5000 },
   { id:'tabHotel',    name:'Hotel',    key:'8', icon:ICON_HTML('hotel'), need:'build an upper floor (Building tab)',               ok: ()=> upperBuilt },
@@ -9013,10 +9003,6 @@ function amenityDurationMultiplier(){
   const lounges = machines.filter(m=>m.type==='lounge').length; // a lounge is where people linger: +10% each, up to +30%
   return 1 + Math.min(0.4, restrooms*0.08) + Math.min(0.3, stages*0.1) + Math.min(0.2, staffedBars*0.05) + Math.min(0.35, diners*0.12) + Math.min(0.3, spas*0.12) + Math.min(0.3, lounges*0.1); // guests stick around longer per visit
 }
-function loungeOvercrowdRelief(){
-  const lounges = machines.filter(m=>m.type==='lounge').length;
-  return Math.min(0.8, lounges*0.2); // a place to relax takes the edge off a crowded floor
-}
 
 // Guests on a losing streak bet bigger to try to win it back.
 function chaseFactor(actor){ return actor && actor.lossStreak ? 1 + Math.min(0.8, actor.lossStreak * 0.12) : 1; }
@@ -9031,7 +9017,7 @@ function computeBet(actor, m, play){
     else {
       const style = actor && actor.betStyle ? actor.betStyle : 1;
       credits = 1 + Math.floor(Math.pow(Math.random(), 1.4) * cfg.maxCredits * Math.min(2, Math.max(0.35, style/1.3)));
-      credits *= amenitySpendMultiplier() * (1 + roamingStaff('waitress')*0.04) * (actor && actor.isMember ? clubTierOf(actor.points).bet : 1) * chaseFactor(actor);
+      credits *= amenitySpendMultiplier() * (actor && actor.isMember ? clubTierOf(actor.points).bet : 1) * chaseFactor(actor);
       credits = Math.max(1, Math.min(capCredits, Math.round(credits)));
     }
     if(actor) credits = Math.max(1, Math.min(credits, Math.floor(bankBetLimit() / unit)));
@@ -9044,8 +9030,8 @@ function computeBet(actor, m, play){
   if(actor) tableCap = Math.min(tableCap, bankBetLimit());
   if(actor && actor.wantsMaxBet) return Math.min(tableCap, actor.wallet);
   let bet = m.income * BET_SCALE * (m.stakeMult || 1) * tableStake * (0.6 + Math.random()*0.9);
-  if(!isSlotLike(m)) bet *= 1 + (isStaffed(m) ? 0.15 * machinePower(m) : 0) + roamingStaff('dealer')*0.04; // a dealer at the table matters most
-  bet *= (1 + roamingStaff('waitress')*0.04) * chaseFactor(actor);
+  if(!isSlotLike(m)) bet *= 1 + (isStaffed(m) ? 0.15 * machinePower(m) : 0); // a dealer at the table matters most
+  bet *= chaseFactor(actor);
   bet *= amenitySpendMultiplier();
   if(actor && actor.isMember) bet *= clubTierOf(actor.points).bet;
   if(actor && actor.betStyle) bet *= actor.betStyle; // big rollers bet much bigger, cautious guests bet small
@@ -9130,11 +9116,13 @@ function celebrateWin(actor, m, mult, amount){
   if(bigWinNews(actor, amount, 0, jackpot)) logEvent(`${jackpot ? 'JACKPOT' : 'Big win'} at ${m.nick || m.name}: $${Math.round(amount).toLocaleString()} (${Math.round(mult)}x)`, col);
 }
 
-// Early protection: in the first days, guest wins cannot take the casino more than EARLY_LOSS_LIMIT below zero on gambling in one day
+// Early protection: in the first days, guest wins cannot take the casino more than a small limit below zero on gambling in one day
 // (a run of big wins on a few machines could otherwise wipe out a new casino before the house edge has time to work).
-const EARLY_LOSS_LIMIT = 1000, EARLY_LOSS_DAYS = 5;
+// Limit: $250 on days 1-3, $500 on days 4-7, none from day 8.
+function earlyLossLimit(){ return currentDay <= 3 ? 250 : currentDay <= 7 ? 500 : 0; }
 function earlyLossGuard(houseNet){
-  if(houseNet >= 0 || currentDay > EARLY_LOSS_DAYS) return houseNet;
+  const EARLY_LOSS_LIMIT = earlyLossLimit();
+  if(houseNet >= 0 || EARLY_LOSS_LIMIT <= 0) return houseNet;
   const dayNet = ledger.slotWon + ledger.tableWon - ledger.slotPaid - ledger.tablePaid; // the house's gambling result so far today (your own play is not in these)
   const room = Math.max(0, dayNet + EARLY_LOSS_LIMIT);
   return -houseNet > room ? -room : houseNet;
@@ -10798,7 +10786,7 @@ function updateNPCs(dt){
             // the table paces itself: this guest's next hand is queued when the round settles
             if(!started) npc.playTimer = isSpinTable(m) ? 0.7 + Math.random()*0.6 : 1;
           } else {
-            const baseDelay = Math.max(0.5, (1.1 + Math.random()*0.8) - roamingStaff('waitress')*0.05);
+            const baseDelay = Math.max(0.5, (1.1 + Math.random()*0.8));
             const animDuration = isSlotMachine(m) ? 1.0 + SLOT_CATALOG[m.type].reels*0.28 : m.type==='bigwheel' ? 2.4 : m.type==='roulette' ? 2.6 : m.type==='baccarat' ? 1.6 : m.type==='craps' ? 3.5 : 4.5;
             npc.playTimer = (baseDelay + animDuration) * machineSpeedFactor(m);
           }
@@ -10875,7 +10863,7 @@ function updateNPCs(dt){
           const sessionBase = 8 + Math.random()*Math.random()*45;
           const tableFactor = isSlotLike(npc.machine) ? 1 : 1.8;
           // waitresses extend how long a guest sticks around playing
-          npc.gambleTimeLeft = sessionBase * tableFactor * (1 + roamingStaff('waitress')*0.06) * amenityDurationMultiplier() * machineAppeal(npc.machine) * (npc.isMember ? clubTierOf(npc.points).stay : 1);
+          npc.gambleTimeLeft = sessionBase * tableFactor * amenityDurationMultiplier() * machineAppeal(npc.machine) * (npc.isMember ? clubTierOf(npc.points).stay : 1);
           npc.playTimer = 0.3;
           if(npc.machine.type === 'holdem') npc.gambleTimeLeft = 1200; // a Hold'em guest stays for a number of hands, not a number of minutes
         } else {
@@ -10926,7 +10914,7 @@ function updatePopulation(dt){
     const e = regularPool.find(r => !r.onFloor && r.affinity > 40 && Math.random() < dt * REGULAR_EXTRA_VISITS * (r.affinity - 40) / 60 / DAY_LENGTH);
     if(e){ const n = makeNPC({ regular: e }); if(n) n.dropIn = true; const ds = DS(); ds.regularDropIns = (ds.regularDropIns || 0) + 1; }
   }
-  if(carsOnLot() >= effectiveParkingCapacity()){ gripe('crowded', dt * 0.05); reputation = Math.max(0, reputation - dt*0.5*(1 - loungeOvercrowdRelief())); } // overcrowded, guests turned away (lounges ease the sting)
+  if(carsOnLot() >= effectiveParkingCapacity()){ gripe('crowded', dt * 0.05); } // overcrowded, guests turned away (a complaint only; no reputation drain)
   if(campaignTimeLeft > 0){ campaignTimeLeft -= dt; if(campaignTimeLeft <= 0){ campaignTimeLeft = 0; campaignKey = null; } }
   if(hrOutreachTimeLeft > 0){ hrOutreachTimeLeft -= dt; if(hrOutreachTimeLeft <= 0) hrOutreachTimeLeft = 0; }
   if(prPushCooldown > 0){ prPushCooldown -= dt; if(prPushCooldown <= 0) prPushCooldown = 0; }
@@ -10941,7 +10929,7 @@ function updateReputation(dt){
   const rigged = machines.filter(m => m.category === 'gambling');
   const avgEdge = rigged.length ? rigged.reduce((s,m)=>s+rigLevel(m),0)/rigged.length : 0;
   const vipLounges = machines.filter(m=>m.type==='viplounge').length;
-  const equilibrium = 50 + amenityCount*2 + Math.min(10, decorationCount*0.7) + roamingStaff('waitress')*0.8 + staffCounts.waitress*1.4 + vipLounges*4 - avgEdge*100*0.3 + hotelReputationBonus();
+  const equilibrium = 50 + amenityCount*2 + Math.min(10, decorationCount*0.7) + staffCounts.waitress*1.4 + vipLounges*4 - avgEdge*100*0.3 + hotelReputationBonus();
   reputation += (Math.max(0,Math.min(100,equilibrium)) - reputation) * dt * 0.05;
   loyaltyScore += (50 - loyaltyScore) * dt * 0.003; // word of mouth fades back toward neutral
   reputation = Math.max(0, Math.min(100, reputation));
@@ -11936,7 +11924,7 @@ function saveGame(){
       totalGamblingRevenue, revenueHigh, statHistory: statHistory.slice(-2400).map(s=>[Math.round(s.t*10)/10, Math.round(s.cash), Math.round(s.rev), +s.rep.toFixed(1), s.guests, Math.round(s.happy), Math.round(s.loyalty)]), totalGuestsServed,
       currentDay, dayStartCash, dayStartGuestsServed, dayTime,
       floorExpansions, roomBackZ: ROOM_BACK_Z, roomLeftX: ROOM_LEFT_X, roomRightX: ROOM_RIGHT_X, wallpaperKey, upperBuilt, unlockedTabs: Array.from(unlockedTabs), keybinds: {...keybinds}, checklistDone, playedAMachine, hotel: { rateMult: hotel.rateMult, dynamic: hotel.dynamic, fromH: hotel.fromH, toH: hotel.toH },
-      soundVolume, soundMuted, ambienceOn, ambienceVolume, nametagsAlwaysOn, unlockPopupsEnabled, casinoClosed, ledger, sandbox, sandboxRealCash, officeUnlocked: Array.from(officeUnlocked), officesGranted, tipsOn: tipsEnabled, tips: tipList.slice(-40), difficulty, bigSpenderPct, dayOpenTime, wageUnit: 'day2',
+      soundVolume, soundMuted, ambienceOn, ambienceVolume, nametagsAlwaysOn, unlockPopupsEnabled, casinoClosed, ledger, sandbox, sandboxRealCash, officeUnlocked: Array.from(officeUnlocked), officesGranted, tipsOn: tipsEnabled, tips: tipList.slice(-40), bigSpenderPct, dayOpenTime, wageUnit: 'day2',
       daysInRed, investorDebt, bailoutsUsed, loyaltyScore, regularPool: regularPool.slice(0, MAX_REGULARS).map(e => Object.assign({}, e, { onFloor:false })),
       unlockedAchievements: Array.from(unlockedAchievements),
       inspectionsSurvived, inspectionsCaught, everMachineBroken,
@@ -12015,7 +12003,6 @@ function loadGame(){
   officeUnlocked.clear(); (data.officeUnlocked || []).forEach(k => officeUnlocked.add(k));
   officesGranted = data.officesGranted === undefined ? true : !!data.officesGranted; // older saves keep what they had
   tipsEnabled = data.tipsOn === undefined ? false : !!data.tipsOn;
-  setDifficulty(data.difficulty);
   setBigSpenderPct(data.bigSpenderPct); // undefined on an older save - keeps the default, same as a fresh game
   dayOpenTime = data.dayOpenTime !== undefined ? data.dayOpenTime : (data.casinoClosed ? 0 : (data.dayTime || 0));
   tipList.length = 0; tipsSeen.clear(); (data.tips || []).forEach(t => { tipList.push(t); tipsSeen.add(t.key); });
@@ -12247,15 +12234,6 @@ function setSandbox(on){
 }
 document.getElementById('sandboxToggle').addEventListener('change', (e)=>{ e.stopPropagation(); setSandbox(e.target.checked); });
 document.getElementById('sandboxToggle').addEventListener('click', (e)=> e.stopPropagation());
-function setDifficulty(k){
-  if(!DIFFICULTIES[k]) k = 'normal';
-  difficulty = k;
-  document.getElementById('difficultySelect').value = k;
-  document.getElementById('difficultyNote').textContent = DIFFICULTIES[k].note + ' Changes apply to guests arriving from now on.';
-}
-document.getElementById('difficultySelect').addEventListener('change', (e)=>{ e.stopPropagation(); setDifficulty(e.target.value); logEvent('Difficulty: ' + DIFFICULTIES[difficulty].name, '#e6c34a'); });
-document.getElementById('difficultySelect').addEventListener('click', (e)=> e.stopPropagation());
-setDifficulty(difficulty);
 function setBigSpenderPct(pct){
   bigSpenderPct = Math.max(0, Math.min(100, Math.round(pct === undefined || isNaN(pct) ? bigSpenderPct : pct)));
   document.getElementById('bigSpenderSlider').value = bigSpenderPct;
