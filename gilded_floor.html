@@ -70,6 +70,7 @@
   .sideTab.locked .ic{ color:inherit; }
   .sideTab:hover:not(.locked){ background:linear-gradient(180deg, rgba(40,70,55,0.96), rgba(22,42,34,0.96)) !important; }
   .sideTab.locked:hover{ border-color:rgba(90,90,74,0.8) !important; }
+  .sideTab.active:not(.locked){ background:linear-gradient(180deg, rgba(58,84,60,0.98), rgba(34,58,44,0.98)) !important; border-color:#e6c34a !important; box-shadow:0 2px 8px rgba(0,0,0,0.45), inset 0 0 8px rgba(230,195,74,0.28); }
   .sideTab .tabName{ white-space:normal; line-height:1.1; font-size:min(1em,10px); }
   /* Very short windows: icon + key only (the title attribute keeps the name). */
   @media (max-height:680px){ .sideTab .tabName{ display:none; } .sideTab{ gap:1px; } }
@@ -487,8 +488,18 @@ const BLOB_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 const blobShadowMat = op => new THREE.MeshBasicMaterial({ map: BLOB_TEX, color: 0x000000, transparent: true, opacity: op, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
 const SHADOW_MAT_MACHINE = blobShadowMat(0.6), SHADOW_MAT_PERSON = blobShadowMat(0.45);
 const glowMatCache = {};
+// Glow pools dim to a quarter while the casino is closed. glowLevel eases toward glowTarget; the per-frame
+// cost is one comparison unless the open/closed state just changed.
+const GLOW_BASE = 0.5;
+let glowLevel = 1, glowTarget = 1;
+function stepGlowFade(dt){
+  if(glowLevel === glowTarget) return;
+  const d = dt / 0.6; // about 0.6s for the full swing
+  glowLevel = glowLevel < glowTarget ? Math.min(glowTarget, glowLevel + d) : Math.max(glowTarget, glowLevel - d);
+  for(const k in glowMatCache) glowMatCache[k].opacity = GLOW_BASE * glowLevel;
+}
 function glowMat(color){
-  return glowMatCache[color] || (glowMatCache[color] = new THREE.MeshBasicMaterial({ map: BLOB_TEX, color, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+  return glowMatCache[color] || (glowMatCache[color] = new THREE.MeshBasicMaterial({ map: BLOB_TEX, color, transparent: true, opacity: GLOW_BASE * glowLevel, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
 }
 function addBlob(parent, mat, size, y, order, ox = 0, oz = 0){
   const m = new THREE.Mesh(BLOB_GEO, mat);
@@ -1115,9 +1126,9 @@ function refreshRoomDoors(){
 // Corridor-style front: one merged, vertex-coloured mesh (panelling, wainscot, door casing, sconce) per room,
 // plus a number plate and a glow card that drop out when the room is far away (see gfDetail).
 const ROOM_FACADE = {
-  std:   { door:0x2b1a12, casing:0x8a6a2a },
-  dlx:   { door:0x5a1420, casing:0xb08a2a },
-  suite: { door:0x123f30, casing:0xe6c34a },
+  std:   { door:0x2b1a12, casing:0x8a6a2a, paper:0x4f3524, stripe:0x5b4030, wain:0x3b2416 },
+  dlx:   { door:0x5a1420, casing:0xb08a2a, paper:0x5a2630, stripe:0x683540, wain:0x3d1219 },
+  suite: { door:0x123f30, casing:0xe6c34a, paper:0x1d4a3a, stripe:0x2a5a48, wain:0x0f2c22 },
 };
 const facadeMat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.6, metalness:0.15 });
 function mergeColoredBoxes(list){
@@ -1191,6 +1202,19 @@ function buildHotelRoomMesh(tierKey){
   fb.push([2.3, 0.14, 0.09, 0, 2.47, fz + 0.025, F.casing]);          // door casing header
   fb.push([0.16, 0.34, 0.05, -1.75, 2.1, fz + 0.03, GOLD]);           // sconce plate
   fb.push([0.1, 0.2, 0.1, -1.75, 2.2, fz + 0.08, 0xffe2b0]);          // sconce shade
+  // Side walls (the ones shared with the neighbouring rooms): wainscot, chair rail and pinstripe wallpaper in the tier
+  // colours on the outer face; the inner face only gets wainscot + rail so the wall colour a guest room is customised
+  // with still shows above it. All of it rides in the same merged mesh, so no extra draw calls.
+  const wz = d - 0.1, stripes = Math.floor(d / 0.6);
+  [-1, 1].forEach(sgn => {
+    const ox = sgn * (w/2 + 0.12), ix = sgn * (w/2 - 0.12);
+    fb.push([0.04, H - 1.1, wz, ox, 1.1 + (H - 1.1)/2, 0, F.paper]);
+    for(let i = 0; i < stripes; i++) fb.push([0.05, H - 1.2, 0.1, ox + sgn * 0.005, 1.1 + (H - 1.2)/2 + 0.05, -d/2 + 0.3 + (i + 0.5) * (d - 0.6) / stripes, F.stripe]);
+    fb.push([0.06, 1.1, wz, ox + sgn * 0.01, 0.55, 0, F.wain]);
+    fb.push([0.09, 0.07, wz, ox + sgn * 0.025, 1.13, 0, GOLD]);
+    fb.push([0.06, 1.1, wz - 0.2, ix - sgn * 0.01, 0.55, 0, F.wain]);
+    fb.push([0.09, 0.07, wz - 0.2, ix - sgn * 0.025, 1.13, 0, GOLD]);
+  });
   const facade = new THREE.Mesh(mergeColoredBoxes(fb), facadeMat); facade.receiveShadow = true; g.add(facade);
   const plate = new THREE.Mesh(roomPlateGeo(roomSerial++ % 64), roomNumberMaterial()); plate.position.set(1.75, 1.7, fz + 0.04);
   const halo = new THREE.Mesh(roomHaloGeo, sconceHaloMat); halo.position.set(-1.75, 2.25, fz + 0.1); halo.renderOrder = 2;
@@ -3617,7 +3641,7 @@ function buildSlotCabinet(cfg, nick){
   const dCanvas = document.createElement('canvas'); dCanvas.width = 512; dCanvas.height = Math.round(512*dH/dW);
   const dTex = new THREE.CanvasTexture(dCanvas);
   const display = new THREE.Mesh(new THREE.PlaneGeometry(dW, dH), new THREE.MeshBasicMaterial({ map: dTex }));
-  display.position.set(0, 0.5*scale, 0.331*scale);
+  display.position.set(0, (rows===1?0.5:0.455)*scale, 0.331*scale); // 3-row cabinets sit lower so the button ledge does not clip the top of the labels from the seated camera
   g.add(display); det.push(display);
   g.userData.slotDisplay = { canvas:dCanvas, tex:dTex, overlayCanvas:ovCanvas, overlayTex:ovTex, glow:cssHex(cfg.glow), reels:nReels, rows };
   det.push(trimL, trimR, nameplate, ...buttons, leverGroup);
@@ -5184,6 +5208,8 @@ const closeCasinoBtn = document.getElementById('closeCasinoBtn');
 const closedBannerEl = document.getElementById('closedBanner');
 function setCasinoClosed(closed, silent=false){
   casinoClosed = closed;
+  glowTarget = closed ? 0.25 : 1;
+  if(silent){ glowLevel = glowTarget; for(const k in glowMatCache) glowMatCache[k].opacity = GLOW_BASE * glowLevel; }
   closedBannerEl.style.display = closed ? 'block' : 'none';
   closeCasinoBtn.textContent = closed ? 'Open Casino' : 'Close Casino';
   closeCasinoBtn.classList.toggle('active', closed);
@@ -7435,6 +7461,20 @@ function closeManagedPopups(exceptId){
     if(el) el.style.display = 'none';
   });
 }
+// Side-tab highlight: a tab shows the gold active state while its panel is open. Watching the panels' own
+// style changes covers every way of opening/closing (key, click, Close button, Esc, another tab) with no per-frame work.
+const TAB_PANELS = { tabBuild:['categoryPopup'], tabClub:['clubPanel'], tabStaff:['staffPanel'], tabStats:['statsPanel'], tabBuilding:['buildingPanel'], tabRegulars:['regularsPanel'], tabRigging:['riggingPanel'], tabHotel:['hotelPanel','roomPanel'] };
+function syncTabHighlight(){
+  for(const tid in TAB_PANELS){
+    const on = TAB_PANELS[tid].some(pid => { const el = document.getElementById(pid); return el && el.style.display === 'block'; });
+    document.getElementById(tid).classList.toggle('active', on);
+  }
+}
+(function(){
+  const mo = new MutationObserver(syncTabHighlight);
+  Object.values(TAB_PANELS).flat().forEach(pid => { const el = document.getElementById(pid); if(el) mo.observe(el, { attributes:true, attributeFilter:['style'] }); });
+  syncTabHighlight();
+})();
 function toggleManagedPopup(id, onOpen){
   if(managerCameraLock) return; // no UI mode while sitting at a machine
   const el = document.getElementById(id);
@@ -13358,6 +13398,7 @@ function updateCarLOD(){
 function animate(){        // machine - a standing banner says so regardless of where the camera's pointed
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
+  stepGlowFade(dt);
   updateChasers(dt);
   updateMinimap(dt);
   updateBrokenArrow();
