@@ -1553,6 +1553,125 @@ function waitressServeTick(s, dt){ // returns true if she's off on a serving tri
   }
   return true;
 }
+// ---- Floor service ----
+// A bar with floor service (bought in its config panel) sends a spare waiter out to guests who are
+// playing and thirsty. Each waiter loads a tray of four drinks at the bar and goes from guest to guest; the guest
+// sees the price exactly as at the bar, and a sale is booked like a bar sale. The guest never gets up.
+const FLOOR_WAITERS = 1, FLOOR_SERVICE_COST = 1500, FLOOR_SERVICE_UNLOCK = 5000, FLOOR_RANGE = 60, FLOOR_TRAY = 4;
+let floorDrinksSold = 0, floorDrinkIncome = 0;
+function floorBars(){ return machines.filter(m => m.type === 'bar' && m.floorService && m.floorOn); }
+function floorWaitersOf(m){ return staffNPCs.filter(s => s.type === 'waitress' && s.floorBar === m).length; }
+function waitersAtPost(){ return staffNPCs.filter(s => s.type === 'waitress' && (s.postMachine || s.floorBar)).length; }
+function floorClaimed(npc){ const w = npc.floorClaim; return !!(w && staffNPCs.includes(w) && w.job === npc); }
+function buyFloorService(m){
+  if(m.type !== 'bar' || m.floorService || lifetimeRevenue() < FLOOR_SERVICE_UNLOCK || cash < FLOOR_SERVICE_COST) return false;
+  spendOn(FLOOR_SERVICE_COST);
+  m.floorService = true; m.floorOn = true;
+  logEvent(`${m.nick || m.name}: floor service added (-$${FLOOR_SERVICE_COST.toLocaleString()})`, '#e6c34a');
+  playSound('achievement');
+  return true;
+}
+function setFloorTray(s, on){
+  if(!s.tray){
+    const g = new THREE.Group();
+    const tray = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.025, 14), new THREE.MeshStandardMaterial({ color:0xc9a227, metalness:0.6, roughness:0.35 }));
+    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.14, 10), new THREE.MeshStandardMaterial({ color:0xd9eef5, roughness:0.1, transparent:true, opacity:0.75 }));
+    glass.position.y = 0.085;
+    const drink = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.036, 0.07, 10), new THREE.MeshStandardMaterial({ color:0xd8742a, roughness:0.4 }));
+    drink.position.y = 0.06;
+    g.add(tray, glass, drink);
+    g.position.set(0, 1.15, 0.45);
+    s.mesh.add(g); s.tray = g;
+  }
+  s.tray.visible = !!on;
+}
+function floorDrop(s){
+  const g = s.job;
+  if(g && g.floorClaim === s) g.floorClaim = null;
+  s.job = null; s.floorStage = null; s.floorWait = 0; s.floorT = 0;
+  if(s.tray) s.tray.visible = false;
+}
+function floorServeTick(s, dt){ // returns true if the waiter is handled this frame (working the floor, or idling by her bar)
+  const bar = s.floorBar;
+  if(!bar || !machines.includes(bar) || !bar.floorService || !bar.floorOn || casinoClosed){
+    if(s.job || s.floorStage || (s.tray && s.tray.visible)){ floorDrop(s); s.trayLeft = 0; }
+    return false;
+  }
+  s.trayLeft = s.trayLeft || 0;
+  let g = s.job;
+  if(g && (!npcs.includes(g) || g.floorClaim !== s || g.state !== 'gambling' || !g.machine || !machines.includes(g.machine) || (g.machine.level || 0) !== (bar.level || 0) || s.floorT > 60)){ floorDrop(s); g = null; }
+  if(s.tray) s.tray.visible = s.trayLeft > 0;
+  // an empty tray: back to the bar to load up
+  if(!g && s.trayLeft <= 0){
+    const tp = staffPostPos(bar, 'waitress');
+    s.target.set(tp.x, 0, tp.z);
+    if((bar.level || 0) !== s.level && !(s.via && s.via.length)) s.via = routeToLevel(s, bar.level || 0) || [];
+    const at = stepToward(s, dt, bar) || (!(s.via && s.via.length) && Math.hypot(s.pos.x - tp.x, s.pos.z - tp.z) < 0.9);
+    if(at){
+      s.mesh.rotation.y = Math.atan2(bar.x - s.pos.x, bar.z - s.pos.z);
+      s.floorWait = (s.floorWait || 0) + dt;
+      if(s.floorWait >= 1.2){ s.floorWait = 0; s.trayLeft = FLOOR_TRAY; setFloorTray(s, true); }
+    }
+    return true;
+  }
+  if(!g){ // drinks on the tray: look for the nearest thirsty guest who is playing on this floor
+    s.floorScan = (s.floorScan || 0) - dt;
+    if(s.floorScan <= 0){
+      s.floorScan = 0.6;
+      const price = drinkPrice(bar);
+      let best = null, bd = Infinity;
+      npcs.forEach(n=>{
+        if(n.state !== 'gambling' || !n.wantsDrink || floorClaimed(n) || !n.machine || n.machine.type === 'holdem' || !machines.includes(n.machine)) return;
+        if((n.machine.level || 0) !== (bar.level || 0) || n.wallet < price) return;
+        if((n.pos.x-bar.x)**2 + (n.pos.z-bar.z)**2 > FLOOR_RANGE * FLOOR_RANGE) return;
+        const d = (n.pos.x-s.pos.x)**2 + (n.pos.z-s.pos.z)**2;
+        if(d < bd){ bd = d; best = n; }
+      });
+      if(best){ g = best; s.job = g; g.floorClaim = s; s.floorStage = 'toGuest'; s.floorWait = 0; s.floorT = 0; }
+    }
+  }
+  if(!g){ // nobody thirsty right now: wait beside the bar, one waiter on each side
+    const side = (staffNPCs.filter(w => w.floorBar === bar).indexOf(s) % 2) ? 1 : -1;
+    const p = localToWorld(bar, side * (bar.radius + 0.9), 0.9);
+    s.target.set(p.x, 0, p.z);
+    if((bar.level || 0) !== s.level && !(s.via && s.via.length)) s.via = routeToLevel(s, bar.level || 0) || [];
+    if(stepToward(s, dt, bar)){ const f = localToWorld(bar, 0, 3); s.mesh.rotation.y = Math.atan2(f.x - s.pos.x, f.z - s.pos.z); }
+    return true;
+  }
+  s.floorT = (s.floorT || 0) + dt;
+  // stop a step short of the guest
+  const dx = s.pos.x - g.pos.x, dz = s.pos.z - g.pos.z, dl = Math.hypot(dx, dz) || 1;
+  const tp = { x: g.pos.x + dx / dl * 0.9, z: g.pos.z + dz / dl * 0.9 };
+  if(s.floorStage === 'toGuest') s.target.set(tp.x, 0, tp.z);
+  const arrived = s.floorStage !== 'toGuest' || stepToward(s, dt, g.machine) || Math.hypot(s.pos.x - tp.x, s.pos.z - tp.z) < 0.9;
+  if(!arrived) return true;
+  s.mesh.rotation.y = Math.atan2(g.pos.x - s.pos.x, g.pos.z - s.pos.z);
+  if(s.floorStage === 'toGuest'){ s.floorStage = 'ask'; s.floorWait = 0; return true; }
+  s.floorWait += dt;
+  if(s.floorWait < 1) return true;
+  const comped = clubComps(g).drink;
+  const price = comped ? Math.round(drinkPrice(bar) * 0.5) : drinkPrice(bar), tip = Math.round(price * 0.15);
+  if(Math.random() > drinkAcceptChance(price, g)){ // same look at the price as at the bar
+    g.wantsDrink = false; g.thirstyAt = 60 + Math.random() * 120;
+    if(price > DRINK_BASE * 1.5) gripe('dearDrinks');
+  } else if(g.wallet >= price + tip){
+    g.wallet -= price + tip;
+    addCash(price + tip); ledger.drinks += price + tip;
+    addCash(-DRINK_COST); ledger.cogs += DRINK_COST; ledger.cogsBar += DRINK_COST;
+    const at = new THREE.Vector3(g.pos.x, g.pos.y, g.pos.z);
+    if(comped) spawnFloatingText('on the house', new THREE.Vector3(at.x, at.y + 2.4, at.z), '#cfd9e8');
+    DS().drinks = (DS().drinks || 0) + 1;
+    bar.covers = (bar.covers || 0) + 1;
+    floorDrinksSold++; floorDrinkIncome += price + tip; bar.floorSold = (bar.floorSold || 0) + 1;
+    spawnFloatingText('+$' + (price + tip), new THREE.Vector3(at.x, at.y + 2.1, at.z), '#8fd6a8');
+    g.visitLeft += 25; g.betStyle *= 1.06;   // same as a drink at the bar
+    g.wantsDrink = false; g.thirstyAt = 70 + Math.random() * 120;
+    s.trayLeft--;
+  }
+  floorDrop(s);
+  if(s.tray) s.tray.visible = s.trayLeft > 0;
+  return true;
+}
 let hotelTick = 0;
 function updateFloods(dt){ restrooms().forEach(m => { if(m.brokenLoo > 0){ m.brokenLoo -= dt; if(m.brokenLoo <= 0){ m.brokenLoo = 0; logEvent('The flooded restroom is back in service', '#8fd6a8'); } } }); }
 function updateHotel(dt){
@@ -3197,7 +3316,7 @@ const BUILD_ITEMS = {
   spa:       { name:'Spa',              cost:3400, income:0,  radius:2.0,  category:'amenity',
     desc:'Pool, loungers and steam. Draws noticeably more guests (+15%, up to two), who relax and stay longer; hotel guests love it.' },
   bar:       { name:'Bar',              cost:800, income:0,  radius:1.5,  category:'amenity',
-    desc:'Guests spend more per visit the more bars you have.' },
+    desc:'Guests spend more per visit the more bars you have. Can add floor waiters who sell drinks at the machines.' },
   restroom:  { name:'Restrooms',        cost:500, income:0,  radius:1.1,  category:'amenity',
     desc:'Guests stick around and play longer per visit, and a few more come (+2% each, up to five).' },
   lounge:    { name:'Lounge',           cost:700, income:0,  radius:1.4,  category:'amenity',
@@ -6482,7 +6601,7 @@ function simulateSlot(bet, payout, pWin=0.35){
 const STAFF_TYPES = {
   security: { name:'Security Guard', hireCost:200, wage:22, color:0x2b3a4a, desc:'Cuts down on scams, nudging the odds back your way.' },
   dealer:   { name:'Dealer',         hireCost:150, wage:15, color:0x1a1a1a, desc:'Tables need one to open. Runs one table (one dealer per table, extras wander): guests bet ~15% more and are drawn to it.' },
-  waitress: { name:'Waiter',         hireCost:180, wage:18, color:0xb03a5b, desc:'Works a bar or a dining table. You need one per bar and one per 3 dining tables (extras walk the floor, but do nothing useful): staffed bars boost spending and keep guests seated.' },
+  waitress: { name:'Waiter',         hireCost:180, wage:18, color:0xb03a5b, desc:'Works a bar, a dining table or the floor. You need one per bar, one per 3 dining tables, and one more per bar with floor service. Extras do nothing.' },
   clerk:       { name:'Clerk',            hireCost:220, wage:22, color:0x2a4a6a, desc:'Works the front desk and the cashier cage - without one, the line crawls.' },
   chef:        { name:'Chef',             hireCost:300, wage:29, color:0xe8e4d8, desc:'Works a Kitchen. No chef on it, no food served.' },
   mechanic:    { name:'Mechanic',         hireCost:260, wage:25, color:0x7a6a3a, desc:'Services worn machines and fixes breakdowns before you notice them.' },
@@ -6546,7 +6665,7 @@ function roleLoad(role){
   try { // called once at initial script load (renderStaffPanel's first draw), before every global
         // below is necessarily declared yet - same class of issue devUnlockActive() guards against.
     if(role === 'dealer') posts = machines.filter(m => needsDealer(m)).length; // one dealer per table
-    else if(role === 'waitress') posts = machines.filter(m => m.type === 'bar').length + Math.ceil(machines.filter(m => m.type === 'dinertable').length / 3); // one waiter per bar and one per 3 dining tables
+    else if(role === 'waitress') posts = machines.filter(m => m.type === 'bar').length + Math.ceil(machines.filter(m => m.type === 'dinertable').length / 3) + FLOOR_WAITERS * floorBars().length; // one waiter per bar, one per 3 dining tables, two per floor-service bar
     else if(role === 'clerk') posts = machines.filter(m => m.type === 'frontdesk' || m.type === 'cashier' || m.type === 'mktoffice').length;
     else if(role === 'chef') posts = kitchens().length;
     else if(role === 'housekeeper') posts = Math.ceil(hotelRooms().length / 15); // one housekeeper can turn about 15 rooms (cleaning takes ~6 s plus the walk, a room turns over about twice a day)
@@ -6957,6 +7076,24 @@ function syncHouseDealers(){
   });
 }
 let houseDealerTimer = 0;
+// Floor service: after every bar and dining post is filled, spare waiters (up to 2 per floor-service bar) work the floor from that bar.
+function assignFloorWaiters(fbars){
+  const loose = staffNPCs.filter(s => s.type === 'waitress');
+  const count = new Map();
+  loose.forEach(s=>{
+    if(s.postMachine || !fbars.includes(s.floorBar) || (count.get(s.floorBar) || 0) >= FLOOR_WAITERS){ s.floorBar = null; return; }
+    count.set(s.floorBar, (count.get(s.floorBar) || 0) + 1);
+  });
+  loose.filter(s => !s.postMachine && !s.floorBar).forEach(s=>{
+    let best = null, bd = Infinity;
+    fbars.forEach(b=>{
+      if((count.get(b) || 0) >= FLOOR_WAITERS) return;
+      const d = (b.x-s.pos.x)**2 + (b.z-s.pos.z)**2 + ((b.level || 0) !== (s.level || 0) ? 900 : 0);
+      if(d < bd){ bd = d; best = b; }
+    });
+    if(best){ s.floorBar = best; count.set(best, (count.get(best) || 0) + 1); }
+  });
+}
 function assignStaffPosts(){
   machines.forEach(m => { m.staffer = null; });
   const assign = (type, posts)=>{
@@ -6981,6 +7118,7 @@ function assignStaffPosts(){
   assign('dealer', tableList); // one dealer per table
   if(tabUnlocked('tabStaff') && !casinoClosed && tableList.some(t => !t.staffer)) tip('noDealer', 'A table with no dealer stays closed. Hire a dealer for it in the Staff tab: one dealer runs one table.');
   assign('waitress', machines.filter(m => (m.type === 'bar' || m.type === 'dinertable') && reachable(m)));
+  assignFloorWaiters(floorBars().filter(reachable));
   assign('chef', machines.filter(m => m.type === 'restaurant' && reachable(m)));
   assign('clerk', machines.filter(m => (m.type === 'frontdesk' || m.type === 'cashier' || m.type === 'mktoffice') && reachable(m)));
 }
@@ -6997,6 +7135,7 @@ function updateStaff(dt){
     if(s.type === 'mechanic' && mechanicTick(s, dt)){ s.mesh.position.set(s.pos.x, s.pos.y, s.pos.z); return; }
     if(s.type === 'security' && updateGuard(s, dt)){ s.mesh.position.set(s.pos.x, s.pos.y, s.pos.z); return; }
     if(s.type === 'waitress' && waitressServeTick(s, dt)){ s.mesh.position.set(s.pos.x, s.pos.y, s.pos.z); return; }
+    if(s.type === 'waitress' && floorServeTick(s, dt)){ s.mesh.position.set(s.pos.x, s.pos.y, s.pos.z); return; }
     if(s.postMachine){
       const p = staffPostPos(s.postMachine, s.type);
       s.target.set(p.x, 0, p.z);
@@ -7550,6 +7689,7 @@ function machineState(m){
     payout: m.payout, edge: m.edge, lifetimeIncome: m.lifetimeIncome || 0, colorway: m.colorway || 0, st: m.st,
     denom: m.denom, lines: m.lines, nick: m.nick, closed: !!m.closed, up: m.up, wear: m.wear || 0, services: m.services || 0, broken: !!m.broken,
     mealPrice: m.mealPrice, drinkPrice: m.drinkPrice, feePct: m.feePct, covers: m.covers || 0,
+    floorService: m.floorService ? true : undefined, floorOn: m.floorService ? !!m.floorOn : undefined,
     room: m.room ? { opts: m.room.opts, dirty: m.room.dirty, revenue: m.room.revenue, nights: m.room.nights } : undefined,
   };
 }
@@ -7561,6 +7701,7 @@ function applyMachineState(m, md){
   if(md.mealPrice !== undefined && m.mealPrice !== undefined) m.mealPrice = md.mealPrice;
   if(md.drinkPrice !== undefined && m.drinkPrice !== undefined) m.drinkPrice = md.drinkPrice;
   if(md.feePct !== undefined && m.feePct !== undefined) m.feePct = md.feePct;
+  if(md.floorService && m.type === 'bar'){ m.floorService = true; m.floorOn = md.floorOn !== false; }
   if(md.up && m.up) Object.assign(m.up, md.up);
   m.covers = md.covers || 0;
   m.wear = md.wear || 0; m.services = md.services || 0; m.broken = !!md.broken;
@@ -9292,8 +9433,8 @@ function spawnFloatingText(text, pos, color){
 
 // amenities give a small global bump to how much guests are willing to spend
 function amenitySpendMultiplier(){
-  // every bar nudges spending up; a bar with a waitress behind it nudges it up a lot more
-  const bonus = machines.filter(m=>m.type==='bar').reduce((s,m)=> s + 0.05 + (isStaffed(m) ? 0.06 * machinePower(m) : 0), 0)
+  // every bar nudges spending up
+  const bonus = machines.filter(m=>m.type==='bar').reduce((s,m)=> s + 0.05, 0)
     + Math.min(0.25, diningQuality() * 0.25); // a good dinner loosens the wallet
   return 1 + Math.min(0.45, bonus);
 }
@@ -11167,7 +11308,8 @@ function updateNPCs(dt){
             npc.playTimer = (baseDelay + animDuration) * machineSpeedFactor(m);
           }
         }
-        npc.gambleTimeLeft -= dt;
+        // a guest who has a floor waiter on the way keeps playing until the drink arrives (the waiter gives up after 60 s)
+        npc.gambleTimeLeft = floorClaimed(npc) ? Math.max(1, npc.gambleTimeLeft - dt) : npc.gambleTimeLeft - dt;
       }
       let brokeOut = npc.wallet <= 5 && !npc.hdSeated;
       const walkedAwayHappy = npc.wallet > npc.startingWallet*2.5 && Math.random() < 0.02;
@@ -11245,7 +11387,7 @@ function updateNPCs(dt){
         } else {
           if(npc.needsLoo && tryGoLoo(npc)) return;   // first things first
           if(tryGoEat(npc)) return;
-          if(tryGoDrink(npc)) return;
+          if(!floorClaimed(npc) && tryGoDrink(npc)) return;
           const spot = Math.random() < GUEST_PLAY_SHARE ? findGambleSpot(npc) : null;
           if(spot && pickMachineSpot(npc, spot)){
             npc.state = 'toMachine';
@@ -11305,7 +11447,7 @@ function updateReputation(dt){
   const rigged = machines.filter(m => m.category === 'gambling');
   const avgEdge = rigged.length ? rigged.reduce((s,m)=>s+rigLevel(m),0)/rigged.length : 0;
   const vipLounges = machines.filter(m=>m.type==='viplounge').length;
-  const equilibrium = 50 + amenityCount*2 + Math.min(10, decorationCount*0.7) + staffCounts.waitress*1.4 + vipLounges*4 - avgEdge*100*0.3 + hotelReputationBonus();
+  const equilibrium = 50 + amenityCount*2 + Math.min(10, decorationCount*0.7) + waitersAtPost()*1.4 + vipLounges*4 - avgEdge*100*0.3 + hotelReputationBonus();
   reputation += (Math.max(0,Math.min(100,equilibrium)) - reputation) * dt * 0.05;
   loyaltyScore += (50 - loyaltyScore) * dt * 0.003; // word of mouth fades back toward neutral
   reputation = Math.max(0, Math.min(100, reputation));
@@ -12702,7 +12844,16 @@ function openMachineConfig(m){
       <div style="display:flex;justify-content:space-between;"><span>Waiter on this bar</span><span style="color:${isStaffed(m)?'#8fd6a8':'#e08a8a'};">${isStaffed(m) ? 'yes' : 'nobody'}</span></div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Drinks poured here</span><span>${m.covers || 0}</span></div>
       <label style="display:flex;justify-content:space-between;gap:10px;">Price of a drink <span id="cfgDrinkVal">$${drinkPrice(m)}</span></label>
-      <input type="range" id="cfgDrink" min="2" max="40" value="${drinkPrice(m)}" style="width:100%;margin:6px 0;">`;
+      <input type="range" id="cfgDrink" min="2" max="40" value="${drinkPrice(m)}" style="width:100%;margin:6px 0;">
+      <div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:8px 0 2px;">Floor service</div>`;
+    if(m.floorService){
+      html += `<label style="display:flex;justify-content:space-between;gap:10px;align-items:center;"><span>Waiters sell drinks at the machines</span><input type="checkbox" id="cfgFloorOn" ${m.floorOn ? 'checked' : ''}></label>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Floor waiters</span><span>${floorWaitersOf(m)}/${FLOOR_WAITERS}</span></div>`;
+    } else {
+      const locked = lifetimeRevenue() < FLOOR_SERVICE_UNLOCK, poor = cash < FLOOR_SERVICE_COST;
+      html += `<button id="cfgFloorBuy" class="hotbarSlot" style="width:100%;margin:4px 0;" ${locked || poor ? 'disabled' : ''}>Floor service: waiters bring drinks to guests at their machines ($${FLOOR_SERVICE_COST.toLocaleString()})</button>
+      ${locked ? `<div style="color:#e0b84a;font-size:11px;">unlocks at $${FLOOR_SERVICE_UNLOCK.toLocaleString()} lifetime revenue</div>` : ''}`;
+    }
   }
   if(m.type === 'restaurant'){
     const q = diningQuality(), chefs = isStaffed(m) ? 1 : 0;
@@ -12760,6 +12911,10 @@ function openMachineConfig(m){
   if(feeSl) feeSl.addEventListener('input', (e)=>{ m.feePct = parseInt(e.target.value); document.getElementById('cfgFeeVal').textContent = m.feePct + '%'; });
   const drinkSl = document.getElementById('cfgDrink');
   if(drinkSl) drinkSl.addEventListener('input', (e)=>{ m.drinkPrice = parseInt(e.target.value); document.getElementById('cfgDrinkVal').textContent = '$' + m.drinkPrice; });
+  const floorBuy = document.getElementById('cfgFloorBuy');
+  if(floorBuy) floorBuy.addEventListener('click', (e)=>{ e.stopPropagation(); if(buyFloorService(m)) openMachineConfig(m); });
+  const floorOnEl = document.getElementById('cfgFloorOn');
+  if(floorOnEl) floorOnEl.addEventListener('change', ()=>{ m.floorOn = floorOnEl.checked; });
   const mealSl = document.getElementById('cfgMeal');
   if(mealSl) mealSl.addEventListener('input', (e)=>{ m.mealPrice = parseInt(e.target.value); document.getElementById('cfgMealVal').textContent = '$' + m.mealPrice; });
   const fixBtn = document.getElementById('cfgFix');
