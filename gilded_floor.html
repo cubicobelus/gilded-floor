@@ -25,7 +25,7 @@
   /* Shared look for HUD buttons/panels: 6px radius, soft gradient, faint gold hairline, gold on hover/active. */
   .sideTab, .hotbarSlot, #settingsBtn, #helpBtn, #minimap, #checklist, #unlockHint,
   #staffPanel, #statsPanel, #helpPanel, #machineConfigPanel, #keybindPanel, #settingsPanel, #riggingPanel,
-  #hotelPanel, #roomPanel, #buildingPanel, #regularsPanel, #clubPanel, #devPanel{
+  #hotelPanel, #roomPanel, #buildingPanel, #regularsPanel, #eventsPanel, #clubPanel, #devPanel{
     background:linear-gradient(180deg, rgba(22,42,34,0.94), rgba(12,26,20,0.94)) !important;
     border:1px solid rgba(201,162,39,0.55) !important; border-radius:6px !important;
     box-shadow:0 2px 8px rgba(0,0,0,0.45);
@@ -178,7 +178,7 @@
   </div>
 </div>
 
-<svg id="iconSprite" width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="i-build" viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-2 2-5-5z"/><path d="M12.5 6.5L5 14"/><path d="M5 14l-1.5 5.5L9 18l7.5-7.5"/></symbol><symbol id="i-club" viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="2.6"/><path d="M3.5 18c0-3 2.2-5 5-5s5 2 5 5"/><circle cx="16.5" cy="9" r="2.1"/><path d="M15 13.2c3.2-.4 5.5 1.3 5.5 4.3"/></symbol><symbol id="i-staff" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5.5 20c0-3.8 2.8-6 6.5-6s6.5 2.2 6.5 6z"/><path d="M12 14.5l-1.3 1.8 1.3 3.2 1.3-3.2z"/></symbol><symbol id="i-stats" viewBox="0 0 24 24"><path d="M4 20h16"/><rect x="5.5" y="12" width="3" height="8" rx=".6"/><rect x="10.5" y="5" width="3" height="15" rx=".6"/><rect x="15.5" y="9" width="3" height="11" rx=".6"/></symbol><symbol id="i-building" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="1"/><path d="M8.5 7.5h1.5M14 7.5h1.5M8.5 11h1.5M14 11h1.5"/><path d="M10 20.5v-4.5h4v4.5"/></symbol><symbol id="i-regulars" viewBox="0 0 24 24"><path d="M12 3.5l2.5 5.3 5.7.7-4.2 4 1.1 5.7L12 16.4 6.9 19.2 8 13.5l-4.2-4 5.7-.7z"/></symbol><symbol id="i-rigging" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/></symbol><symbol id="i-hotel" viewBox="0 0 24 24"><path d="M12 5v1.5"/><path d="M5 17a7 7 0 0 1 14 0z"/><path d="M3.5 19.5h17"/><path d="M10.5 5h3"/></symbol><symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.3 9.4a2.8 2.8 0 0 1 5.4.9c0 1.9-2.7 2.3-2.7 4"/><circle cx="12" cy="17.3" r=".6"/></symbol><symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="11" width="13" height="9" rx="1.8"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></symbol><symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="i-load" viewBox="0 0 24 24"><path d="M3.5 6.5h6l2 2h9v10h-17z"/></symbol><symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></symbol><symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 19.5h14"/></symbol><symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5v1.5A3 3 0 0 0 8 10.5M16 6h3v1.5a3 3 0 0 1-3 3M12 13v4M8.5 20h7M10 17h4"/></symbol><symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M9 17h6M10 20h4M12 3.5a5.5 5.5 0 0 0-3.2 10c.6.5.7 1.1.7 1.8V17h5v-1.7c0-.7.1-1.3.7-1.8A5.5 5.5 0 0 0 12 3.5z"/></symbol><symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5L19 4M16 7l2.5 2.5"/></symbol><symbol id="i-reset" viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.2-5.1M5 4v4h4"/></symbol><symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 15.5H3z"/><path d="M12 10v4.5M12 17v.2"/></symbol><symbol id="i-dice" viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M9 9v.1M15 15v.1M12 12v.1"/></symbol><symbol id="i-sofa" viewBox="0 0 24 24"><path d="M5 11V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3M3.5 12a1.5 1.5 0 0 1 3 0v2h11v-2a1.5 1.5 0 0 1 3 0v5h-17zM6 17v2M18 17v2"/></symbol><symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19C5 10 10 5 19 5c0 9-5 14-14 14zM5 19l8-8"/></symbol><symbol id="i-columns" viewBox="0 0 24 24"><path d="M3.5 8L12 4l8.5 4M5.5 9.5v8M10 9.5v8M14 9.5v8M18.5 9.5v8M3.5 20h17"/></symbol></defs></svg>
+<svg id="iconSprite" width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="i-build" viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-2 2-5-5z"/><path d="M12.5 6.5L5 14"/><path d="M5 14l-1.5 5.5L9 18l7.5-7.5"/></symbol><symbol id="i-club" viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="2.6"/><path d="M3.5 18c0-3 2.2-5 5-5s5 2 5 5"/><circle cx="16.5" cy="9" r="2.1"/><path d="M15 13.2c3.2-.4 5.5 1.3 5.5 4.3"/></symbol><symbol id="i-staff" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5.5 20c0-3.8 2.8-6 6.5-6s6.5 2.2 6.5 6z"/><path d="M12 14.5l-1.3 1.8 1.3 3.2 1.3-3.2z"/></symbol><symbol id="i-stats" viewBox="0 0 24 24"><path d="M4 20h16"/><rect x="5.5" y="12" width="3" height="8" rx=".6"/><rect x="10.5" y="5" width="3" height="15" rx=".6"/><rect x="15.5" y="9" width="3" height="11" rx=".6"/></symbol><symbol id="i-building" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="1"/><path d="M8.5 7.5h1.5M14 7.5h1.5M8.5 11h1.5M14 11h1.5"/><path d="M10 20.5v-4.5h4v4.5"/></symbol><symbol id="i-regulars" viewBox="0 0 24 24"><path d="M12 3.5l2.5 5.3 5.7.7-4.2 4 1.1 5.7L12 16.4 6.9 19.2 8 13.5l-4.2-4 5.7-.7z"/></symbol><symbol id="i-rigging" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/></symbol><symbol id="i-hotel" viewBox="0 0 24 24"><path d="M12 5v1.5"/><path d="M5 17a7 7 0 0 1 14 0z"/><path d="M3.5 19.5h17"/><path d="M10.5 5h3"/></symbol><symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.5l-5.4 3 1.2-6-4.5-4.2 6.1-.7z"/></symbol><symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.3 9.4a2.8 2.8 0 0 1 5.4.9c0 1.9-2.7 2.3-2.7 4"/><circle cx="12" cy="17.3" r=".6"/></symbol><symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="11" width="13" height="9" rx="1.8"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></symbol><symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="i-load" viewBox="0 0 24 24"><path d="M3.5 6.5h6l2 2h9v10h-17z"/></symbol><symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></symbol><symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 19.5h14"/></symbol><symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5v1.5A3 3 0 0 0 8 10.5M16 6h3v1.5a3 3 0 0 1-3 3M12 13v4M8.5 20h7M10 17h4"/></symbol><symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M9 17h6M10 20h4M12 3.5a5.5 5.5 0 0 0-3.2 10c.6.5.7 1.1.7 1.8V17h5v-1.7c0-.7.1-1.3.7-1.8A5.5 5.5 0 0 0 12 3.5z"/></symbol><symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5L19 4M16 7l2.5 2.5"/></symbol><symbol id="i-reset" viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.2-5.1M5 4v4h4"/></symbol><symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 15.5H3z"/><path d="M12 10v4.5M12 17v.2"/></symbol><symbol id="i-dice" viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M9 9v.1M15 15v.1M12 12v.1"/></symbol><symbol id="i-sofa" viewBox="0 0 24 24"><path d="M5 11V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3M3.5 12a1.5 1.5 0 0 1 3 0v2h11v-2a1.5 1.5 0 0 1 3 0v5h-17zM6 17v2M18 17v2"/></symbol><symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19C5 10 10 5 19 5c0 9-5 14-14 14zM5 19l8-8"/></symbol><symbol id="i-columns" viewBox="0 0 24 24"><path d="M3.5 8L12 4l8.5 4M5.5 9.5v8M10 9.5v8M14 9.5v8M18.5 9.5v8M3.5 20h17"/></symbol></defs></svg>
 <div id="hud">
   Cash: <b id="cashDisp">$2,000</b> · Day <b id="dayVal">1</b> · <b id="clockLabel">8:00 AM</b> <span id="peakLabel" style="color:#e6c34a;"></span> <span id="inspectorLabel" style="color:#ffb347;"></span> <span id="parkingLabel" style="color:#ff9f7a;"></span><br>
   Mode: <b id="modeIndicator">UI Mode</b>
@@ -364,6 +364,7 @@
   <button id="tabRegulars" title="Regulars" class="sideTab locked"><svg class="ic"><use href="#i-regulars"/></svg><span class="tabName">Regulars</span><span class="sideTabKey">[6]</span></button>
   <button id="tabRigging" title="Rigging" class="sideTab locked"><svg class="ic"><use href="#i-rigging"/></svg><span class="tabName">Rigging</span><span class="sideTabKey">[7]</span></button>
   <button id="tabHotel" title="Hotel" class="sideTab locked"><svg class="ic"><use href="#i-hotel"/></svg><span class="tabName">Hotel</span><span class="sideTabKey">[8]</span></button>
+  <button id="tabEvents" title="Events" class="sideTab locked"><svg class="ic"><use href="#i-star"/></svg><span class="tabName">Events</span><span class="sideTabKey">[9]</span></button>
 </div>
 <div id="tipStack">
 <div id="checklist" style="width:212px;font-size:11px;color:#cfd9d0;background:rgba(18,36,29,0.88);border:1px solid #2a4a3c;border-radius:6px;padding:6px 8px;display:none;"></div>
@@ -374,6 +375,7 @@
 <div id="roomPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:14px 16px;color:#f0e6d2;font-size:12px;display:none;z-index:8;width:min(620px,94vw);max-height:90vh;overflow-y:auto;box-sizing:border-box;"></div>
 <div id="buildingPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:14px 16px;color:#f0e6d2;font-size:12px;display:none;z-index:8;width:min(640px,94vw);max-height:90vh;overflow-y:auto;box-sizing:border-box;"></div>
 <div id="regularsPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:14px 16px;color:#f0e6d2;font-size:12px;display:none;z-index:8;width:min(860px,94vw);max-height:90vh;overflow-y:auto;box-sizing:border-box;"></div>
+<div id="eventsPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:14px 16px;color:#f0e6d2;font-size:12px;display:none;z-index:8;width:min(860px,94vw);max-height:90vh;overflow-y:auto;box-sizing:border-box;"></div>
 <div id="categoryPopup" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:18px 20px;color:#f0e6d2;font-size:12px;display:none;z-index:8;width:min(900px,96vw);box-sizing:border-box;max-height:90vh;overflow-y:auto;"></div>
 <div id="clubPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:14px 16px;color:#f0e6d2;font-size:12px;display:none;z-index:8;width:min(640px,94vw);max-height:90vh;overflow-y:auto;box-sizing:border-box;">
   <h3 style="margin:0 0 8px 0;color:#e6c34a;font-size:13px;font-weight:normal;">Club &amp; Guests</h3>
@@ -2493,6 +2495,7 @@ function departmentReport(L){
   get('Bar').out += L.cogsBar || 0;      // what the drinks themselves cost
   get('Dining').out += L.cogsFood || 0;  // what the food itself cost
   get('Investor').inc = 0;
+  get('Events').inc = L.events || 0; get('Events').out += L.eventCost || 0;
   // wages, split by what each role looks after
   Object.entries(staffCounts).forEach(([role, n])=>{
     if(!n) return;
@@ -2508,7 +2511,7 @@ function departmentReport(L){
     });
   } else get('Investor').out += L.upkeep || 0;
   get('Investor').out += (L.bribes || 0) + (L.theft || 0) + (L.debtRepaid || 0);
-  return ['Gaming','Hotel','Dining','Bar','Investor'].map(k => get(k)).filter(x => x.inc || x.out);
+  return ['Gaming','Hotel','Dining','Bar','Events','Investor'].map(k => get(k)).filter(x => x.inc || x.out);
 }
 function departmentTable(L){
   const rows = departmentReport(L);
@@ -3328,7 +3331,7 @@ const BUILD_ITEMS = {
   valet:     { name:'Valet Parking',    cost:600, income:0,  radius:0.6,  category:'amenity',
     desc:'Each valet adds 3 extra parking spots, up to 3 valets (9 spots). Worth it once the HUD says parking is full. It does not make cars arrive faster.' },
   stage:     { name:'Live Entertainment', cost:1000, income:0, radius:1.8, category:'amenity',
-    desc:'Guests stick around even longer with a show going, and a few more come (+3% each, up to three).' },
+    desc:'Guests stick around even longer with a show going, and a few more come (+3% each, up to three). Book a Headline show on it from the Events tab.' },
   viplounge: { name:'VIP Lounge',       cost:5000, income:0,  radius:2.2,  category:'amenity',
     desc:'A roped-off high-limit room. Draws bigger spenders and keeps them playing longer. Requires a strong reputation to unlock.' },
   revmgr:    { name:'Revenue Manager',  cost:3000, income:0,  radius:1.5,  category:'amenity',
@@ -5118,6 +5121,7 @@ function playSound(name, opts = {}){
     coinShower(out, t + 0.3, 40, 3, 0.07);
   }
   else if(name === 'ding'){ bell(out, 2093, t, 1.6, 0.09); }
+  else if(name === 'applause'){ for(let i = 0; i < 34; i++) noise(out, t + i * 0.05 + Math.random() * 0.04, 0.05 + Math.random() * 0.06, 'bandpass', 1800 + Math.random() * 2600, 1.1, 0.05 + Math.random() * 0.05, 0.003); }
   else if(name === 'till'){ bell(out, 2349, t, 1.0, 0.07); noise(out, t + 0.05, 0.18, 'bandpass', 900, 1.2, 0.06, 0.03); coinShower(out, t + 0.12, 3, 0.15, 0.05); }
   else if(name === 'hire'){ bell(out, 784, t, 0.8, 0.07); bell(out, 1047, t + 0.1, 1.0, 0.07); }
   else if(name === 'bye'){ bell(out, 784, t, 0.7, 0.06); bell(out, 587, t + 0.12, 0.9, 0.05); }
@@ -5520,7 +5524,7 @@ function settleDayFinances(dayNet){
 addCash(0);
 
 // Running ledger for the end-of-day breakdown: where money came from and where it went.
-function newLedger(){ return { slotWon:0, slotPaid:0, tableWon:0, tablePaid:0, atmFees:0, wages:0, upkeep:0, bribes:0, theft:0, debtRepaid:0, personalWon:0, personalLost:0, rooms:0, food:0, drinks:0, cage:0, purchases:0, cogs:0, cogsBar:0, cogsFood:0 }; }
+function newLedger(){ return { slotWon:0, slotPaid:0, tableWon:0, tablePaid:0, atmFees:0, wages:0, upkeep:0, bribes:0, theft:0, debtRepaid:0, personalWon:0, personalLost:0, rooms:0, food:0, drinks:0, cage:0, purchases:0, cogs:0, cogsBar:0, cogsFood:0, events:0, eventCost:0 }; }
 let ledger = newLedger();
 // Money spent buying things (machines, hires, training, upgrades, floor, parking, wallpaper, club tiers, room furnishing). Only used so the day report can say how much of a day's net went on purchases.
 function spendOn(amount){ addCash(-amount); ledger.purchases += amount; }
@@ -5904,11 +5908,11 @@ function showDaySummary(day, net, guests, L, S){
   const plain = (label, value)=> `<div style="display:flex;justify-content:space-between;gap:16px;"><span>${label}</span><span>${value}</span></div>`;
   const slotNet = L.slotWon - L.slotPaid, tableNet = L.tableWon - L.tablePaid;
   const personalNet = L.personalWon - L.personalLost; // your own bets come out of / go into your cash directly
-  const known = slotNet + tableNet + L.atmFees + L.rooms + L.food + L.drinks + L.cage - L.wages - L.upkeep - L.bribes - L.theft - L.debtRepaid - L.purchases - (L.cogs || 0) + personalNet;
+  const known = slotNet + tableNet + L.atmFees + L.rooms + L.food + L.drinks + L.cage + (L.events || 0) - L.wages - L.upkeep - L.bribes - L.theft - L.debtRepaid - L.purchases - (L.eventCost || 0) - (L.cogs || 0) + personalNet;
   const other = net - known; // building, selling, expanding, ads, etc.
   const takenIn = L.slotWon + L.tableWon, paidOut = L.slotPaid + L.tablePaid;
-  const otherMinus = (L.cogs || 0) + L.wages + L.upkeep + L.bribes + L.theft + L.debtRepaid + L.purchases + Math.max(0, -other) + Math.max(0, -personalNet);
-  const otherPlus = L.atmFees + L.rooms + L.food + L.drinks + L.cage + Math.max(0, other) + Math.max(0, personalNet);
+  const otherMinus = (L.cogs || 0) + (L.eventCost || 0) + L.wages + L.upkeep + L.bribes + L.theft + L.debtRepaid + L.purchases + Math.max(0, -other) + Math.max(0, -personalNet);
+  const otherPlus = L.atmFees + L.rooms + L.food + L.drinks + L.cage + (L.events || 0) + Math.max(0, other) + Math.max(0, personalNet);
   const barBonus = (L.slotWon + L.tableWon) * (1 - 1/amenitySpendMultiplier());
   const repDelta = reputation - S.repStart;
   const box = 'text-align:left;font-size:12px;margin:8px 0;padding:8px 10px;background:rgba(0,0,0,0.25);border-radius:6px;line-height:1.7;';
@@ -5955,6 +5959,7 @@ function showDaySummary(day, net, guests, L, S){
       ${L.food > 0 ? row('Restaurant', L.food, 1) : ''}
       ${L.drinks > 0 ? row('Bar takings', L.drinks, 1) : ''}
       ${L.cage > 0 ? row('Cage fees', L.cage, 1) : ''}
+      ${(L.events || 0) > 0 ? row('Event tickets', L.events, 1) : ''}
       ${sh('Costs')}
       ${(L.cogs || 0) > 0 ? row('Food and drink served', L.cogs, -1) : ''}
       ${row('Staff wages', L.wages, -1)}
@@ -5963,6 +5968,7 @@ function showDaySummary(day, net, guests, L, S){
       ${L.theft > 0 ? row('Stolen by pickpockets', L.theft, -1) : ''}
       ${L.debtRepaid > 0 ? row('Investor repayment', L.debtRepaid, -1) : ''}
       ${L.purchases > 0 ? row('Purchases', L.purchases, -1) : ''}
+      ${(L.eventCost || 0) > 0 ? row('Event fees', L.eventCost, -1) : ''}
       ${Math.abs(other) >= 1 ? row('Ads, comps, loans &amp; other', other, other > 0 ? 1 : -1) : ''}
     </div>
     <div style="${box}">${sh('By department')}${departmentTable(L)}</div>`;
@@ -6078,6 +6084,261 @@ const CAMPAIGNS = {
 const HR_OUTREACH = { name:'High Roller Outreach', cost:900, duration:45, vipShift:0.25, desc:"Not more guests - richer ones. Skews who's walking in, for a while." };
 const PR_PUSH = { name:'PR Push', baseCost:150, costPerRepPoint:6, repair:10, cooldown:120, desc:'Immediate damage control: claws back some reputation right now. Costs more the worse things already are.' };
 let campaignTimeLeft = 0, campaignStrength = 0, campaignKey = null;
+// ---------------- Events tab: bookable nights (the Headline show is the first) ----------------
+// A booked event starts at 19:00 on its day and runs six game hours (45 s). Data-driven: add an entry to EVENTS.
+let eventBooked = null;          // { key, day, fee } or null
+let eventActive = null;          // { key, day, t, fee, tickets, ticketMoney, drinks0, readiness, failed, ... } or null
+let eventHistory = [];           // newest first, 12 kept
+let eventCooldownUntil = {};     // key -> first day it can be booked for again
+let eventVis = null;             // the performer and light beams of a live show (own scene objects, never children of the frozen stage)
+let eventCheckT = 0;
+const EV_BOOST_T = (18 - 8) / 24 * DAY_LENGTH, EV_START_T = (19 - 8) / 24 * DAY_LENGTH, EV_LEN = 6 / 24 * DAY_LENGTH;
+function eventStage(){ return machines.find(m => m.type === 'stage') || null; }
+// The crowd boost: from an hour before the show until it ends.
+function eventBoost(){
+  if(eventActive){ const d = EVENTS[eventActive.key]; return d ? d.boost : 0; }
+  if(eventBooked && eventBooked.day === currentDay && dayTime >= EV_BOOST_T && dayTime < EV_START_T){ const d = EVENTS[eventBooked.key]; return d ? d.boost : 0; }
+  return 0;
+}
+function eventReadiness(rows){ const r = rows.filter(x => !x.required); return r.length ? r.filter(x => x.ok).length / r.length : 1; }
+function headlineRows(){
+  const guards = staffNPCs.filter(s => s.type === 'security').length;
+  return [
+    { label:'A Stage on the floor', required:true, ok: !!eventStage(), gripe:'there was no stage' },
+    { label:'A staffed bar', ok: machines.some(m => m.type === 'bar' && isStaffed(m)), gripe:'the bar had nobody serving' },
+    { label:'Security on duty', ok: guards >= 1 && roleLoad('security') <= 1, gripe:'too few security guards for the crowd' },
+    { label:'A Lounge', ok: machines.some(m => m.type === 'lounge'), gripe:'nowhere to sit (no Lounge)' },
+    { label:'Restrooms', ok: machines.some(m => m.type === 'restroom'), gripe:'no restrooms' },
+  ];
+}
+// Standing places around the stage, rings 3-6 m out (up to 27), skipping anything blocked.
+function showSpots(st){
+  const out = [], lvl = st.level || 0, G = getPathGrid(lvl);
+  [[3.3, 8], [4.6, 9], [5.9, 10]].forEach(([r, n], ri) => {
+    for(let i = 0; i < n; i++){
+      const a = (i + 0.5 * ri) / n * Math.PI * 2, x = st.x + Math.cos(a) * r, z = st.z + Math.sin(a) * r;
+      if(x < ROOM_LEFT_X + 1.2 || x > ROOM_RIGHT_X - 1.2 || z < ROOM_BACK_Z + 1.2) continue;
+      if(pathBlockedAt(G, x, z)) continue;
+      if(machines.some(o => o !== st && (o.level || 0) === lvl && Math.hypot(o.x - x, o.z - z) < (o.radius || 1) + 0.5)) continue;
+      out.push({ x, z, owner: null });
+    }
+  });
+  return out;
+}
+function showSpotFree(ev){ return ev.spots.find(s => !(s.owner && s.owner.showSpot === s && npcs.includes(s.owner))) || null; }
+function showWatcherCount(){ let n = 0; for(let i = 0; i < npcs.length; i++){ const s = npcs[i].state; if(s === 'toShow' || s === 'watchShow') n++; } return n; }
+function releaseShow(npc){ npc.showSpot = null; }
+function sendToShow(npc, ev, spot){
+  if(npc.machine) releaseNpcFromMachine(npc, false);
+  spot.owner = npc; npc.showSpot = spot; npc.state = 'toShow'; npc.path = null; npc.via = [];
+  npc.target.set(spot.x, 0, spot.z); npc.showT = 0;
+}
+// A guest heading to, or standing at, the show. True means it dealt with them this frame.
+function updateShowGuest(npc, dt){
+  const ev = eventActive, spot = npc.showSpot;
+  if(!ev || !spot || !machines.includes(ev.stage)){ releaseShow(npc); npc.state = 'wander'; npc.waitTimer = 0.2; pickWanderTarget(npc); return true; }
+  if(npc.state === 'toShow'){
+    npc.target.set(spot.x, 0, spot.z);
+    npc.showT += dt;
+    if(npc.showT > 40){ releaseShow(npc); npc.state = 'wander'; pickWanderTarget(npc); return true; } // could not get there
+    if(stepToward(npc, dt, ev.stage)){
+      const def = EVENTS[ev.key], price = Math.round(def.ticket * drinkStarsFactor());
+      if(npc.wallet >= price){
+        npc.wallet -= price; addCash(price); ledger.events += price; ev.tickets++; ev.ticketMoney += price;
+        spawnFloatingText('+$' + price + ' ticket', new THREE.Vector3(npc.pos.x, npc.pos.y + 2.1, npc.pos.z), '#e6c34a');
+      }
+      npc.state = 'watchShow'; npc.showT = 0; npc.showStay = 20 + Math.random() * 20;
+    }
+    npc.mesh.position.set(npc.pos.x, npc.pos.y, npc.pos.z);
+    return true;
+  }
+  // watchShow
+  npc.showT += dt;
+  npc.mesh.rotation.y = Math.atan2(ev.stage.x - npc.pos.x, ev.stage.z - npc.pos.z);
+  if(npc.showT >= npc.showStay){ releaseShow(npc); npc.state = 'wander'; npc.waitTimer = 0.3; pickWanderTarget(npc); }
+  npc.mesh.position.set(npc.pos.x, npc.pos.y, npc.pos.z);
+  return true;
+}
+function releaseAllWatchers(){
+  for(let i = 0; i < npcs.length; i++){
+    const n = npcs[i];
+    if(n.state === 'toShow' || n.state === 'watchShow'){ releaseShow(n); n.state = 'wander'; n.waitTimer = 0.3; pickWanderTarget(n); }
+  }
+}
+// ----- the stage dressing: a performer and sweeping beams, standalone scene objects -----
+let evBeamGeo = null, evBeamMats = null;
+function makeShowVisuals(st){
+  if(!evBeamGeo){
+    evBeamGeo = new THREE.ConeGeometry(0.95, 1, 16, 1, true); evBeamGeo.translate(0, -0.5, 0);
+    evBeamMats = [0xffc933, 0xff3fb4, 0xffc933].map(c => new THREE.MeshBasicMaterial({ color:c, transparent:true, opacity:0.14, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide }));
+  }
+  const lvlY = (st.level || 0) * LEVEL_H;
+  const look = makeLook();
+  const performer = buildHumanoid({ skin: look.skin, hair: look.hair, style: HAIR_STYLES[look.style] || 'short', outfit:'whale', jacket:0xe0b030, tie:0xb3122e, shirt:0xb3122e, trousers:0x241418 });
+  const p = localToWorld(st, 0, -0.4);
+  performer.position.set(p.x, lvlY + 0.39, p.z);
+  performer.rotation.y = st.rotation || 0;
+  scene.add(performer);
+  const top = lvlY + WALL_H - 0.35, H = top - (lvlY + 0.4), beams = [];
+  for(let i = 0; i < 3; i++){
+    const pivot = new THREE.Group();
+    const a = i / 3 * Math.PI * 2;
+    pivot.position.set(st.x + Math.cos(a) * 1.6, top, st.z + Math.sin(a) * 1.6);
+    const cone = new THREE.Mesh(evBeamGeo, evBeamMats[i]); cone.scale.set(1, H, 1); cone.frustumCulled = false; cone.renderOrder = 5;
+    pivot.add(cone); scene.add(pivot); beams.push({ pivot, ph: i * 2.1 });
+  }
+  return { performer, beams, t: 0, rot: st.rotation || 0 };
+}
+function removeShowVisuals(){
+  if(!eventVis) return;
+  scene.remove(eventVis.performer); eventVis.beams.forEach(b => scene.remove(b.pivot));
+  eventVis = null;
+}
+function animateShowVisuals(dt){
+  const v = eventVis; if(!v) return;
+  v.t += dt;
+  const t = v.t;
+  animateFigure(v.performer, dt, 'sing');
+  v.performer.rotation.y = v.rot + 0.5 * Math.sin(t * 0.4) + 0.45 * Math.sin(t * 0.13 + 1);
+  v.performer.userData.rig.body.rotation.z = Math.sin(t * 1.6) * 0.04;
+  for(let i = 0; i < v.beams.length; i++){ const b = v.beams[i]; b.pivot.rotation.x = Math.sin(t * 0.55 + b.ph) * 0.38; b.pivot.rotation.z = Math.cos(t * 0.43 + b.ph * 1.3) * 0.38; }
+}
+// ----- the data table -----
+const EVENTS = {
+  show: {
+    key:'show', name:'Headline show', cost:500, cooldownDays:3, boost:0.3, ticket:35, maxWatchers:24,
+    desc:'A headline act takes the Stage from 19:00 to 01:00. Crowds build from 18:00 (+30% guests), and 10 to 24 pay $35 a head to watch (more when the night is well run), and they keep drinking. A well-run night earns a rave review; a shambles earns a bad one.',
+    requires: headlineRows,
+    start(ev){
+      ev.stage = eventStage(); ev.spots = showSpots(ev.stage); ev.cheerT = 6 + Math.random() * 6; ev.acc = 0;
+      eventVis = makeShowVisuals(ev.stage);
+      logEvent('The show begins', '#e6c34a'); playSound('applause');
+    },
+    tick(ev, dt){
+      ev.acc += dt; ev.cheerT -= dt;
+      if(ev.cheerT <= 0){ ev.cheerT = 8 + Math.random() * 8; if(showWatcherCount() > 0) playSound('applause', { gain:0.45 }); }
+      if(ev.acc < 1) return;
+      ev.acc -= 1;
+      const cap = Math.round(10 + (this.maxWatchers - 10) * ev.readiness); // a well-run night draws a bigger audience
+      if(Math.random() > 0.65 || showWatcherCount() >= cap) return;
+      const price = Math.round(this.ticket * drinkStarsFactor()), lvl = ev.stage.level || 0, n = npcs.length, s0 = Math.floor(Math.random() * Math.max(1, n));
+      let sent = 0;
+      for(let k = 0; k < n && sent < 2 && showWatcherCount() < cap; k++){
+        const npc = npcs[(s0 + k) % n];
+        if((npc.state !== 'wander' && npc.state !== 'toMachine') || npc.wantsRoom || npc.hotelGuest || (npc.level || 0) !== lvl || npc.wallet < price) continue;
+        if(npc.via && npc.via.length) continue;
+        const spot = showSpotFree(ev); if(!spot) break;
+        sendToShow(npc, ev, spot); sent++;
+      }
+    },
+    end(ev){
+      const readiness = ev.readiness, failed = ev.failed;
+      const r = Math.random(), pGood = 0.2 + 0.6 * readiness, pBad = 0.45 * (1 - readiness);
+      let review, rep;
+      if(r < pGood){ review = 'rave'; rep = 6; logEvent('Rave review: the Headline show was the talk of the town', '#e6c34a'); }
+      else if(r < pGood + pBad){ review = 'bad'; rep = -5; logEvent('Bad review for the Headline show: ' + (failed.length ? failed.join(', ') : 'a flat night'), '#e08a8a'); }
+      else { review = 'middling'; rep = 1; logEvent('The Headline show went down fine', '#cfd9d0'); }
+      reputation = Math.max(0, Math.min(100, reputation + rep));
+      releaseAllWatchers(); removeShowVisuals(); playSound('applause');
+      return { review };
+    },
+  },
+};
+function pushEventHistory(entry){ eventHistory.unshift(entry); if(eventHistory.length > 12) eventHistory.length = 12; }
+function eventAvailableDay(key){ return eventCooldownUntil[key] || 0; }
+function bookEvent(key, day){
+  const def = EVENTS[key];
+  if(!def || eventBooked || eventActive) return false;
+  if(day <= currentDay || day > currentDay + 3 || day < eventAvailableDay(key)) return false;
+  if(def.requires().some(r => r.required && !r.ok)) return false;
+  if(cash < def.cost) return false;
+  addCash(-def.cost); ledger.eventCost += def.cost;
+  eventBooked = { key, day, fee: def.cost };
+  eventCooldownUntil[key] = day + def.cooldownDays;
+  logEvent(`${def.name} booked for Day ${day} ($${def.cost})`, '#e6c34a'); playSound('till');
+  return true;
+}
+function cancelEventBooking(){
+  if(!eventBooked) return;
+  const b = eventBooked, def = EVENTS[b.key], back = Math.round(b.fee / 2);
+  addCash(back); ledger.eventCost -= back;
+  delete eventCooldownUntil[b.key];
+  pushEventHistory({ day:b.day, key:b.key, name:def.name, review:'cancelled', tickets:0, ticketMoney:0, drinks:0, fee:b.fee - back, net:-(b.fee - back) });
+  logEvent(`${def.name} cancelled, $${back} refunded`, '#cfd9d0');
+  eventBooked = null;
+}
+function startBookedEvent(){
+  const b = eventBooked, def = EVENTS[b.key]; eventBooked = null;
+  if(!def) return;
+  if(casinoClosed){
+    pushEventHistory({ day:b.day, key:b.key, name:def.name, review:'cancelled (closed)', tickets:0, ticketMoney:0, drinks:0, fee:b.fee, net:-b.fee });
+    logEvent(`The ${def.name} was cancelled: the casino was closed (no refund)`, '#e08a8a'); return;
+  }
+  if(!eventStage()){ refundEvent(b, def, 'stage sold'); return; }
+  const rows = def.requires();
+  eventActive = { key:b.key, day:b.day, t:0, fee:b.fee, tickets:0, ticketMoney:0, drinks0:ledger.drinks, readiness:eventReadiness(rows), failed:rows.filter(r => !r.ok && !r.required).map(r => r.gripe) };
+  def.start(eventActive);
+}
+function refundEvent(b, def, why){
+  const back = Math.round(b.fee / 2);
+  addCash(back); ledger.eventCost -= back;
+  pushEventHistory({ day:b.day, key:b.key, name:def.name, review:'cancelled (' + why + ')', tickets:0, ticketMoney:0, drinks:0, fee:b.fee - back, net:-(b.fee - back) });
+  logEvent(`The ${def.name} was cancelled (${why}), $${back} refunded`, '#e08a8a');
+}
+function finishEvent(aborted){
+  const ev = eventActive, def = EVENTS[ev.key];
+  eventActive = null;
+  const drinks = Math.round(ledger.drinks - ev.drinks0);
+  let res = { review:'-' }, fee = ev.fee;
+  if(aborted){
+    const back = Math.round(ev.fee / 2); addCash(back); ledger.eventCost -= back; fee = ev.fee - back;
+    releaseAllWatchers(); removeShowVisuals(); res = { review:'cut short (' + aborted + ')' };
+    logEvent(`The ${def.name} was cut short (${aborted}), $${back} refunded`, '#e08a8a');
+  } else res = def.end(ev) || res;
+  pushEventHistory({ day:ev.day, key:ev.key, name:def.name, review:res.review, tickets:ev.tickets, ticketMoney:ev.ticketMoney, drinks, fee, net:ev.ticketMoney + drinks - fee, readiness:ev.readiness });
+}
+function updateEvents(simDt, dt){
+  if(eventVis) animateShowVisuals(dt);
+  if(eventActive){
+    const ev = eventActive;
+    if(!machines.includes(ev.stage)){ finishEvent('stage sold'); return; }
+    ev.t += simDt;
+    if(ev.t >= EV_LEN){ finishEvent(null); return; }
+    EVENTS[ev.key].tick(ev, simDt);
+    return;
+  }
+  if(!eventBooked) return;
+  const b = eventBooked, def = EVENTS[b.key];
+  if(!def){ eventBooked = null; return; }
+  eventCheckT -= dt;
+  if(eventCheckT <= 0){ eventCheckT = 1; if(!eventStage()){ eventBooked = null; refundEvent(b, def, 'stage sold'); return; } }
+  if(currentDay > b.day || (currentDay === b.day && dayTime >= EV_START_T + EV_LEN)){
+    eventBooked = null; pushEventHistory({ day:b.day, key:b.key, name:def.name, review:'missed', tickets:0, ticketMoney:0, drinks:0, fee:b.fee, net:-b.fee });
+    logEvent(`The ${def.name} on Day ${b.day} never happened`, '#e08a8a'); return;
+  }
+  if(currentDay !== b.day) return;
+  if(dayTime >= EV_BOOST_T && !b.doors){ b.doors = true; logEvent("Doors open for tonight's show", '#e6c34a'); }
+  if(dayTime >= EV_START_T) startBookedEvent();
+}
+// Saved state. A show caught live by a save does not resume: on load it ends with half the fee back.
+function eventsSaveState(){
+  return { eventBooked, eventActive: eventActive ? { key:eventActive.key, day:eventActive.day, t:eventActive.t, fee:eventActive.fee, tickets:eventActive.tickets, ticketMoney:eventActive.ticketMoney, drinks0:eventActive.drinks0, readiness:eventActive.readiness, failed:eventActive.failed } : null, eventHistory, eventCooldownUntil };
+}
+function eventsResetState(){
+  eventBooked = null; eventActive = null; eventHistory = []; eventCooldownUntil = {}; removeShowVisuals();
+}
+function eventsLoadState(data){
+  removeShowVisuals();
+  eventBooked = (data.eventBooked && EVENTS[data.eventBooked.key] && Number.isFinite(data.eventBooked.day)) ? { key:data.eventBooked.key, day:data.eventBooked.day, fee:data.eventBooked.fee || EVENTS[data.eventBooked.key].cost, doors:!!data.eventBooked.doors } : null;
+  eventHistory = Array.isArray(data.eventHistory) ? data.eventHistory.slice(0, 12) : [];
+  eventCooldownUntil = (data.eventCooldownUntil && typeof data.eventCooldownUntil === 'object') ? Object.assign({}, data.eventCooldownUntil) : {};
+  eventActive = null;
+  const a = data.eventActive;
+  if(a && EVENTS[a.key]){
+    eventActive = { key:a.key, day:a.day, t:a.t || 0, fee:a.fee || 0, tickets:a.tickets || 0, ticketMoney:a.ticketMoney || 0, drinks0:a.drinks0 || 0, readiness:a.readiness || 0, failed:a.failed || [], stage:null };
+    finishEvent('interrupted by a reload');
+  }
+}
 // A running flyer/ad doesn't just bring more people in - it sells the Player's Club too: +6% sign-up chance per
 // point of campaign strength (Flyer +18%, Ad +36% on top of the club's own join rate).
 const CAMPAIGN_JOIN_PER_STRENGTH = 0.06;
@@ -6364,6 +6625,7 @@ function crowdDemand(campaignBoost = campaignTimeLeft > 0 ? campaignStrength : 0
   const seats = machines.filter(m => m.category === 'gambling').reduce((s, m) => s + (m.seatOwners ? m.seatOwners.length : 1), 0);
   target *= Math.max(1 + seats / 110, seats * 0.027); // more seats draw a bigger crowd: gently on a small floor, in proportion past about 55 seats (parking caps it below)
   target *= today().crowd;                                    // and what day of the week it is
+  target *= 1 + eventBoost();                                 // and a show night (see EVENTS)
   target *= amenityCrowdMultiplier();                         // and a comfortable casino draws people in
   target += hotelPull();                                      // plus people who come for the hotel
   return Math.round(target);
@@ -6981,6 +7243,10 @@ function animateFigure(mesh, dt, pose){
     aL = -0.12; aR = -0.7 - 0.3 * lift; zR = -0.45 - 0.2 * lift; hx = -0.12 * lift;
   }
   else if(pose === 'clip'){ aR = -0.9; }
+  else if(pose === 'clap'){ // hands together in front of the chest, a quick pat; never above the elbows' reach
+    const c2 = Math.sin(t * 11); aL = -0.85 + c2 * 0.1; aR = -0.85 - c2 * 0.1; zR = -0.3 + c2 * 0.12;
+  }
+  else if(pose === 'sing'){ aR = -1.1 + Math.sin(t * 2) * 0.05; zR = -0.5; aL = -0.35 + Math.sin(t * 1.4) * 0.3; }
   const k = Math.min(1, dt * 10), c = r.cur;
   c.lL += (lL - c.lL) * k; c.lR += (lR - c.lR) * k; c.aL += (aL - c.aL) * k; c.aR += (aR - c.aR) * k; c.zR += (zR - c.zR) * k; c.hx += (hx - c.hx) * k;
   r.legL.rotation.x = c.lL; r.legR.rotation.x = c.lR; r.armL.rotation.x = c.aL; r.armR.rotation.x = c.aR; r.armR.rotation.z = c.zR; r.head.rotation.x = c.hx;
@@ -6993,6 +7259,7 @@ function guestPose(npc){
   if(npc.state === 'gambling' && npc.machine) return isSlotLike(npc.machine) ? 'slot' : 'table';
   if(npc.state === 'eating') return 'eat';
   if(npc.state === 'drinking') return 'drink';
+  if(npc.state === 'watchShow') return ((npc.showT || 0) + (npc.showStay || 0)) % 6 < 1.3 ? 'clap' : '';
   return '';
 }
 
@@ -7549,6 +7816,7 @@ const BIND_DEFS = [
   { a:'tab6',     group:'Tabs',     name:'Regulars',                def:'Digit6' },
   { a:'tab7',     group:'Tabs',     name:'Rigging',                 def:'Digit7' },
   { a:'tab8',     group:'Tabs',     name:'Hotel',                   def:'Digit8' },
+  { a:'tab9',     group:'Tabs',     name:'Events',                  def:'Digit9' },
 ];
 const keybinds = {};
 BIND_DEFS.forEach(b => keybinds[b.a] = b.def);
@@ -7811,6 +8079,8 @@ const TAB_UNLOCKS = [
   // Staff above. Key numbers and thresholds swapped together so key order still tracks the thresholds.
   { id:'tabRegulars', name:'Regulars', key:'6', icon:ICON_HTML('regulars'), need:'earn $3,500 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 3500 },
   { id:'tabRigging',  name:'Rigging',  key:'7', icon:ICON_HTML('rigging'), need:'earn $5,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 5000 },
+  // Events is independent of the chain (it sits before Hotel, which needs an upper floor): it never holds the others up.
+  { id:'tabEvents',   name:'Events',   key:'9', icon:ICON_HTML('star'), need:'earn $10,000 in lifetime revenue',                  ok: ()=> lifetimeRevenue() >= 10000, independent:true },
   { id:'tabHotel',    name:'Hotel',    key:'8', icon:ICON_HTML('hotel'), need:'build an upper floor (Building tab)',               ok: ()=> upperBuilt },
 ];let unlockedTabs = new Set(['tabBuild']);
 function tabUnlocked(id){ return (typeof devUnlockAll !== 'undefined' && devUnlockAll) || sandbox || unlockedTabs.has(id); }
@@ -7837,8 +8107,9 @@ function tabLockedClick(id){
 function checkTabUnlocks(silent){
   for(const u of TAB_UNLOCKS){
     if(unlockedTabs.has(u.id)) continue;
-    if(!u.ok()) break;
+    if(!u.ok()){ if(u.independent) continue; break; }
     unlockedTabs.add(u.id);
+    if(u.id === 'tabEvents' && !silent) tip('eventsTab', 'The Events tab [9] is open. Put on a Headline show: it finally gives your Stage a job.');
     if(!silent){ logEvent(`New tab unlocked: ${u.name} [${u.key}]`, '#e6c34a'); playSound('achievement'); showUnlockPopup(`${icn('key')}New tab: <b>${u.name}</b> [${u.key}]`); }
   }
   applyTabVisibility();
@@ -7847,6 +8118,7 @@ function checkTabUnlocks(silent){
 function normalizeUnlockedTabs(){
   let open = true;
   TAB_UNLOCKS.forEach(u=>{
+    if(u.independent) return;
     if(open && unlockedTabs.has(u.id)) return;
     open = false;
     unlockedTabs.delete(u.id);
@@ -7860,7 +8132,7 @@ const categoryPopupEl = document.getElementById('categoryPopup');
 
 // Only one of these "manageable" popups should ever be open at once. Day summary,
 // the blackjack/roulette/poker prompt, and sell-progress are system-driven and exempt.
-const MANAGED_POPUP_IDS = ['keybindPanel','riggingPanel','regularsPanel','buildingPanel','hotelPanel','roomPanel','staffPanel','statsPanel','helpPanel','settingsPanel','categoryPopup','machineConfigPanel','devPanel','clubPanel'];
+const MANAGED_POPUP_IDS = ['keybindPanel','riggingPanel','regularsPanel','eventsPanel','buildingPanel','hotelPanel','roomPanel','staffPanel','statsPanel','helpPanel','settingsPanel','categoryPopup','machineConfigPanel','devPanel','clubPanel'];
 function closeManagedPopups(exceptId){
   MANAGED_POPUP_IDS.forEach(id=>{
     if(id === exceptId) return;
@@ -7870,7 +8142,7 @@ function closeManagedPopups(exceptId){
 }
 // Side-tab highlight: a tab shows the gold active state while its panel is open. Watching the panels' own
 // style changes covers every way of opening/closing (key, click, Close button, Esc, another tab) with no per-frame work.
-const TAB_PANELS = { tabBuild:['categoryPopup'], tabClub:['clubPanel'], tabStaff:['staffPanel'], tabStats:['statsPanel'], tabBuilding:['buildingPanel'], tabRegulars:['regularsPanel'], tabRigging:['riggingPanel'], tabHotel:['hotelPanel','roomPanel'] };
+const TAB_PANELS = { tabBuild:['categoryPopup'], tabClub:['clubPanel'], tabStaff:['staffPanel'], tabStats:['statsPanel'], tabBuilding:['buildingPanel'], tabRegulars:['regularsPanel'], tabRigging:['riggingPanel'], tabHotel:['hotelPanel','roomPanel'], tabEvents:['eventsPanel'] };
 function syncTabHighlight(){
   for(const tid in TAB_PANELS){
     const on = TAB_PANELS[tid].some(pid => { const el = document.getElementById(pid); return el && el.style.display === 'block'; });
@@ -8079,6 +8351,10 @@ window.addEventListener('keydown', (e)=>{
   if(isBind(e, 'tab8') || e.code === 'KeyH'){
     if(!tabUnlocked('tabHotel')) tabLockedClick('tabHotel');
     else { if(pointerLocked) document.exitPointerLock(); toggleManagedPopup('hotelPanel', updateHotelPanel); }
+  }
+  if(isBind(e, 'tab9')){
+    if(!tabUnlocked('tabEvents')) tabLockedClick('tabEvents');
+    else { if(pointerLocked) document.exitPointerLock(); toggleManagedPopup('eventsPanel', updateEventsPanel); }
   }
   if(e.code === 'Digit0' || e.code === 'Escape' || isBind(e, 'cancel')) setBuildType(null);
   if(isBind(e, 'cancel')) closeManagedPopups(null); // Q also backs out of any open tab, straight to look mode
@@ -11220,12 +11496,12 @@ function updateNPCs(dt){
       }
     }
     { // pinned somewhere (e.g. boxed in by walls)? after a while, sort it out
-      const walking = ['leaving','toMachine','toATM','wander','toDesk','toDiner','toBar','toLoo','toRoom','toCage'].includes(npc.state);
+      const walking = ['leaving','toMachine','toATM','wander','toDesk','toDiner','toBar','toLoo','toRoom','toCage','toShow'].includes(npc.state);
       const moved = Math.hypot(npc.pos.x - (npc.lx ?? npc.pos.x), npc.pos.z - (npc.lz ?? npc.pos.z));
       npc.lx = npc.pos.x; npc.lz = npc.pos.z;
       npc.stillT = (walking && npc.waitTimer <= 0 && moved < 0.003) ? (npc.stillT || 0) + dt : 0;
       if(npc.stillT > 20){ npc.stillT = 0;
-        if(['toDesk','toDiner','toBar','toLoo','toRoom','toCage','toClub','signingUp'].includes(npc.state)){ releaseDiner(npc); releaseService(npc); releaseRoom(npc); queueLeaveAll(npc); npc.cage = null; npc.cashedOut = true; npc.wantsRoom = false; npc.state = 'wander'; pickWanderTarget(npc); return; }
+        if(['toDesk','toDiner','toBar','toLoo','toRoom','toCage','toClub','signingUp','toShow'].includes(npc.state)){ releaseShow(npc); releaseDiner(npc); releaseService(npc); releaseRoom(npc); queueLeaveAll(npc); npc.cage = null; npc.cashedOut = true; npc.wantsRoom = false; npc.state = 'wander'; pickWanderTarget(npc); return; }
         if(npc.state === 'leaving'){ npc.pos.set(EXIT_POINT.x, 0, EXIT_POINT.z); finishLeaving(npc); }
         else { if(npc.machine) releaseSeat(npc.machine, npc.seatIndex, npc); npc.machine = null; npc.state = 'wander'; pickWanderTarget(npc); }
       }
@@ -11256,6 +11532,7 @@ function updateNPCs(dt){
     if(!npc.wantsDrink){ npc.thirstyAt -= dt; if(npc.thirstyAt <= 0){ npc.wantsDrink = true; if(!bars().length) gripe('noDrink'); } }
     if(!npc.needsLoo){ npc.looAt -= dt; if(npc.looAt <= 0) npc.needsLoo = true; }
     if(npc.state === 'toBar' || npc.state === 'drinking' || npc.state === 'toLoo' || npc.state === 'inLoo'){ if(updateServiceGuest(npc, dt)) return; }
+    if(npc.state === 'toShow' || npc.state === 'watchShow'){ if(updateShowGuest(npc, dt)) return; }
     if(npc.state === 'toCage' || npc.state === 'cashingOut'){ if(updateCageGuest(npc, dt)) return; }
     if(npc.state === 'toClub' || npc.state === 'signingUp'){ if(updateClubGuest(npc, dt)) return; }
     if(npc.state === 'toDiner' || npc.state === 'eating'){ if(updateDiningGuest(npc, dt)) return; }
@@ -12449,6 +12726,7 @@ function saveGame(){
       staffCounts: {...staffCounts}, roleWage: {...roleWage},
       staffXpScheme: 2, staffRoster: staffNPCs.map(s => ({ type:s.type, name:s.name, xp:Math.round(s.xp||0), morale:Math.round(s.morale||70) })),
       machines: machines.map(machineState),
+      ...eventsSaveState(),
       autoMarketingEnabled, autoMarketingSmart, autoMarketingBudget, autoCompEnabled, autoCompSmart, autoCompThreshold, autoCompBudget,
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -12561,6 +12839,7 @@ function loadGame(){
   document.getElementById('unlockPopupsToggle').checked = unlockPopupsEnabled;
   if(!!data.casinoClosed !== casinoClosed) setCasinoClosed(!!data.casinoClosed);
   ledger = Object.assign(newLedger(), data.ledger || {});
+  eventsLoadState(data);
   daysInRed = data.daysInRed || 0;
   investorDebt = data.investorDebt || 0;
   bailoutsUsed = data.bailoutsUsed || 0;
@@ -12628,6 +12907,7 @@ function clearTransientState(){
   }
   floaters.slice().forEach(f => scene.remove(f.sprite));
   floaters.length = 0;
+  eventActive = null; removeShowVisuals();
   inspectorTimer = 7 * DAY_LENGTH + Math.random() * DAY_LENGTH;
   eventTimer = 420 + Math.random()*300;
   spawnTimer = 2; staffPayTimer = 25; staffAssignTimer = 0; statsSampleTimer = 5;
@@ -12668,6 +12948,7 @@ function resetGame(){
   parkingUpgradeCost = 500;
   clubLevel = 0;
   campaignTimeLeft = 0; campaignStrength = 0; campaignKey = null;
+  eventsResetState();
   hrOutreachTimeLeft = 0; prPushCooldown = 0; winbackCooldown = 0;
   autoMarketingEnabled = false; autoMarketingSmart = true; autoMarketingBudget = 300; autoMarketingSpentToday = 0; marketingEventLog = []; lastSettleRev = null; avgDayGamblingRev = 0; smartHrLastT = -Infinity;
   autoCompEnabled = false; autoCompSmart = true; autoCompThreshold = 50; autoCompBudget = 200; autoCompSpentToday = 0; autoCompTimer = 0; autoMarketingTimer = 0;
@@ -13244,6 +13525,66 @@ document.getElementById('tabRegulars').addEventListener('click', (e)=>{
   toggleManagedPopup('regularsPanel', ()=>{ regularsView = null; updateRegularsPanel(); });
 });
 setInterval(()=>{ if(regularsPanelEl.style.display === 'block') updateRegularsPanel(); }, 2500);
+// ---------------- Events tab ----------------
+const eventsPanelEl = document.getElementById('eventsPanel');
+eventsPanelEl.addEventListener('click', (e)=> e.stopPropagation());
+function updateEventsPanel(){
+  const scroll = eventsPanelEl.scrollTop;
+  const money = v => (v < 0 ? '-' : '') + '$' + Math.abs(Math.round(v)).toLocaleString();
+  const sh = t => `<div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:12px 0 4px;">${t}</div>`;
+  let html = `<h3 style="margin:0 0 4px 0;color:#e6c34a;font-weight:normal;font-size:13px;">Events</h3>
+    <p style="color:#9fb3a8;font-size:11px;margin:0 0 6px 0;">Book a night, and the casino puts on a show. The fee is paid when you book (cancel and half comes back). The show starts at 19:00 and runs until 01:00; crowds build from 18:00.</p>`;
+  if(eventActive){
+    const ev = eventActive, def = EVENTS[ev.key], left = Math.max(0, Math.ceil((EV_LEN - ev.t) / EV_LEN * 6 * 60));
+    html += `<div style="padding:8px 10px;margin:6px 0;border-radius:6px;background:rgba(201,162,39,0.14);border:1px solid #c9a227;">
+      <b style="color:#e6c34a;">LIVE: ${def.name}</b> &middot; ${Math.floor(left / 60)}h ${left % 60}m of the show left<br>
+      Watching now: <b>${showWatcherCount()}</b> &middot; tickets sold: <b>${ev.tickets}</b> (${money(ev.ticketMoney)}) &middot; bar takings since the show began: <b>${money(ledger.drinks - ev.drinks0)}</b></div>`;
+  }
+  if(eventBooked){
+    const b = eventBooked, def = EVENTS[b.key];
+    html += `<div style="padding:8px 10px;margin:6px 0;border-radius:6px;background:rgba(60,140,90,0.14);border:1px solid #3fae6a;display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <span><b>${def.name}</b> booked for <b>Day ${b.day}</b> (${weekday(b.day).name}), fee ${money(b.fee)} paid</span>
+      <button id="evCancel" class="hotbarSlot" style="font-size:11px;">Cancel (refund ${money(Math.round(b.fee / 2))})</button></div>`;
+  }
+  html += sh('Available events');
+  Object.keys(EVENTS).forEach(key => {
+    const def = EVENTS[key], rows = def.requires(), ready = eventReadiness(rows), reqFail = rows.some(r => r.required && !r.ok);
+    const until = eventAvailableDay(key), busy = !!(eventBooked || eventActive);
+    const rowHtml = rows.map(r => `<div style="font-size:11px;"><span style="color:${r.ok ? '#8fd6a8' : '#e08a8a'};font-weight:bold;">${r.ok ? '&#10003;' : '&#10007;'}</span> ${r.label}${r.required ? ' <span style="color:#9fb3a8;font-size:10px;">(required)</span>' : ''}</div>`).join('');
+    const btns = [1, 2, 3].map(n => {
+      const d = currentDay + n;
+      const why = reqFail ? 'Needs a Stage' : busy ? 'Another event is booked or running' : d < until ? 'Available Day ' + until : cash < def.cost ? 'Not enough cash' : '';
+      return `<button class="hotbarSlot evBook" data-k="${key}" data-d="${d}" style="font-size:11px;${why ? 'opacity:.4;' : ''}" ${why ? 'disabled' : ''} title="${why || weekday(d).name}">Book for Day ${d}</button>`;
+    }).join('');
+    html += `<div style="padding:10px 12px;margin-top:4px;border-radius:6px;background:rgba(0,0,0,0.22);border:1px solid #2a4a3c;">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><b style="font-size:14px;color:#e6c34a;">${def.name}</b><span>Fee <b>${money(def.cost)}</b> &middot; cooldown ${def.cooldownDays} days</span></div>
+      <div style="color:#cfd9d0;font-size:11px;margin:4px 0 6px;">${def.desc}</div>
+      ${rowHtml}
+      <div style="margin:6px 0 2px;font-size:12px;">Readiness <b style="color:${ready >= 0.75 ? '#8fd6a8' : ready >= 0.5 ? '#e6c34a' : '#e08a8a'};">${Math.round(ready * 100)}%</b> <span style="color:#9fb3a8;font-size:10px;">(better readiness means a bigger audience and better reviews)</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:center;">${btns}${(until > currentDay + 1 && !busy) ? `<span style="color:#9fb3a8;font-size:10px;">available Day ${until}</span>` : ''}</div></div>`;
+  });
+  html += sh('Past events');
+  if(!eventHistory.length) html += '<div style="color:#9fb3a8;font-size:11px;">Nothing yet.</div>';
+  else {
+    const g = 'display:grid;grid-template-columns:44px 1.2fr 1.2fr 56px 80px 70px 70px 80px;gap:6px;align-items:center;';
+    html += `<div style="${g}color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;"><span>Day</span><span>Event</span><span>Review</span><span>Tickets</span><span>Ticket $</span><span>Drinks</span><span>Fee</span><span>Net</span></div>`;
+    html += eventHistory.map(h => `<div style="${g}padding:3px 0;border-top:1px solid #2a4a3c;font-size:11px;"><span>${h.day}</span><span>${h.name}</span><span style="color:${h.review === 'rave' ? '#e6c34a' : h.review === 'bad' ? '#e08a8a' : '#cfd9d0'};">${h.review}</span><span>${h.tickets}</span><span>${money(h.ticketMoney)}</span><span>${money(h.drinks)}</span><span>${money(-h.fee)}</span><span style="color:${h.net >= 0 ? '#8fd6a8' : '#e08a8a'};font-weight:bold;">${money(h.net)}</span></div>`).join('');
+  }
+  html += '<button id="eventsClose" class="hotbarSlot" style="width:100%;margin-top:12px;">Close</button>';
+  eventsPanelEl.innerHTML = html;
+  eventsPanelEl.querySelectorAll('.evBook').forEach(b => b.addEventListener('click', (ev)=>{ ev.stopPropagation(); if(bookEvent(b.dataset.k, parseInt(b.dataset.d))) updateEventsPanel(); }));
+  const c = document.getElementById('evCancel'); if(c) c.addEventListener('click', (ev)=>{ ev.stopPropagation(); cancelEventBooking(); updateEventsPanel(); });
+  document.getElementById('eventsClose').addEventListener('click', (ev)=>{ ev.stopPropagation(); eventsPanelEl.style.display = 'none'; });
+  eventsPanelEl.scrollTop = scroll;
+}
+document.getElementById('tabEvents').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  if(!tabUnlocked('tabEvents')){ tabLockedClick('tabEvents'); return; }
+  if(pointerLocked) document.exitPointerLock();
+  toggleManagedPopup('eventsPanel', updateEventsPanel);
+});
+let evPanelN = 0;
+setInterval(()=>{ if(eventsPanelEl.style.display === 'block' && (eventActive || ++evPanelN % 3 === 0)) updateEventsPanel(); }, 1000);
 
 document.getElementById('tabRigging').addEventListener('click', (e)=>{
   e.stopPropagation();
@@ -13778,6 +14119,7 @@ function aimedGuest(){
 function guestMood(n){
   const net = n.net || 0, ratio = net / Math.max(20, n.startingWallet);
   if(n.state === 'inRoom') return ['resting upstairs', '#8fb8ff'];
+  if(n.state === 'watchShow' || n.state === 'toShow') return ['at the show', '#e6c34a'];
   if(ratio > 0.25) return ['up and happy', '#8fd6a8'];
   if(ratio < -0.5) return ['down and sour', '#e08a8a'];
   if(n.lossStreak > 2) return ['chasing losses', '#ffb020'];
@@ -14014,6 +14356,7 @@ function animate(){        // machine - a standing banner says so regardless of 
   updateHotel(simDt);   // (these two used to run on real time, so they ignored the speed buttons)
   updateFloods(simDt);
   updateNPCs(simDt);
+  updateEvents(simDt, dt);
   updateStaff(simDt);
   npcs.forEach(n => animateFigure(n.mesh, dt, guestPose(n)));
   staffNPCs.forEach(s => animateFigure(s.mesh, dt, ''));
