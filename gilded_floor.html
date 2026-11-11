@@ -5636,7 +5636,7 @@ const ACHIEVEMENTS = [
   { id:'old_money',           name:'Old Money',                desc:'Survive to Day 200',                         check:()=> currentDay >= 200, progress:()=> ({ cur: currentDay, max: 200 }) },
   { id:'ten_thousand_guests', name:'A City Unto Itself',       desc:'Serve 10,000 guests',                        check:()=> totalGuestsServed >= 10000, progress:()=> ({ cur: totalGuestsServed, max: 10000 }) },
   { id:'fully_furnished',     name:'Fully Furnished',          desc:'Place every kind of amenity',                check:()=> AMENITY_KEYS.every(k => machines.some(m=>m.key===k)), progress:()=> ({ cur: AMENITY_KEYS.filter(k=>machines.some(m=>m.key===k)).length, max: AMENITY_KEYS.length }) },
-  { id:'familiar_crowd',      name:'A Familiar Crowd',         desc:'Fill your Regulars roster to capacity',      check:()=> maxRegulars() > 0 && regularPool.length >= maxRegulars(), progress:()=> ({ cur: regularPool.length, max: Math.max(1,maxRegulars()) }) },
+  { id:'familiar_crowd',      name:'A Familiar Crowd',         desc:'Fill your Regulars roster to capacity',      check:()=> tabUnlocked('tabRegulars') && maxRegulars() > 0 && regularPool.length >= maxRegulars(), progress:()=> ({ cur: regularPool.length, max: Math.max(1,maxRegulars()) }) },
 ];
 function checkAchievements(){
   const before = unlockedAchievements.size;
