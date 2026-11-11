@@ -338,7 +338,7 @@
   <input type="file" id="importFile" accept=".json,application/json" style="display:none;">
   <button id="resetBtn" class="hotbarSlot" style="width:100%;border-color:#7a1f2b;color:#e08a8a;"><svg class="ic inl"><use href="#i-reset"/></svg>Reset</button>
 </div>
-<style>body.photoMode #tipStack, body.photoMode #checklist, body.photoMode #hud, body.photoMode #eventLog, body.photoMode #speedControls, body.photoMode #modeBtn, body.photoMode #settingsBtn, body.photoMode #helpBtn, body.photoMode #sideTabsLeft, body.photoMode #minimap, body.photoMode #hint, body.photoMode #slotStake, body.photoMode #unlockHint, body.photoMode #closedBanner, body.photoMode #debtBox, body.photoMode #sellProgress, body.photoMode #blackjackPrompt, body.photoMode #crosshair, body.photoMode #inspectorLabel, body.photoMode #unlockPopup, body.photoMode #brokenIndicator { display:none !important; }</style>
+<style>body.photoMode #tipStack, body.photoMode #checklist, body.photoMode #saveGoal, body.photoMode #hud, body.photoMode #eventLog, body.photoMode #speedControls, body.photoMode #modeBtn, body.photoMode #settingsBtn, body.photoMode #helpBtn, body.photoMode #sideTabsLeft, body.photoMode #minimap, body.photoMode #hint, body.photoMode #slotStake, body.photoMode #unlockHint, body.photoMode #closedBanner, body.photoMode #debtBox, body.photoMode #sellProgress, body.photoMode #blackjackPrompt, body.photoMode #crosshair, body.photoMode #inspectorLabel, body.photoMode #unlockPopup, body.photoMode #brokenIndicator { display:none !important; }</style>
 <div id="crosshair" style="display:none;"></div>
 <div id="photoHint" style="display:none;position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:9;color:#f0e6d2;background:rgba(10,14,12,0.55);border-radius:6px;padding:5px 14px;font-size:11px;letter-spacing:1px;">PHOTO MODE - WASD + Space/Ctrl to fly, P to exit</div>
 <div id="unlockPopup" style="display:none;position:fixed;top:68px;left:50%;transform:translateX(-50%);background:rgba(18,36,29,0.96);border:1px solid #c9a227;border-radius:8px;padding:10px 18px;color:#f0e6d2;font-size:13px;z-index:10;max-width:min(440px,88vw);text-align:center;box-shadow:0 4px 18px rgba(0,0,0,0.4);cursor:pointer;"><div id="unlockPopupText"></div><div style="font-size:9px;color:#9fb3a8;margin-top:3px;">click to dismiss</div></div>
@@ -363,11 +363,12 @@
   <button id="tabBuilding" title="Building" class="sideTab locked"><svg class="ic"><use href="#i-building"/></svg><span class="tabName">Building</span><span class="sideTabKey">[5]</span></button>
   <button id="tabRegulars" title="Regulars" class="sideTab locked"><svg class="ic"><use href="#i-regulars"/></svg><span class="tabName">Regulars</span><span class="sideTabKey">[6]</span></button>
   <button id="tabRigging" title="Rigging" class="sideTab locked"><svg class="ic"><use href="#i-rigging"/></svg><span class="tabName">Rigging</span><span class="sideTabKey">[7]</span></button>
-  <button id="tabHotel" title="Hotel" class="sideTab locked"><svg class="ic"><use href="#i-hotel"/></svg><span class="tabName">Hotel</span><span class="sideTabKey">[8]</span></button>
-  <button id="tabEvents" title="Events" class="sideTab locked"><svg class="ic"><use href="#i-star"/></svg><span class="tabName">Events</span><span class="sideTabKey">[9]</span></button>
+  <button id="tabEvents" title="Events" class="sideTab locked"><svg class="ic"><use href="#i-star"/></svg><span class="tabName">Events</span><span class="sideTabKey">[8]</span></button>
+  <button id="tabHotel" title="Hotel" class="sideTab locked"><svg class="ic"><use href="#i-hotel"/></svg><span class="tabName">Hotel</span><span class="sideTabKey">[9]</span></button>
 </div>
 <div id="tipStack">
 <div id="checklist" style="width:212px;font-size:11px;color:#cfd9d0;background:rgba(18,36,29,0.88);border:1px solid #2a4a3c;border-radius:6px;padding:6px 8px;display:none;"></div>
+<div id="saveGoal" style="width:212px;font-size:11px;color:#cfd9d0;background:rgba(18,36,29,0.88);border:1px solid #2a4a3c;border-radius:6px;padding:5px 8px;display:none;"></div>
 <div id="unlockHint" style="max-width:210px;font-size:11px;color:#cfd9d0;background:rgba(18,36,29,0.8);border:1px solid #2a4a3c;border-radius:6px;padding:4px 8px;display:none;"></div>
 </div>
 <div id="riggingPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:14px 16px;color:#f0e6d2;font-size:12px;display:none;z-index:8;width:min(720px,94vw);max-height:90vh;overflow-y:auto;"></div>
@@ -2042,6 +2043,8 @@ function freeSpotAt(list, npc, cap, held){
   return open[0];
 }
 function releaseService(npc){
+  if(npc.bench){ npc.bench.sitters = Math.max(0, (npc.bench.sitters || 0) - 1); npc.bench = null; }
+  if(npc.gift){ npc.gift.shoppers = Math.max(0, (npc.gift.shoppers || 0) - 1); npc.gift = null; }
   if(npc.bar){ npc.bar.drinkers = Math.max(0, (npc.bar.drinkers || 0) - 1); npc.bar = null; }
   if(npc.loo){ npc.loo.users = Math.max(0, (npc.loo.users || 0) - 1); npc.loo = null; }
 }
@@ -2082,6 +2085,93 @@ function tryGoLoo(npc){
   npc.via = (m.level || 0) !== (npc.level || 0) ? (routeToLevel(npc, m.level || 0) || []) : [];
   npc.state = 'toLoo';
   return true;
+}
+// ---- Seating Cluster (bench) and Gift Shop ----
+const BENCH_SEATS = 3, GIFT_SLOTS = 2;
+function benchSeatPos(m, i){ const a = (i - 1) * 0.87; return localToWorld(m, BENCH_SEAT_R * Math.sin(a), BENCH_C - BENCH_SEAT_R * Math.cos(a)); }
+function giftSpot(m, i){ return localToWorld(m, (i - 0.5) * 1.0, 1.4); }
+// A wandering guest between games sometimes sits down for a few seconds (up to three to a bench).
+function tryGoBench(npc){
+  if(casinoClosed || npc.visitLeft < 30) return false;
+  const m = freeSpotAt(machines.filter(x => x.type === 'bench'), npc, BENCH_SEATS, 'sitters');
+  if(!m) return false;
+  const taken = npcs.filter(n => n.bench === m).map(n => n.benchSeat);
+  let seat = 0; while(seat < BENCH_SEATS && taken.includes(seat)) seat++;
+  if(seat >= BENCH_SEATS) return false;
+  npc.bench = m; npc.benchSeat = seat; m.sitters = (m.sitters || 0) + 1;
+  npc.via = (m.level || 0) !== (npc.level || 0) ? (routeToLevel(npc, m.level || 0) || []) : [];
+  npc.state = 'toBench';
+  return true;
+}
+// Guests heading out who are up on the night sometimes stop for a souvenir. Asked once per guest (giftDone).
+function tryGoGift(npc){
+  if(npc.giftDone || casinoClosed || npc.caught) return false;
+  npc.giftDone = true;
+  if(!(npc.wallet > npc.startingWallet) || Math.random() >= 0.35) return false;
+  const m = freeSpotAt(machines.filter(x => x.type === 'giftshop'), npc, GIFT_SLOTS, 'shoppers');
+  if(!m) return false;
+  const taken = npcs.filter(n => n.gift === m).map(n => n.giftSpotI);
+  let slot = 0; while(slot < GIFT_SLOTS && taken.includes(slot)) slot++;
+  if(slot >= GIFT_SLOTS) return false;
+  npc.gift = m; npc.giftSpotI = slot; m.shoppers = (m.shoppers || 0) + 1;
+  npc.via = (m.level || 0) !== (npc.level || 0) ? (routeToLevel(npc, m.level || 0) || []) : [];
+  npc.state = 'toGift';
+  return true;
+}
+function updateBenchGiftGuest(npc, dt){
+  if(npc.state === 'toBench'){
+    const m = npc.bench;
+    if(!m || !machines.includes(m) || casinoClosed){ releaseService(npc); npc.state = 'wander'; pickWanderTarget(npc); return true; }
+    const p = benchSeatPos(m, npc.benchSeat || 0);
+    npc.target.set(p.x, 0, p.z);
+    if(stepToward(npc, dt, m)){ npc.state = 'onBench'; npc.sitT = 8 + Math.random() * 12; }
+    npc.mesh.position.set(npc.pos.x, npc.pos.y, npc.pos.z);
+    return true;
+  }
+  if(npc.state === 'onBench'){
+    const m = npc.bench;
+    if(!m || !machines.includes(m)){ releaseService(npc); npc.state = 'wander'; npc.waitTimer = 0.2; pickWanderTarget(npc); return true; } // sold or picked up from under them
+    const c = localToWorld(m, 0, BENCH_C);
+    npc.mesh.rotation.y = Math.atan2(c.x - npc.pos.x, c.z - npc.pos.z);
+    npc.mesh.position.set(npc.pos.x, npc.pos.y - 0.2, npc.pos.z);   // lowered onto the cushion
+    npc.sitT -= dt;
+    if(npc.sitT <= 0){
+      npc.visitLeft += 6; npc.betStyle *= 1.02;                      // a rest and a little cheer: the bar's drink bump (+25 s, x1.06) scaled down
+      releaseService(npc);
+      npc.state = 'wander'; npc.waitTimer = 0.3; pickWanderTarget(npc);
+    }
+    return true;
+  }
+  if(npc.state === 'toGift'){
+    const m = npc.gift;
+    if(!m || !machines.includes(m) || casinoClosed){ releaseService(npc); beginLeaving(npc); return true; }
+    const p = giftSpot(m, npc.giftSpotI || 0);
+    npc.target.set(p.x, 0, p.z);
+    if(stepToward(npc, dt, m)){ npc.state = 'atGift'; npc.giftT = 3 + Math.random() * 5; }
+    npc.mesh.position.set(npc.pos.x, npc.pos.y, npc.pos.z);
+    return true;
+  }
+  if(npc.state === 'atGift'){
+    const m = npc.gift;
+    if(!m || !machines.includes(m)){ releaseService(npc); beginLeaving(npc); return true; }
+    npc.mesh.rotation.y = Math.atan2(m.x - npc.pos.x, m.z - npc.pos.z);
+    npc.giftT -= dt;
+    if(npc.giftT <= 0){
+      const winnings = Math.max(0, npc.wallet - npc.startingWallet);
+      const price = Math.min(Math.floor(npc.wallet), Math.round(Math.min(150, Math.max(10, winnings * (0.04 + Math.random() * 0.06)))));
+      if(price > 0){
+        const cost = Math.round(price * 0.4);
+        npc.wallet -= price; addCash(price); ledger.gifts += price;
+        addCash(-cost); ledger.cogs += cost; ledger.cogsGifts += cost;     // the souvenir itself cost the house 40%
+        spawnFloatingText('+$' + price + ' gift', new THREE.Vector3(npc.pos.x, npc.pos.y + 2.2, npc.pos.z), '#8fd6a8');
+      }
+      releaseService(npc);
+      beginLeaving(npc);
+    }
+    npc.mesh.position.set(npc.pos.x, npc.pos.y, npc.pos.z);
+    return true;
+  }
+  return false;
 }
 // Handles a guest at the bar or the restroom. True means it dealt with them this frame.
 function updateServiceGuest(npc, dt){
@@ -2483,6 +2573,7 @@ function deptOfMachine(m){
   if(m.type === 'room' || m.type === 'frontdesk') return 'Hotel';
   if(m.type === 'restaurant' || m.type === 'dinertable') return 'Dining';
   if(m.type === 'bar') return 'Bar';
+  if(m.type === 'giftshop') return 'Gift shop';
   return 'Investor';
 }
 function departmentReport(L){
@@ -2496,6 +2587,7 @@ function departmentReport(L){
   get('Dining').out += L.cogsFood || 0;  // what the food itself cost
   get('Investor').inc = 0;
   get('Events').inc = L.events || 0; get('Events').out += L.eventCost || 0;
+  get('Gift shop').inc = L.gifts || 0; get('Gift shop').out += L.cogsGifts || 0;  // what the souvenirs cost
   // wages, split by what each role looks after
   Object.entries(staffCounts).forEach(([role, n])=>{
     if(!n) return;
@@ -2511,7 +2603,7 @@ function departmentReport(L){
     });
   } else get('Investor').out += L.upkeep || 0;
   get('Investor').out += (L.bribes || 0) + (L.theft || 0) + (L.debtRepaid || 0);
-  return ['Gaming','Hotel','Dining','Bar','Events','Investor'].map(k => get(k)).filter(x => x.inc || x.out);
+  return ['Gaming','Hotel','Dining','Bar','Events','Gift shop','Investor'].map(k => get(k)).filter(x => x.inc || x.out);
 }
 function departmentTable(L){
   const rows = departmentReport(L);
@@ -3271,6 +3363,72 @@ function holdemAiDecide(t, rng) {
 }
 // ==== HOLDEM ENGINE END ====
 
+// ---- Jackpot Board: today's biggest guest wins, drawn on ONE canvas texture shared by every board ----
+let jackpotToday = [], jackpotEver = 0, jackpotBoardCanvas = null, jackpotBoardTex = null, jackpotBoardMat = null, jackpotDrawnKey = '';
+function jackpotNewDay(){ jackpotToday = []; drawJackpotBoard(); }
+function recordBigWin(actor, m, amount){
+  amount = Math.round(amount);
+  if(amount < 20) return;
+  let changed = false;
+  if(amount > jackpotEver){ jackpotEver = amount; changed = true; }
+  if(jackpotToday.length < 5 || amount > jackpotToday[jackpotToday.length - 1].a){
+    jackpotToday.push({ a: amount, n: (actor && actor.name) || 'A guest', g: m.nick || m.name || 'a machine' });
+    jackpotToday.sort((x, y) => y.a - x.a);
+    if(jackpotToday.length > 5) jackpotToday.length = 5;
+    changed = true;
+  }
+  if(changed) drawJackpotBoard();
+}
+function drawJackpotBoard(){
+  if(!jackpotBoardCanvas) return;                       // no board has been built yet: nothing to draw on
+  const key = jackpotEver + '|' + jackpotToday.map(w => w.a + w.n + w.g).join(';');
+  if(key === jackpotDrawnKey) return;                   // unchanged: do not touch the canvas or re-upload the texture
+  jackpotDrawnKey = key;
+  const c = jackpotBoardCanvas, ctx = c.getContext('2d');
+  ctx.setTransform(1, 0, 0, c.height / 658, 0, 0);       // draw in an undistorted 1024 x 658 space (the face is 2.8 x 1.8 m)
+  const g = ctx.createLinearGradient(0, 0, 0, 658); g.addColorStop(0, '#16122a'); g.addColorStop(1, '#0a0814');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 1024, 658);
+  ctx.strokeStyle = '#c9a227'; ctx.lineWidth = 6; ctx.strokeRect(10, 10, 1004, 638);
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23d'; ctx.font = 'bold 54px Georgia, serif';
+  ctx.fillText("TODAY'S BIGGEST WINS", 512, 62);
+  ctx.fillStyle = '#c9a227'; ctx.fillRect(60, 104, 904, 3);
+  for(let i = 0; i < 5; i++){
+    const y = 160 + i * 66, w = jackpotToday[i];
+    ctx.textAlign = 'left'; ctx.fillStyle = w ? '#ffd23d' : '#5a5a4a'; ctx.font = 'bold 40px Georgia, serif';
+    ctx.fillText((i + 1) + '.', 56, y);
+    if(w){
+      ctx.fillStyle = '#7dffb0'; ctx.font = 'bold 44px Georgia, serif'; ctx.fillText('$' + w.a.toLocaleString(), 120, y);
+      ctx.fillStyle = '#f0e6d2'; ctx.font = '34px Georgia, serif';
+      let who = w.n; while(ctx.measureText(who).width > 330 && who.length > 4) who = who.slice(0, -2);
+      ctx.fillText(who === w.n ? who : who + '..', 360, y);
+      ctx.textAlign = 'right'; ctx.fillStyle = '#9fb3a8'; ctx.font = 'italic 30px Georgia, serif';
+      let gm = w.g; while(ctx.measureText(gm).width > 250 && gm.length > 4) gm = gm.slice(0, -2);
+      ctx.fillText(gm === w.g ? gm : gm + '..', 968, y);
+    } else { ctx.fillStyle = '#5a5a4a'; ctx.font = '34px Georgia, serif'; ctx.fillText(i === 0 ? 'No big wins yet today' : '-', 120, y); }
+  }
+  ctx.fillStyle = '#c9a227'; ctx.fillRect(60, 498, 904, 3);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#ff8a5c'; ctx.font = 'bold 50px Georgia, serif';
+  ctx.fillText('BIGGEST WIN EVER: $' + jackpotEver.toLocaleString(), 512, 570);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  jackpotBoardTex.needsUpdate = true;
+}
+function jackpotBoardMaterial(){
+  if(!jackpotBoardMat){
+    jackpotBoardCanvas = document.createElement('canvas'); jackpotBoardCanvas.width = 1024; jackpotBoardCanvas.height = 1024;
+    jackpotBoardTex = new THREE.CanvasTexture(jackpotBoardCanvas);
+    if(jackpotBoardTex.colorSpace !== undefined && THREE.SRGBColorSpace) jackpotBoardTex.colorSpace = THREE.SRGBColorSpace;
+    jackpotBoardMat = new THREE.MeshStandardMaterial({ color:0x303030, map:jackpotBoardTex, emissive:0xffffff, emissiveMap:jackpotBoardTex, emissiveIntensity:0.85, roughness:0.6, metalness:0 });
+    jackpotDrawnKey = ''; drawJackpotBoard();
+  }
+  return jackpotBoardMat;
+}
+function jackpotSaveState(){ return { ever: jackpotEver, today: jackpotToday.map(w => ({ a:w.a, n:w.n, g:w.g })) }; }
+function jackpotLoadState(d){
+  jackpotEver = (d && Number.isFinite(d.ever)) ? d.ever : 0;
+  jackpotToday = (d && Array.isArray(d.today)) ? d.today.filter(w => w && Number.isFinite(w.a)).slice(0, 5).map(w => ({ a:w.a, n:String(w.n || 'A guest').slice(0, 30), g:String(w.g || 'a machine').slice(0, 30) })) : [];
+  drawJackpotBoard();
+}
 const BUILD_ITEMS = {
   slot:      { name:'Slot Machine',     cost:150,  income:3,  radius:0.7,  category:'gambling',
     desc:'Fully random - adjustable payout. Under 80% guests can tell, and that risks a scandal.' },
@@ -3360,6 +3518,12 @@ const BUILD_ITEMS = {
     desc:'A wall-length run of rope that guests will not step over. Small reputation boost.' },
   artwork:   { name:'Art Piece',        cost:220, income:0,  radius:0.5,  category:'decoration',
     desc:'Small reputation boost.' },
+  bench:     { name:'Seating Cluster',  cost:250, income:0,  radius:1.45, category:'decoration',
+    desc:'A curved upholstered banquette for three with a small round table. Guests between games sit and rest on it for a little while, and come away a touch happier.' },
+  jackpotboard:{ name:'Jackpot Board',  cost:600, income:0,  radius:1.6,  category:'decoration',
+    desc:"A lit wall display on a stand, listing today's five biggest guest wins and the biggest win ever. Updates as the wins happen." },
+  giftshop:  { name:'Gift Shop',        cost:2500, income:0,  radius:1.45, category:'amenity',
+    desc:'A small boutique stall. Guests who are up on the night often stop by on the way out and buy a souvenir with a slice of their winnings (two at the counter at a time).' },
   frontdesk: { name:'Front Desk',      cost:2500, income:0,  radius:1.7,  category:'hotel',
     desc:'Where hotel guests check in. Hire a clerk to keep it moving.' },
   room_std:  { name:'Standard Room',    cost:1200, income:0,  radius:3.0,  category:'hotel', base:'room', tier:'std',
@@ -4094,6 +4258,9 @@ function addTableNameplates(mesh, type, radius, nick, gold){
   }
 }
 
+const BENCH_C = 0.75, BENCH_SEAT_R = 1.38;
+let giftWoodMat = null;
+function woodDkGift(){ return giftWoodMat || (giftWoodMat = new THREE.MeshStandardMaterial({ color:0x2a1810, roughness:0.5 })); }
 function buildMachineMesh(key, nick, noMerge){
   const item = BUILD_ITEMS[key] || {};
   const type = item.base || key; // high-roller tables reuse their base table's build
@@ -4806,6 +4973,86 @@ function buildMachineMesh(key, nick, noMerge){
     g.add(wallMesh, baseT, capT);
     mesh = g; radius = 1.7; name = 'Interior Wall'; parts = { wallMesh };
 
+  } else if(type === 'bench'){
+    // Curved banquette for three around a small round table. The arc is centred on (0, BENCH_C) and opens toward +z.
+    const g = new THREE.Group();
+    const velvet = new THREE.MeshStandardMaterial({ color:0x7a1f3a, roughness:0.8 });
+    const velvetDk = new THREE.MeshStandardMaterial({ color:0x5a1428, roughness:0.8 });
+    const woodDk = new THREE.MeshStandardMaterial({ color:0x2a1810, roughness:0.5 });
+    const gold = new THREE.MeshStandardMaterial({ color:0xc9a227, metalness:0.5, roughness:0.35 });
+    const N = 9, span = 0.98;
+    for(let i = 0; i < N; i++){
+      const a = -span + (2 * span) * i / (N - 1), sn = Math.sin(a), cs = Math.cos(a);
+      const put = (geo, mat, r, y) => { const o = new THREE.Mesh(geo, mat); o.position.set(r * sn, y, BENCH_C - r * cs); o.rotation.y = -a; g.add(o); };
+      put(new THREE.BoxGeometry(0.42, 0.22, 0.62), woodDk, 1.3, 0.11);              // plinth
+      put(new THREE.BoxGeometry(0.42, 0.2, 0.6), velvet, 1.3, 0.32);                 // seat cushion
+      put(new THREE.BoxGeometry(0.44, 0.62, 0.16), velvetDk, 1.66, 0.53);            // back
+      put(new THREE.BoxGeometry(0.44, 0.04, 0.2), gold, 1.66, 0.86);                 // gold piping along the top
+    }
+    const tbl = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 18), woodDk); tbl.position.set(0, 0.52, BENCH_C);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8), gold); pole.position.set(0, 0.25, BENCH_C);
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.04, 14), gold); foot.position.set(0, 0.02, BENCH_C);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.015, 6, 20), gold); rim.rotation.x = Math.PI / 2; rim.position.set(0, 0.55, BENCH_C);
+    g.add(tbl, pole, foot, rim);
+    mesh = g; radius = 1.45; name = 'Seating Cluster';
+  } else if(type === 'giftshop'){
+    const g = new THREE.Group();
+    const wood = new THREE.MeshStandardMaterial({ color:0x3a2416, roughness:0.6 });
+    const cream = new THREE.MeshStandardMaterial({ color:0xe8dcc0, roughness:0.5 });
+    const gold = new THREE.MeshStandardMaterial({ color:0xc9a227, metalness:0.5, roughness:0.35 });
+    const wall = new THREE.MeshStandardMaterial({ color:0x2f5d62, roughness:0.7 });
+    const add = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
+    add(new THREE.BoxGeometry(2.9, 0.06, 1.9), wood, 0, 0.03, 0.15);                // deck
+    add(new THREE.BoxGeometry(2.4, 1.0, 0.6), wood, 0, 0.56, 0.5);                  // counter
+    add(new THREE.BoxGeometry(2.5, 0.06, 0.72), cream, 0, 1.09, 0.5);               // counter top
+    add(new THREE.BoxGeometry(2.4, 0.06, 0.04), gold, 0, 0.9, 0.82);                // gold strip on the counter front
+    add(new THREE.BoxGeometry(2.6, 2.2, 0.1), wall, 0, 1.16, -0.6);                 // back wall
+    add(new THREE.BoxGeometry(0.08, 2.2, 0.55), wall, -1.3, 1.16, -0.4);            // side walls
+    add(new THREE.BoxGeometry(0.08, 2.2, 0.55), wall, 1.3, 1.16, -0.4);
+    const reg = add(new THREE.BoxGeometry(0.34, 0.2, 0.28), new THREE.MeshStandardMaterial({ color:0x1e1e24, roughness:0.5 }), 0.8, 1.22, 0.45);
+    add(new THREE.BoxGeometry(0.22, 0.12, 0.02), new THREE.MeshStandardMaterial({ color:0x0a0a12, emissive:0x3ddcff, emissiveIntensity:0.7 }), 0.8, 1.3, 0.6);
+    const boxCols = [0xd94a4a, 0x4a9ad9, 0xe6c34a, 0x6ac46a, 0xb86ad9, 0xff8a3d, 0xf06aa8];
+    [0.72, 1.28, 1.84].forEach((sy, si)=>{
+      add(new THREE.BoxGeometry(2.3, 0.05, 0.36), wood, 0, sy, -0.38);
+      for(let k = 0; k < 6; k++){
+        const h = 0.2 + ((k * 7 + si * 3) % 4) * 0.06, w = 0.22 + ((k + si) % 3) * 0.06;
+        const bx = add(new THREE.BoxGeometry(w, h, 0.2), new THREE.MeshStandardMaterial({ color: boxCols[(k + si * 2) % boxCols.length], roughness:0.6 }), -0.95 + k * 0.38, sy + 0.025 + h / 2, -0.4);
+        add(new THREE.BoxGeometry(w + 0.01, 0.03, 0.21), gold, bx.position.x, bx.position.y + 0.02, bx.position.z);   // ribbon
+      }
+    });
+    [-0.7, 0.1, 0.5].forEach((bx, k)=>{                                             // a few boxes on the counter
+      add(new THREE.BoxGeometry(0.28, 0.2 + k * 0.04, 0.22), new THREE.MeshStandardMaterial({ color: boxCols[(k * 2 + 1) % boxCols.length], roughness:0.6 }), bx, 1.22 + k * 0.02, 0.35);
+    });
+    for(let i = 0; i < 10; i++){                                                    // striped awning, tilted forward
+      const st = add(new THREE.BoxGeometry(0.28, 0.04, 1.75), new THREE.MeshStandardMaterial({ color: i % 2 ? 0xf2ece0 : 0xc23a3a, roughness:0.8 }), -1.26 + i * 0.28, 2.36, 0.4);
+      st.rotation.x = 0.22;
+      add(new THREE.BoxGeometry(0.28, 0.2, 0.03), new THREE.MeshStandardMaterial({ color: i % 2 ? 0xf2ece0 : 0xc23a3a, roughness:0.8 }), -1.26 + i * 0.28, 2.2, 1.2);   // valance
+    }
+    add(new THREE.CylinderGeometry(0.04, 0.04, 2.3, 8), gold, -1.3, 1.15, 1.2);
+    add(new THREE.CylinderGeometry(0.04, 0.04, 2.3, 8), gold, 1.3, 1.15, 1.2);
+    add(new THREE.BoxGeometry(1.7, 0.5, 0.08), woodDkGift(), 0, 2.8, 1.0);          // sign board
+    const sg = makeNameplate('GIFTS', 1.55, 0.4, { bg:'#2a1810', fg:'#e6c34a', border:'#c9a227' }); sg.position.set(0, 2.8, 1.05); g.add(sg);
+    const sg2 = makeNameplate('GIFTS', 1.55, 0.4, { bg:'#2a1810', fg:'#e6c34a', border:'#c9a227' }); sg2.position.set(0, 2.8, 0.95); sg2.rotation.y = Math.PI; g.add(sg2);
+    mesh = g; radius = 1.45; name = 'Gift Shop';
+  } else if(type === 'jackpotboard'){
+    const g = new THREE.Group();
+    const gold = new THREE.MeshStandardMaterial({ color:0xc9a227, emissive:0x6a5410, emissiveIntensity:0.5, metalness:0.4, roughness:0.35 });
+    const dark = new THREE.MeshStandardMaterial({ color:0x15131f, roughness:0.6 });
+    const add = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
+    add(new THREE.BoxGeometry(2.6, 0.1, 0.7), dark, 0, 0.05, 0);                    // base
+    add(new THREE.BoxGeometry(0.14, 1.0, 0.14), dark, -1.1, 0.55, 0);               // legs
+    add(new THREE.BoxGeometry(0.14, 1.0, 0.14), dark, 1.1, 0.55, 0);
+    add(new THREE.BoxGeometry(2.4, 0.08, 0.1), gold, 0, 0.5, -0.02);                // brace
+    add(new THREE.BoxGeometry(3.0, 2.0, 0.14), dark, 0, 2.0, 0);                    // cabinet
+    add(new THREE.BoxGeometry(3.14, 0.12, 0.2), gold, 0, 3.0, 0.02);                // gold frame
+    add(new THREE.BoxGeometry(3.14, 0.12, 0.2), gold, 0, 1.0, 0.02);
+    add(new THREE.BoxGeometry(0.12, 2.12, 0.2), gold, -1.5, 2.0, 0.02);
+    add(new THREE.BoxGeometry(0.12, 2.12, 0.2), gold, 1.5, 2.0, 0.02);
+    for(let i = 0; i < 9; i++) add(new THREE.SphereGeometry(0.05, 6, 6), new THREE.MeshStandardMaterial({ color:0xfff2a0, emissive:0xffd23d, emissiveIntensity:1.0 }), -1.2 + i * 0.3, 3.0, 0.14);
+    // The face is its own mesh (userData.keep keeps gfMergeStatic away from it) with the ONE shared lit canvas material.
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 1.8), jackpotBoardMaterial());
+    face.position.set(0, 2.0, 0.075); face.userData.keep = true; g.add(face);
+    mesh = g; radius = 1.6; name = 'Jackpot Board';
   } else {
     const g = new THREE.Group();
     const pedMat = new THREE.MeshStandardMaterial({ color:0x2a2a30, roughness:0.5 });
@@ -5524,7 +5771,7 @@ function settleDayFinances(dayNet){
 addCash(0);
 
 // Running ledger for the end-of-day breakdown: where money came from and where it went.
-function newLedger(){ return { slotWon:0, slotPaid:0, tableWon:0, tablePaid:0, atmFees:0, wages:0, upkeep:0, bribes:0, theft:0, debtRepaid:0, personalWon:0, personalLost:0, rooms:0, food:0, drinks:0, cage:0, purchases:0, cogs:0, cogsBar:0, cogsFood:0, events:0, eventCost:0 }; }
+function newLedger(){ return { slotWon:0, slotPaid:0, tableWon:0, tablePaid:0, atmFees:0, wages:0, upkeep:0, bribes:0, theft:0, debtRepaid:0, personalWon:0, personalLost:0, rooms:0, food:0, drinks:0, cage:0, purchases:0, cogs:0, cogsBar:0, cogsFood:0, events:0, eventCost:0, gifts:0, cogsGifts:0 }; }
 let ledger = newLedger();
 // Money spent buying things (machines, hires, training, upgrades, floor, parking, wallpaper, club tiers, room furnishing). Only used so the day report can say how much of a day's net went on purchases.
 function spendOn(amount){ addCash(-amount); ledger.purchases += amount; }
@@ -5540,7 +5787,8 @@ const UPKEEP_PER_DAY = {
   room_std:6, room_dlx:10, room_suite:16, frontdesk:8, restaurant:14, spa:16, dinertable:2, lift:14, cashier:6,
   slot:3, megaslot:5, bigwheel:5, blackjack:8, roulette:8, poker:10, craps:10, baccarat:10,
   bar:6, restroom:4, lounge:5, atm:2, valet:4, stage:8, viplounge:20,
-  plant:0, neon:0, statue:0, chandelier:0, fountain:0, ropes:0, artwork:0, // pure decoration - no running cost
+  plant:0, neon:0, statue:0, chandelier:0, fountain:0, ropes:0, artwork:0, bench:0, // pure decoration - no running cost
+  giftshop:4, jackpotboard:1,
   fruitslot:3, pennyslot:4, videoslot:6, highlimit:14, goldslot:45,
   hrblackjack:22, hrroulette:22, hrbaccarat:26, hrpoker:24, hrcraps:28,
   revmgr:8, hroffice:6, mktoffice:6, controlroom:10, analyticsoffice:9, relationsoffice:8,
@@ -5888,6 +6136,7 @@ function updateDayNight(dt){
     dayS.machines = machines.map(m => ({ name: m.nick || m.name, type: m.name, net: m.dayNet || 0 }));
     machines.forEach(m => { if(m.st && m.dayNet){ m.st.days = (m.st.days || 0) + 1; m.st.bestDay = Math.max(m.st.bestDay ?? -Infinity, m.dayNet); m.st.worstDay = Math.min(m.st.worstDay ?? Infinity, m.dayNet); if(m.dayNet > 0) m.st.goodDays = (m.st.goodDays || 0) + 1; } m.dayNet = 0; });
     dayStats = newDayStats();
+    jackpotNewDay();
     resetGripes();
     showDaySummary(currentDay, dayNet, guestsToday, dayLedger, dayS);
     logEvent(`${weekday(currentDay).name} complete, net $${dayNet}, ${guestsToday} guests`, dayNet>=0?'#8fd6a8':'#e08a8a');
@@ -5908,11 +6157,11 @@ function showDaySummary(day, net, guests, L, S){
   const plain = (label, value)=> `<div style="display:flex;justify-content:space-between;gap:16px;"><span>${label}</span><span>${value}</span></div>`;
   const slotNet = L.slotWon - L.slotPaid, tableNet = L.tableWon - L.tablePaid;
   const personalNet = L.personalWon - L.personalLost; // your own bets come out of / go into your cash directly
-  const known = slotNet + tableNet + L.atmFees + L.rooms + L.food + L.drinks + L.cage + (L.events || 0) - L.wages - L.upkeep - L.bribes - L.theft - L.debtRepaid - L.purchases - (L.eventCost || 0) - (L.cogs || 0) + personalNet;
+  const known = slotNet + tableNet + L.atmFees + L.rooms + L.food + L.drinks + L.cage + (L.events || 0) + (L.gifts || 0) - L.wages - L.upkeep - L.bribes - L.theft - L.debtRepaid - L.purchases - (L.eventCost || 0) - (L.cogs || 0) + personalNet;
   const other = net - known; // building, selling, expanding, ads, etc.
   const takenIn = L.slotWon + L.tableWon, paidOut = L.slotPaid + L.tablePaid;
   const otherMinus = (L.cogs || 0) + (L.eventCost || 0) + L.wages + L.upkeep + L.bribes + L.theft + L.debtRepaid + L.purchases + Math.max(0, -other) + Math.max(0, -personalNet);
-  const otherPlus = L.atmFees + L.rooms + L.food + L.drinks + L.cage + (L.events || 0) + Math.max(0, other) + Math.max(0, personalNet);
+  const otherPlus = L.atmFees + L.rooms + L.food + L.drinks + L.cage + (L.events || 0) + (L.gifts || 0) + Math.max(0, other) + Math.max(0, personalNet);
   const barBonus = (L.slotWon + L.tableWon) * (1 - 1/amenitySpendMultiplier());
   const repDelta = reputation - S.repStart;
   const box = 'text-align:left;font-size:12px;margin:8px 0;padding:8px 10px;background:rgba(0,0,0,0.25);border-radius:6px;line-height:1.7;';
@@ -5960,8 +6209,9 @@ function showDaySummary(day, net, guests, L, S){
       ${L.drinks > 0 ? row('Bar takings', L.drinks, 1) : ''}
       ${L.cage > 0 ? row('Cage fees', L.cage, 1) : ''}
       ${(L.events || 0) > 0 ? row('Event tickets', L.events, 1) : ''}
+      ${(L.gifts || 0) > 0 ? row('Gift shop sales', L.gifts, 1) : ''}
       ${sh('Costs')}
-      ${(L.cogs || 0) > 0 ? row('Food and drink served', L.cogs, -1) : ''}
+      ${(L.cogs || 0) > 0 ? row('Food, drink and gift stock', L.cogs, -1) : ''}
       ${row('Staff wages', L.wages, -1)}
       ${row('Electricity &amp; upkeep', L.upkeep, -1)}
       ${L.bribes > 0 ? row('Inspector fines', L.bribes, -1) : ''}
@@ -7243,6 +7493,7 @@ function animateFigure(mesh, dt, pose){
     aL = -0.12; aR = -0.7 - 0.3 * lift; zR = -0.45 - 0.2 * lift; hx = -0.12 * lift;
   }
   else if(pose === 'clip'){ aR = -0.9; }
+  else if(pose === 'sit'){ lL = -1.3; lR = -1.3; aL = -0.5; aR = -0.5; hx = 0.04; }   // thighs level with the seat, hands in the lap
   else if(pose === 'clap'){ // hands together in front of the chest, a quick pat; never above the elbows' reach
     const c2 = Math.sin(t * 11); aL = -0.85 + c2 * 0.1; aR = -0.85 - c2 * 0.1; zR = -0.3 + c2 * 0.12;
   }
@@ -7259,6 +7510,7 @@ function guestPose(npc){
   if(npc.state === 'gambling' && npc.machine) return isSlotLike(npc.machine) ? 'slot' : 'table';
   if(npc.state === 'eating') return 'eat';
   if(npc.state === 'drinking') return 'drink';
+  if(npc.state === 'onBench') return 'sit';
   if(npc.state === 'watchShow') return ((npc.showT || 0) + (npc.showStay || 0)) % 6 < 1.3 ? 'clap' : '';
   return '';
 }
@@ -7815,8 +8067,8 @@ const BIND_DEFS = [
   { a:'tab5',     group:'Tabs',     name:'Building',                def:'Digit5' },
   { a:'tab6',     group:'Tabs',     name:'Regulars',                def:'Digit6' },
   { a:'tab7',     group:'Tabs',     name:'Rigging',                 def:'Digit7' },
-  { a:'tab8',     group:'Tabs',     name:'Hotel',                   def:'Digit8' },
-  { a:'tab9',     group:'Tabs',     name:'Events',                  def:'Digit9' },
+  { a:'tab8',     group:'Tabs',     name:'Events',                  def:'Digit8' },
+  { a:'tab9',     group:'Tabs',     name:'Hotel',                   def:'Digit9' },
 ];
 const keybinds = {};
 BIND_DEFS.forEach(b => keybinds[b.a] = b.def);
@@ -7909,6 +8161,7 @@ const UNLOCK_THRESHOLDS = {
   // "unlocks long before you can actually afford it" bug, just missed on this one item at the time).
   // Moved to sit clearly after the whole High Roller tier, matching its own "the flagship" billing.
   goldslot: 35000,
+  bench: 20000, giftshop: 25000, jackpotboard: 30000,
 };
 // Lifetime revenue is a running net figure, so a good night for the guests can drag it below zero.
 // Progress must never go backwards, so unlocks read a high-water mark instead of the live number.
@@ -7993,7 +8246,7 @@ function canPickUp(m){
 function pickUpMachine(m){
   if(!m || movingMachine || managerAtMachine(m)) return false;
   if(!canPickUp(m)){ logEvent(m.type === 'room' && playerInRoom === m ? "Can't move this room while you're standing in it - step out first" : "You can't move the only staircase while anyone is upstairs", '#e08a8a'); return false; }
-  npcs.forEach(n => { if(n.machine === m || n.diner === m || n.bar === m || n.loo === m || n.room === m){ releaseNpcFromMachine(n, n.state === 'gambling'); releaseDiner(n); releaseService(n); releaseRoom(n); n.state = 'wander'; pickWanderTarget(n); } });
+  npcs.forEach(n => { if(n.machine === m || n.diner === m || n.bar === m || n.loo === m || n.room === m || n.bench === m || n.gift === m){ releaseNpcFromMachine(n, n.state === 'gambling'); releaseDiner(n); releaseService(n); releaseRoom(n); n.state = 'wander'; pickWanderTarget(n); } });
   movingMachine = machineState(m);
   removeMachine(m);
   setBuildType(movingMachine.type);
@@ -8079,9 +8332,10 @@ const TAB_UNLOCKS = [
   // Staff above. Key numbers and thresholds swapped together so key order still tracks the thresholds.
   { id:'tabRegulars', name:'Regulars', key:'6', icon:ICON_HTML('regulars'), need:'earn $3,500 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 3500 },
   { id:'tabRigging',  name:'Rigging',  key:'7', icon:ICON_HTML('rigging'), need:'earn $5,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 5000 },
-  // Events is independent of the chain (it sits before Hotel, which needs an upper floor): it never holds the others up.
-  { id:'tabEvents',   name:'Events',   key:'9', icon:ICON_HTML('star'), need:'earn $10,000 in lifetime revenue',                  ok: ()=> lifetimeRevenue() >= 10000, independent:true },
-  { id:'tabHotel',    name:'Hotel',    key:'8', icon:ICON_HTML('hotel'), need:'build an upper floor (Building tab)',               ok: ()=> upperBuilt },
+  // Events (money) and Hotel (an upper floor) are both independent of the chain and of each other: whichever
+  // is reached first unlocks first, and neither holds the others up.
+  { id:'tabEvents',   name:'Events',   key:'8', icon:ICON_HTML('star'), need:'earn $10,000 in lifetime revenue',                  ok: ()=> lifetimeRevenue() >= 10000, independent:true },
+  { id:'tabHotel',    name:'Hotel',    key:'9', icon:ICON_HTML('hotel'), need:'build an upper floor (Building tab)',               ok: ()=> upperBuilt, independent:true },
 ];let unlockedTabs = new Set(['tabBuild']);
 function tabUnlocked(id){ return (typeof devUnlockAll !== 'undefined' && devUnlockAll) || sandbox || unlockedTabs.has(id); }
 const unlockHintEl = document.getElementById('unlockHint');
@@ -8105,11 +8359,13 @@ function tabLockedClick(id){
 }
 // They unlock strictly in order, so the numbers down the side never have a gap in them.
 function checkTabUnlocks(silent){
+  let chainOpen = true; // the first locked chain tab holds back the later chain tabs, but never the independent ones (Events, Hotel)
   for(const u of TAB_UNLOCKS){
     if(unlockedTabs.has(u.id)) continue;
-    if(!u.ok()){ if(u.independent) continue; break; }
+    if(!u.ok()){ if(!u.independent) chainOpen = false; continue; }
+    if(!u.independent && !chainOpen) continue;
     unlockedTabs.add(u.id);
-    if(u.id === 'tabEvents' && !silent) tip('eventsTab', 'The Events tab [9] is open. Put on a Headline show: it finally gives your Stage a job.');
+    if(u.id === 'tabEvents' && !silent) tip('eventsTab', 'The Events tab [8] is open. Put on a Headline show: it finally gives your Stage a job.');
     if(!silent){ logEvent(`New tab unlocked: ${u.name} [${u.key}]`, '#e6c34a'); playSound('achievement'); showUnlockPopup(`${icn('key')}New tab: <b>${u.name}</b> [${u.key}]`); }
   }
   applyTabVisibility();
@@ -8348,13 +8604,13 @@ window.addEventListener('keydown', (e)=>{
     if(!tabUnlocked('tabRigging')) tabLockedClick('tabRigging');
     else { if(pointerLocked) document.exitPointerLock(); toggleManagedPopup('riggingPanel', updateRiggingPanel); }
   }
-  if(isBind(e, 'tab8') || e.code === 'KeyH'){
-    if(!tabUnlocked('tabHotel')) tabLockedClick('tabHotel');
-    else { if(pointerLocked) document.exitPointerLock(); toggleManagedPopup('hotelPanel', updateHotelPanel); }
-  }
-  if(isBind(e, 'tab9')){
+  if(isBind(e, 'tab8')){
     if(!tabUnlocked('tabEvents')) tabLockedClick('tabEvents');
     else { if(pointerLocked) document.exitPointerLock(); toggleManagedPopup('eventsPanel', updateEventsPanel); }
+  }
+  if(isBind(e, 'tab9') || e.code === 'KeyH'){
+    if(!tabUnlocked('tabHotel')) tabLockedClick('tabHotel');
+    else { if(pointerLocked) document.exitPointerLock(); toggleManagedPopup('hotelPanel', updateHotelPanel); }
   }
   if(e.code === 'Digit0' || e.code === 'Escape' || isBind(e, 'cancel')) setBuildType(null);
   if(isBind(e, 'cancel')) closeManagedPopups(null); // Q also backs out of any open tab, straight to look mode
@@ -9862,7 +10118,7 @@ function resolvePayout(actor, m, houseNet, pos, bet){
     if(houseNet > 0) ledger[isSlotLike(m) ? 'slotWon' : 'tableWon'] += houseNet;
     else ledger[isSlotLike(m) ? 'slotPaid' : 'tablePaid'] += -houseNet;
     const ds = DS(); ds.rounds++; m.dayNet = (m.dayNet || 0) + houseNet;
-    if(houseNet < 0) ds.biggestGuestWin = Math.max(ds.biggestGuestWin, -houseNet);
+    if(houseNet < 0){ ds.biggestGuestWin = Math.max(ds.biggestGuestWin, -houseNet); recordBigWin(actor, m, -houseNet); }
     else ds.biggestHouseWin = Math.max(ds.biggestHouseWin, houseNet);
     addCash(houseNet);
     actor.wallet -= houseNet;
@@ -10057,6 +10313,7 @@ function recordDeparture(npc){
 }
 function beginLeaving(npc){
   if(wantsCashOut(npc) && sendToCage(npc)) return; // chips first, then the door
+  if(tryGoGift(npc)) return;                       // a souvenir on the way out, if they are up on the night
   releaseDiner(npc); releaseService(npc); queueLeaveAll(npc);
   recordDeparture(npc);
   npc.state = 'leaving';
@@ -11496,12 +11753,12 @@ function updateNPCs(dt){
       }
     }
     { // pinned somewhere (e.g. boxed in by walls)? after a while, sort it out
-      const walking = ['leaving','toMachine','toATM','wander','toDesk','toDiner','toBar','toLoo','toRoom','toCage','toShow'].includes(npc.state);
+      const walking = ['leaving','toMachine','toATM','wander','toDesk','toDiner','toBar','toLoo','toRoom','toCage','toShow','toBench','toGift'].includes(npc.state);
       const moved = Math.hypot(npc.pos.x - (npc.lx ?? npc.pos.x), npc.pos.z - (npc.lz ?? npc.pos.z));
       npc.lx = npc.pos.x; npc.lz = npc.pos.z;
       npc.stillT = (walking && npc.waitTimer <= 0 && moved < 0.003) ? (npc.stillT || 0) + dt : 0;
       if(npc.stillT > 20){ npc.stillT = 0;
-        if(['toDesk','toDiner','toBar','toLoo','toRoom','toCage','toClub','signingUp','toShow'].includes(npc.state)){ releaseShow(npc); releaseDiner(npc); releaseService(npc); releaseRoom(npc); queueLeaveAll(npc); npc.cage = null; npc.cashedOut = true; npc.wantsRoom = false; npc.state = 'wander'; pickWanderTarget(npc); return; }
+        if(['toDesk','toDiner','toBar','toLoo','toRoom','toCage','toClub','signingUp','toShow','toBench','toGift'].includes(npc.state)){ releaseShow(npc); releaseDiner(npc); releaseService(npc); releaseRoom(npc); queueLeaveAll(npc); npc.cage = null; npc.cashedOut = true; npc.wantsRoom = false; npc.state = 'wander'; pickWanderTarget(npc); return; }
         if(npc.state === 'leaving'){ npc.pos.set(EXIT_POINT.x, 0, EXIT_POINT.z); finishLeaving(npc); }
         else { if(npc.machine) releaseSeat(npc.machine, npc.seatIndex, npc); npc.machine = null; npc.state = 'wander'; pickWanderTarget(npc); }
       }
@@ -11532,6 +11789,7 @@ function updateNPCs(dt){
     if(!npc.wantsDrink){ npc.thirstyAt -= dt; if(npc.thirstyAt <= 0){ npc.wantsDrink = true; if(!bars().length) gripe('noDrink'); } }
     if(!npc.needsLoo){ npc.looAt -= dt; if(npc.looAt <= 0) npc.needsLoo = true; }
     if(npc.state === 'toBar' || npc.state === 'drinking' || npc.state === 'toLoo' || npc.state === 'inLoo'){ if(updateServiceGuest(npc, dt)) return; }
+    if(npc.state === 'toBench' || npc.state === 'onBench' || npc.state === 'toGift' || npc.state === 'atGift'){ if(updateBenchGiftGuest(npc, dt)) return; }
     if(npc.state === 'toShow' || npc.state === 'watchShow'){ if(updateShowGuest(npc, dt)) return; }
     if(npc.state === 'toCage' || npc.state === 'cashingOut'){ if(updateCageGuest(npc, dt)) return; }
     if(npc.state === 'toClub' || npc.state === 'signingUp'){ if(updateClubGuest(npc, dt)) return; }
@@ -11665,6 +11923,7 @@ function updateNPCs(dt){
           if(npc.needsLoo && tryGoLoo(npc)) return;   // first things first
           if(tryGoEat(npc)) return;
           if(!floorClaimed(npc) && tryGoDrink(npc)) return;
+          if(Math.random() < 0.15 && tryGoBench(npc)) return;   // a sit-down between games
           const spot = Math.random() < GUEST_PLAY_SHARE ? findGambleSpot(npc) : null;
           if(spot && pickMachineSpot(npc, spot)){
             npc.state = 'toMachine';
@@ -12726,6 +12985,7 @@ function saveGame(){
       staffCounts: {...staffCounts}, roleWage: {...roleWage},
       staffXpScheme: 2, staffRoster: staffNPCs.map(s => ({ type:s.type, name:s.name, xp:Math.round(s.xp||0), morale:Math.round(s.morale||70) })),
       machines: machines.map(machineState),
+      jackpot: jackpotSaveState(),
       ...eventsSaveState(),
       autoMarketingEnabled, autoMarketingSmart, autoMarketingBudget, autoCompEnabled, autoCompSmart, autoCompThreshold, autoCompBudget,
     };
@@ -12839,6 +13099,7 @@ function loadGame(){
   document.getElementById('unlockPopupsToggle').checked = unlockPopupsEnabled;
   if(!!data.casinoClosed !== casinoClosed) setCasinoClosed(!!data.casinoClosed);
   ledger = Object.assign(newLedger(), data.ledger || {});
+  jackpotLoadState(data.jackpot);
   eventsLoadState(data);
   daysInRed = data.daysInRed || 0;
   investorDebt = data.investorDebt || 0;
@@ -12964,6 +13225,7 @@ function resetGame(){
   lastPeakName = null; updatePeakLabel();
   ledger = newLedger();
   dayStats = null;
+  jackpotLoadState(null);
   unlockedAchievements.clear();
   inspectionsSurvived = 0;
   inspectionsCaught = 0;
@@ -14177,6 +14439,22 @@ function updateChecklist(){
   if(h) h.addEventListener('click', (e)=>{ e.stopPropagation(); checklistDone = true; checklistEl.style.display = 'none'; });
 }
 setInterval(updateChecklist, 1200);
+// Saving goal for the upper floor: only once the Building tab (where it is bought) is open, gone once built.
+// Redrawn only when the shown text or the bar width changes (twice a second at most).
+const saveGoalEl = document.getElementById('saveGoal');
+let saveGoalKey = '';
+function updateSaveGoal(){
+  if(upperBuilt || !tabUnlocked('tabBuilding')){ if(saveGoalKey !== 'hide'){ saveGoalKey = 'hide'; saveGoalEl.style.display = 'none'; } return; }
+  const ready = cash >= UPPER_FLOOR_COST, pct = Math.min(100, Math.floor(Math.max(0, cash) / UPPER_FLOOR_COST * 100));
+  const shownCash = Math.min(Math.max(0, Math.floor(cash)), UPPER_FLOOR_COST);
+  const key = ready ? 'ready' : shownCash + '|' + pct;
+  if(key === saveGoalKey) return;
+  saveGoalKey = key;
+  saveGoalEl.style.display = 'block';
+  saveGoalEl.innerHTML = `<div style="color:${ready ? '#8fd6a8' : '#e6c34a'};margin-bottom:3px;">${ready ? 'Ready: build the upper floor in the Building tab' : `Saving for the upper floor: $${shownCash.toLocaleString()} / $${UPPER_FLOOR_COST.toLocaleString()}`}</div>` +
+    `<div style="height:4px;background:#1b2e26;border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${ready ? '#8fd6a8' : '#c9a227'};"></div></div>`;
+}
+setInterval(updateSaveGoal, 500);
 // ---------------- Main loop ----------------
 const clock = new THREE.Clock();
 let staffPanelRefreshT = 0; // the Staff tab shows live coverage/morale info that drifts on its own, so it needs to
