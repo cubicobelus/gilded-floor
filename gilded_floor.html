@@ -1472,14 +1472,26 @@ function maybeWantRoom(npc){
 function housekeeperTick(s, dt){ // returns true if the housekeeper is busy with a room
   if(s.job && (!machines.includes(s.job) || !s.job.room.dirty || (s.job.room.cleaner && s.job.room.cleaner !== s))) s.job = null;
   if(!s.job){
-    const room = hotelRooms().find(m => m.room.dirty && !m.room.cleaner);
+    // nearest dirty room first (another floor counts as far), not the first one in the list
+    let room = null, bd = Infinity;
+    for(const m of hotelRooms()){
+      if(!m.room.dirty || m.room.cleaner) continue;
+      const d = (m.x - s.pos.x)**2 + (m.z - s.pos.z)**2 + ((m.level || 0) !== (s.level || 0) ? 900 : 0);
+      if(d < bd){ bd = d; room = m; }
+    }
     if(!room) return false;
-    room.room.cleaner = s; s.job = room; s.cleanT = 0;
+    room.room.cleaner = s; s.job = room; s.cleanT = 0; s.jobStillT = 0;
   }
   const room = s.job, dp = roomDoorPoint(room);
   s.target.set(dp.x, 0, dp.z);
   if((room.level || 0) !== (s.level || 0) && !(s.via && s.via.length)) s.via = routeToLevel(s, room.level || 0) || [];
+  // snagged on the way (not moving, same floor)? after a while, drop them at the door, as staff posts do
+  const moved = Math.hypot(s.pos.x - (s.hkx ?? s.pos.x), s.pos.z - (s.hkz ?? s.pos.z));
+  s.jobStillT = moved < 0.003 ? (s.jobStillT || 0) + dt : 0;
+  if(s.jobStillT > 15 && (room.level || 0) === (s.level || 0)){ s.jobStillT = 0; s.pos.set(dp.x, s.pos.y, dp.z); s.via = []; }
+  s.hkx = s.pos.x; s.hkz = s.pos.z;
   if(stepToward(s, dt, room)){
+    s.jobStillT = 0;
     s.cleanT += dt;
     if(s.cleanT >= 6 / staffPower(s)){ room.room.dirty = false; room.room.cleaner = null; s.job = null; updateRoomLamp(room); }
   }
@@ -2243,9 +2255,10 @@ function nearestCage(npc){
   return pool.reduce((best, m) => (best === null || (m.x-npc.pos.x)**2 + (m.z-npc.pos.z)**2 < (best.x-npc.pos.x)**2 + (best.z-npc.pos.z)**2) ? m : best, null);
 }
 // Anyone walking out in front sees the cage first to turn their chips back into money.
-// Past 4% guests start to walk out with their chips rather than pay the cage's cut: a few at 5%, most at 7%, nearly all at 8%.
+// Past 4% guests start to walk out with their chips rather than pay the cage's cut: about 1 in 8 at 5%, a third at 6%, most at 8%.
+// Fee income peaks around 5%; 8% earns about a third of that (softened 2026-11-10 from a curve where 8% earned almost nothing).
 // They pay no fee, and each one leaves a little sour (the "steep fee" complaint, a small dent in reputation and loyalty).
-function cageRefuseChance(fee){ const d = Math.max(0, fee - CAGE_FEE); return Math.min(0.9, 0.15 * d + 0.04 * d * d); }
+function cageRefuseChance(fee){ const d = Math.max(0, fee - CAGE_FEE); return Math.min(0.8, 0.10 * d + 0.03 * d * d); }
 function wantsCashOut(npc){
   if(npc.cashedOut || (npc.net || 0) <= 120) return false;
   if(!cages().length){ gripe('noCage'); return false; }
