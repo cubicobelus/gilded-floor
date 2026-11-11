@@ -2015,6 +2015,7 @@ function updateServiceGuest(npc, dt){
 const CHEAT_BASE_CHANCE = 0.05;
 let cheatsCaught = 0;
 function rollsAsCheater(npc){
+  if(!tabUnlocked('tabStaff')) return false; // no guards to catch them yet, so no table cheaters either
   const rigged = machines.filter(m => m.category === 'gambling');
   const avgRig = rigged.length ? rigged.reduce((s,m)=> s + rigLevel(m), 0) / rigged.length : 0;
   let p = CHEAT_BASE_CHANCE * (1 + avgRig * 2.5); // a crooked house attracts crooked players
@@ -2036,7 +2037,7 @@ function catchCheater(npc, byPlayer){
   npc.cheat = false; npc.caught = true;
   reputation = Math.min(100, reputation + 0.6);
   cheatsCaught++;
-  tip('cheat', 'Guards catch cheaters at the tables and you get the money back. More security means faster catches.');
+  if(tabUnlocked('tabStaff')) tip('cheat', 'Guards catch cheaters at the tables and you get the money back. More security means faster catches.');
   spawnFloatingText(recovered > 0 ? 'CHEAT CAUGHT +$' + recovered.toLocaleString() : 'CHEAT CAUGHT', new THREE.Vector3(npc.pos.x, npc.pos.y + 2.6, npc.pos.z), '#ffb347');
   logEvent(`${byPlayer ? 'You spotted' : 'Security caught'} ${npc.name} cheating${recovered > 0 ? ` - $${recovered.toLocaleString()} recovered` : ''}`, '#ffb347');
   playSound('click');
@@ -5358,7 +5359,7 @@ function settleDayFinances(dayNet){
     costTrendBad = avg < 0;
     // Only worth a heads-up while things still LOOK fine (cash positive, not already flagged
     // "in the red") - that's the gap: daysInRed only ever fires after the damage is done.
-    if(costTrendBad && cash >= 0) tip('costTrend', `Your costs have outpaced what you're taking in for the last few days - staff wages and upkeep ($${Math.round(totalWageBill()+dailyUpkeep()).toLocaleString()}/day) are creeping past your income. Still fine for now, but check the department breakdown in the Stats tab (Money) before it isn't.`);
+    if(costTrendBad && cash >= 0 && tabUnlocked('tabStats')) tip('costTrend', `Your costs have outpaced what you're taking in for the last few days - staff wages and upkeep ($${Math.round(totalWageBill()+dailyUpkeep()).toLocaleString()}/day) are creeping past your income. Still fine for now, but check the department breakdown in the Stats tab (Money) before it isn't.`);
   }
   if(dayNet > 0 && investorDebt > 0){
     const repay = Math.min(investorDebt, dayNet * BAILOUT_PROFIT_SHARE);
@@ -5709,13 +5710,14 @@ function clockText(){
 }
 const parkingLabelEl = document.getElementById('parkingLabel');
 let lastParkingFull = null, parkingCheckN = 0;
+function parkingAdvice(){ return tabUnlocked('tabBuilding') ? 'Expand parking in the Building tab or add Valet Parking (Build tab, Amenities)' : 'Add Valet Parking (Build tab, Amenities)'; }
 function updatePeakLabel(){
   const full = (parkingCheckN++ % 30) ? lastParkingFull : (!casinoClosed && parkingLimitsCrowd() && carsOnLot() >= effectiveParkingCapacity()); // checked about twice a second
   if(full !== lastParkingFull){
     lastParkingFull = full;
     parkingLabelEl.textContent = full ? 'Parking full' : '';
-    parkingLabelEl.title = full ? 'More guests want to come than you can park. Expand parking (Build tab) or add Valet Parking; hotel guests do not need a spot.' : '';
-    if(full) tip('parkingFull', 'Parking is full: more guests want to come than you can park. Expand parking from the Build tab or add Valet Parking. Guests staying in your hotel do not take a spot.');
+    parkingLabelEl.title = full ? `More guests want to come than you can park. ${parkingAdvice()}; hotel guests do not need a spot.` : '';
+    if(full) tip('parkingFull', `Parking is full: more guests want to come than you can park. ${parkingAdvice()}. Guests staying in your hotel do not take a spot.`);
   }
   const ct = today().name + ' ' + clockText();
   if(ct !== lastClockText){ lastClockText = ct; clockLabelEl.textContent = ct; }
@@ -6463,7 +6465,7 @@ function simulateSlot(bet, payout, pWin=0.35){
 // ---------------- Staff ----------------
 const STAFF_TYPES = {
   security: { name:'Security Guard', hireCost:200, wage:22, color:0x2b3a4a, desc:'Cuts down on scams, nudging the odds back your way.' },
-  dealer:   { name:'Dealer',         hireCost:250, wage:25, color:0x1a1a1a, desc:'Tables need one to open. Runs their own table and one neighbouring table (extras wander): guests bet ~15% more and are drawn to it.' },
+  dealer:   { name:'Dealer',         hireCost:150, wage:15, color:0x1a1a1a, desc:'Tables need one to open. Runs one table (one dealer per table, extras wander): guests bet ~15% more and are drawn to it.' },
   waitress: { name:'Waiter',         hireCost:180, wage:18, color:0xb03a5b, desc:'Works a bar or a dining table. You need one per bar and one per 3 dining tables (extras walk the floor, but do nothing useful): staffed bars boost spending and keep guests seated.' },
   clerk:       { name:'Clerk',            hireCost:220, wage:22, color:0x2a4a6a, desc:'Works the front desk and the cashier cage - without one, the line crawls.' },
   chef:        { name:'Chef',             hireCost:300, wage:29, color:0xe8e4d8, desc:'Works a Kitchen. No chef on it, no food served.' },
@@ -6527,7 +6529,7 @@ function roleLoad(role){
   let posts = 0;
   try { // called once at initial script load (renderStaffPanel's first draw), before every global
         // below is necessarily declared yet - same class of issue devUnlockActive() guards against.
-    if(role === 'dealer') posts = Math.ceil(machines.filter(m => m.category === 'gambling' && !isSlotLike(m)).length / 2); // one dealer covers two neighbouring tables
+    if(role === 'dealer') posts = machines.filter(m => needsDealer(m)).length; // one dealer per table
     else if(role === 'waitress') posts = machines.filter(m => m.type === 'bar').length + Math.ceil(machines.filter(m => m.type === 'dinertable').length / 3); // one waiter per bar and one per 3 dining tables
     else if(role === 'clerk') posts = machines.filter(m => m.type === 'frontdesk' || m.type === 'cashier' || m.type === 'mktoffice').length;
     else if(role === 'chef') posts = kitchens().length;
@@ -6918,11 +6920,29 @@ function staffPostPos(m, type){
 }
 function isStaffed(m){ return !!(m.staffer && m.staffer.atPost); }
 function securityStrength(){ return staffNPCs.filter(s => s.type === 'security').reduce((n,s)=> n + staffPower(s), 0); }
-const DEALER_REACH = 9; // a dealer also runs one other table whose centre is within this distance of their own
 function needsDealer(m){ return m.category === 'gambling' && !isSlotLike(m); }
+// Before the Staff tab unlocks the house stands a dealer at every table: it opens the table and lets guests and the player
+// play, but gives none of the staffed bonus (no +15% bets, no draw), costs nothing and is not staff. Derived, never saved.
+function houseDealerOn(){ return !tabUnlocked('tabStaff'); }
+function dealerPresent(m){ return isStaffed(m) || (houseDealerOn() && needsDealer(m)); }
+const houseDealers = new Map(); // table -> figure
+const HOUSE_DEALER_COLOR = 0x3a1a26; // the dealer uniform, a shade toward burgundy so it reads as the house's
+function syncHouseDealers(){
+  const on = houseDealerOn();
+  houseDealers.forEach((mesh, m)=>{ if(!on || machines.indexOf(m) < 0){ scene.remove(mesh); houseDealers.delete(m); } });
+  if(!on) return;
+  machines.forEach(m=>{
+    if(!needsDealer(m)) return;
+    let mesh = houseDealers.get(m);
+    if(!mesh){ mesh = makeStaffMesh(HOUSE_DEALER_COLOR); scene.add(mesh); houseDealers.set(m, mesh); }
+    const p = staffPostPos(m, 'dealer');
+    mesh.position.set(p.x, (m.level || 0) * LEVEL_H, p.z);
+    mesh.rotation.y = Math.atan2(m.x - p.x, m.z - p.z);
+  });
+}
+let houseDealerTimer = 0;
 function assignStaffPosts(){
   machines.forEach(m => { m.staffer = null; });
-  staffNPCs.forEach(s => { s.postMachine2 = null; });
   const assign = (type, posts)=>{
     const staff = staffNPCs.filter(s => s.type === type);
     const taken = new Set();
@@ -6942,26 +6962,8 @@ function assignStaffPosts(){
   };
   const reachable = m => !m.level || connectors().length > 0; // upstairs posts need a staircase to get to
   const tableList = machines.filter(m => needsDealer(m) && reachable(m));
-  // pair each table with its nearest unpaired neighbour on the same floor; one dealer runs a pair from the first table
-  const partner = new Map(), paired = new Set();
-  tableList.forEach(a=>{
-    if(paired.has(a)) return;
-    paired.add(a); let best = null, bd = DEALER_REACH * DEALER_REACH;
-    tableList.forEach(t=>{
-      if(paired.has(t) || (t.level || 0) !== (a.level || 0)) return;
-      const d = (t.x-a.x)**2 + (t.z-a.z)**2;
-      if(d <= bd){ bd = d; best = t; }
-    });
-    if(best){ paired.add(best); partner.set(a, best); }
-    else partner.set(a, null);
-  });
-  assign('dealer', [...partner.keys()]);
-  staffNPCs.forEach(s=>{
-    if(s.type !== 'dealer' || !s.postMachine) return;
-    const b = partner.get(s.postMachine);
-    if(b){ b.staffer = s; s.postMachine2 = b; }
-  });
-  if(!casinoClosed && tableList.some(t => !t.staffer)) tip('noDealer', 'A table with no dealer stays closed. One dealer runs their own table and one neighbouring table, so set tables out in pairs.');
+  assign('dealer', tableList); // one dealer per table
+  if(tabUnlocked('tabStaff') && !casinoClosed && tableList.some(t => !t.staffer)) tip('noDealer', 'A table with no dealer stays closed. Hire a dealer for it in the Staff tab: one dealer runs one table.');
   assign('waitress', machines.filter(m => (m.type === 'bar' || m.type === 'dinertable') && reachable(m)));
   assign('chef', machines.filter(m => m.type === 'restaurant' && reachable(m)));
   assign('clerk', machines.filter(m => (m.type === 'frontdesk' || m.type === 'cashier' || m.type === 'mktoffice') && reachable(m)));
@@ -7047,7 +7049,7 @@ function machineAppeal(m){ return 1 + 0.18 * upLevel(m, 'appeal'); }
 // A new machine runs in gently: its first life (before its first service) wears at a quarter of the rate and its
 // second life at half; from the third life on it wears at the full rate. Each service (manual or mechanic) counts.
 function lifeMultiplier(m){ const n = m.services || 0; return n <= 0 ? 0.25 : n === 1 ? 0.5 : 1; }
-function wearRate(m){ return 1.2 * lifeMultiplier(m) * (1 - 0.25 * upLevel(m, 'care')); }
+function wearRate(m){ return 0.6 * lifeMultiplier(m) * (1 - 0.25 * upLevel(m, 'care')); }
 function machineCondition(m){ return Math.max(0, 100 - (m.wear || 0)); }
 function needsService(m){ return (m.wear || 0) >= 70; }
 function repairCost(m){ return Math.round(m.cost * 0.06 + 40); }
@@ -7090,7 +7092,7 @@ function setBrokenSign(m, on){
     m.broken = true;
     if(managerAtMachine(m)) cancelManagerGame();
     setBrokenSign(m, true);
-    tip('broken', 'A machine broke down and earns nothing until it is fixed. Walk up and press F to repair it, or hire a Mechanic to do it for you.');
+    tip('broken', 'A machine broke down and earns nothing until it is fixed. Walk up and press F to repair it' + (tabUnlocked('tabStaff') ? ', or hire a Mechanic (Staff tab) to do it for you.' : '.'));
     logEvent(`${m.nick || m.name} has broken down - a mechanic (or you, with F) can fix it`, '#e08a8a');
     spawnFloatingText('OUT OF ORDER', new THREE.Vector3(m.x, mLevelY(m) + 2.6, m.z), '#e08a8a');
   }
@@ -8919,7 +8921,7 @@ function superstitionFactor(npc, m){
   return (npc.archetype === 'superstitious' && m.hotTime > 0) ? 0.4 : 1;
 }
 function findGambleSpot(npc){
-  const candidates = machines.filter(m => m.category === 'gambling' && (!needsDealer(m) || m.staffer) && guestSuitsMachine(npc, m) && ((m.level || 0) === (npc.level || 0) || connectors().length > 0) && (isSeatedTable(m) ? freeSeatCount(m) > 0 : (m.occupants||0) < maxOccupantsFor(m)));
+  const candidates = machines.filter(m => m.category === 'gambling' && (!needsDealer(m) || m.staffer || houseDealerOn()) && guestSuitsMachine(npc, m) && ((m.level || 0) === (npc.level || 0) || connectors().length > 0) && (isSeatedTable(m) ? freeSeatCount(m) > 0 : (m.occupants||0) < maxOccupantsFor(m)));
   if(candidates.length === 0){ gripe('nothingNew', 0.12); return null; }
   // a whale specifically seeks out High Roller tables and high-limit slots when there are any free -
   // falls back to the normal pool if the floor doesn't have one yet, rather than standing idle
@@ -9440,7 +9442,7 @@ function resolvePayout(actor, m, houseNet, pos, bet){
     // reassuring-through-humor rather than alarming (see `tip()` - shows once per save, ever).
     // Threshold is -100, not 0 - a single NPC's very first bet losing would dip this negative
     // immediately and fire the message before anything has actually gone wrong.
-    if(totalGamblingRevenue < -100) tip('redInk', "Fun fact: your casino's lifetime gambling revenue just dipped negative - your own guests are currently beating the house. There's a certain poetry in a casino owner learning firsthand that gambling is a gamble. Don't sweat it: the odds are still built in your favor over the long run (that's the whole business model) - this is a rough patch, not a failing one.");
+    if(totalGamblingRevenue < -75) tip('redInk', "Fun fact: your casino's lifetime gambling revenue just dipped negative - your own guests are currently beating the house. There's a certain poetry in a casino owner learning firsthand that gambling is a gamble. Don't sweat it: the odds are still built in your favor over the long run (that's the whole business model) - this is a rough patch, not a failing one.");
     m.lifetimeIncome = (m.lifetimeIncome||0) + houseNet;
     { const st = m.st || (m.st = { rounds:0, wagered:0, paidOut:0, taken:0, biggestPayout:0 }); st.rounds++; if(bet > 0) st.wagered += bet; if(houseNet > 0) st.taken += houseNet; else if(houseNet < 0){ st.paidOut += -houseNet; if(-houseNet > st.biggestPayout) st.biggestPayout = -houseNet; } }
     if(m.category === 'gambling') addWear(m);
@@ -10596,7 +10598,7 @@ function startHoldemSit(m){
   if(managerGame) return;
   const hd = holdemRuntime(m), bb = hd.t.bb;
   if(freeSeatCount(m) === 0){ logEvent(`${m.name} is full - no free seat`, '#9fb3a8'); return; }
-  if(!isStaffed(m)){ logEvent(`${m.name} has no dealer at it right now - it needs one before anyone can play`, '#9fb3a8'); return; }
+  if(!dealerPresent(m)){ logEvent(`${m.name} has no dealer at it right now - it needs one before anyone can play`, '#9fb3a8'); return; }
   if(cash < bb * 40){ logEvent(`Hold'em here needs a buy-in of at least ${hdMoney(bb * 40)} (40 big blinds) - you have ${hdMoney(Math.max(0, cash))}`, '#e08a8a'); return; }
   const maxBB = Math.min(100, Math.floor(cash / bb));
   const game = { kind:'holdemBuyIn', m, buyBB:maxBB, maxBB, sprites:[] };
@@ -10753,7 +10755,7 @@ function updateHoldemTable(m, dt){
   if(hd.phase === 'wait'){
     let seated = 0;
     for(let i = 0; i < 6; i++) if((hd.npc[i] || (hd.human && hd.human.seat === i)) && t.seats[i] && t.seats[i].stack > 0) seated++;
-    if(seated >= 2 && isStaffed(m) && !m.broken && !m.closed){
+    if(seated >= 2 && dealerPresent(m) && !m.broken && !m.closed){
       hd.lonely = 0; hd.timer += dt;
       if(hd.timer >= 1.5) hdStartHand(m, hd);
     } else {
@@ -11514,7 +11516,7 @@ const RANDOM_EVENTS = [
     return true;
   }},
   { weight:1.2, run(){
-    if(!npcs.length) return false;
+    if(!npcs.length || !tabUnlocked('tabStaff')) return false;
     const crew = Math.min(3, Math.max(1, Math.round(npcs.length / 12)));
     let made = 0;
     npcs.slice().sort(()=> Math.random()-0.5).forEach(n=>{ if(made < crew && !n.cheat && !n.caught){ n.cheat = true; made++; } });
@@ -12721,7 +12723,7 @@ function openMachineConfig(m){
   // branch below and got a nonsensical "Rig level" slider bound to m.edge, which isn't even a field
   // those machine types have.
   if(m.category === 'gambling'){
-    if(needsDealer(m)) html += `<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Dealer</span><span style="color:${m.staffer?'#8fd6a8':'#e08a8a'};">${m.staffer ? (m.staffer.postMachine === m ? 'at this table' : 'shared with the next table') : 'none - closed'}</span></div>`;
+    if(needsDealer(m)) html += `<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Dealer</span><span style="color:${m.staffer||houseDealerOn()?'#8fd6a8':'#e08a8a'};">${m.staffer ? 'at this table' : houseDealerOn() ? 'house dealer' : 'none - closed'}</span></div>`;
     const rigOK = tabUnlocked('tabRigging') && m.type !== 'holdem';
     if(!rigOK) html += m.type === 'holdem' ? '<p style="color:#9fb3a8;font-size:11px;">A fair game: guests play each other and the house only takes the rake (5% of the pot, capped, nothing without a flop). There is nothing to rig.</p>' : '<p style="color:#9fb3a8;font-size:11px;">Payout and rigging controls unlock as your casino grows.</p>'; else
     if(isSlotLike(m)){
@@ -13472,7 +13474,7 @@ function updateHint(){
       return;
     }
     if(isSlotLike(closest)) text += ` · RTP ${Math.round(closest.payout*100)}%` + (closest.denom ? ` · ${closest.lines}x$${fmtStake(closest.denom)}` : '');
-    else if(closest.type === 'holdem') text += ` · rake only · ${seatCount(closest) - freeSeatCount(closest)}/${seatCount(closest)} seats taken` + (freeSeatCount(closest) > 0 && isStaffed(closest) ? ` · press ${bindKey('interact')} to sit down (buy in 40-100 bb)` : '');
+    else if(closest.type === 'holdem') text += ` · rake only · ${seatCount(closest) - freeSeatCount(closest)}/${seatCount(closest)} seats taken` + (freeSeatCount(closest) > 0 && dealerPresent(closest) ? ` · press ${bindKey('interact')} to sit down (buy in 40-100 bb)` : '');
     else if(isSeatedTable(closest)) text += ` · rig ${Math.round(closest.edge*100)}% · ${TABLE_SEAT_COUNT - freeSeatCount(closest)}/${TABLE_SEAT_COUNT} seats taken`;
     else if(closest.category === 'gambling') text += ` · rig ${Math.round(closest.edge*100)}% · ${closest.occupants||0}/${maxOccupantsFor(closest)} playing`;
     hintEl.textContent = text;
@@ -13635,7 +13637,7 @@ const FIRST_STEPS = [
   { id:'guest',    text:'Serve your first guest',                   done: ()=> totalGuestsServed > 0 },
   { id:'amenity',  text:'Put in an amenity - a bar or restrooms',   done: ()=> machines.some(m => m.category === 'amenity' && !OFFICE_INFO[m.type]) },
   { id:'play',     text:'Sit down and play one yourself (F)',       done: ()=> playedAMachine },
-  { id:'staff',    text:'Hire someone (Staff, key 3)',              done: ()=> staffNPCs.length > 0 },
+  { id:'staff',    text:'Hire someone (Staff, key 3)',              done: ()=> staffNPCs.length > 0, lockedText: ()=> tabUnlocked('tabStaff') ? '' : 'Hire someone (Staff tab, unlocks at $500 revenue)' },
   { id:'day',      text:'Get through a full day',                   done: ()=> currentDay > 1 },
 ];
 let playedAMachine = false, checklistDone = false;
@@ -13654,8 +13656,8 @@ function updateChecklist(){
   checklistEl.style.display = 'block';
   checklistEl.innerHTML = `<div style="color:#e6c34a;margin-bottom:3px;">Getting started (${done}/${FIRST_STEPS.length})</div>` +
     FIRST_STEPS.map(s=>{
-      const ok = s.done();
-      return `<div style="opacity:${ok ? 0.5 : 1};">${ok ? '<span style="color:#8fd6a8;">&#10003;</span>' : '<span style="color:#9fb3a8;">&#9675;</span>'} <span style="${ok ? 'text-decoration:line-through;' : ''}">${s.text}</span></div>`;
+      const ok = s.done(), lk = !ok && s.lockedText && s.lockedText();
+      return `<div style="opacity:${ok ? 0.5 : lk ? 0.6 : 1};">${ok ? '<span style="color:#8fd6a8;">&#10003;</span>' : lk ? icn('lock') : '<span style="color:#9fb3a8;">&#9675;</span>'} <span style="${ok ? 'text-decoration:line-through;' : ''}">${lk || s.text}</span></div>`;
     }).join('') +
     `<div id="checklistHide" style="color:#9fb3a8;font-size:10px;margin-top:4px;cursor:pointer;text-align:right;">hide this</div>`;
   const h = document.getElementById('checklistHide');
@@ -13844,6 +13846,8 @@ function animate(){        // machine - a standing banner says so regardless of 
   updateStaff(simDt);
   npcs.forEach(n => animateFigure(n.mesh, dt, guestPose(n)));
   staffNPCs.forEach(s => animateFigure(s.mesh, dt, ''));
+  houseDealerTimer -= dt; if(houseDealerTimer <= 0){ syncHouseDealers(); houseDealerTimer = 0.5; }
+  houseDealers.forEach(mesh => animateFigure(mesh, dt, ''));
   if(inspector) animateFigure(inspector.mesh, dt, 'clip');
   updatePopulation(simDt);
   updateReputation(simDt);
