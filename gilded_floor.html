@@ -2014,6 +2014,9 @@ function updateServiceGuest(npc, dt){
 // nobody is watching. You can point one out yourself with the interact key if a guard is close by.
 const CHEAT_BASE_CHANCE = 0.05;
 let cheatsCaught = 0;
+// How often a wandering guest goes to find a machine (the rest idle or wander). Was 0.5; 0.7 measured +10 to 50% profit
+// with bars, restrooms and dining still used (2026-11-10). Open to retuning.
+const GUEST_PLAY_SHARE = 0.7;
 function rollsAsCheater(npc){
   if(!tabUnlocked('tabStaff')) return false; // no guards to catch them yet, so no table cheaters either
   const rigged = machines.filter(m => m.category === 'gambling');
@@ -11230,7 +11233,7 @@ function updateNPCs(dt){
           if(npc.needsLoo && tryGoLoo(npc)) return;   // first things first
           if(tryGoEat(npc)) return;
           if(tryGoDrink(npc)) return;
-          const spot = Math.random() < 0.5 ? findGambleSpot(npc) : null;
+          const spot = Math.random() < GUEST_PLAY_SHARE ? findGambleSpot(npc) : null;
           if(spot && pickMachineSpot(npc, spot)){
             npc.state = 'toMachine';
           } else {
