@@ -1325,9 +1325,14 @@ function pickRoomFor(npc){
   return scored[0].m;
 }
 // acceptance: fair prices fill rooms, gouging empties them; a good reputation helps
-function hotelAcceptChance(m){
-  const mult = hotel.rateMult[m.room.tier];
-  return Math.max(0.05, Math.min(1, (1.25 - 0.7 * mult) * (0.55 + reputation / 200)));
+function hotelAcceptAt(mult){ return Math.max(0.05, Math.min(1, (1.25 - 0.7 * mult) * (0.55 + reputation / 200))); }
+function hotelAcceptChance(m){ return hotelAcceptAt(hotel.rateMult[m.room.tier]); }
+// The rate multiplier that earns the most per enquiry: rate x chance they take the room. Same formula guests use.
+let hotelOccAvg = {};   // slow average of how full each room tier is, for the Revenue Manager
+function hotelBestMult(){
+  let best = 1, bestV = -1;
+  for(let x = 0.6; x <= 1.8001; x += 0.02){ const v = x * hotelAcceptAt(x); if(v > bestV){ bestV = v; best = x; } }
+  return best;
 }
 function releaseRoom(npc){
   const m = npc.room; if(!m) return;
@@ -1551,8 +1556,12 @@ function updateHotel(dt){
       hotel.dynT = 0;
       Object.keys(ROOM_TIERS).forEach(t=>{
         const rs = hotelRooms().filter(m => m.room.tier === t); if(!rs.length) return;
-        const occ = rs.filter(m => m.room.occupant || m.room.dirty).length / rs.length;
-        hotel.rateMult[t] = Math.max(0.6, Math.min(1.8, hotel.rateMult[t] + (occ > 0.75 ? 0.04 : occ < 0.35 ? -0.04 : 0)));
+        const occNow = rs.filter(m => m.room.occupant).length / rs.length;
+        const occ = hotelOccAvg[t] = hotelOccAvg[t] === undefined ? occNow : hotelOccAvg[t] * 0.9 + occNow * 0.1;
+        // aim for the rate that earns the most from the guests who ask, and a little more the busier the rooms are
+        // (measured: Standard rooms are taken about 60% of the time, and the best fixed rate for them is about x1.0, not x0.9)
+        const target = Math.max(0.6, Math.min(1.8, hotelBestMult() + Math.max(0, occ - 0.3) * 0.3));
+        hotel.rateMult[t] += Math.max(-0.04, Math.min(0.04, target - hotel.rateMult[t]));
       });
     }
   }
@@ -1658,7 +1667,7 @@ function updateHotelPanel(){
     </div>
     <div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:10px 0 2px;">Pricing</div>
     ${tierRows}
-    ${officeOn('revmgr') ? `<label style="display:block;margin-top:6px;font-size:11px;"><input type="checkbox" id="hDyn" ${hotel.dynamic?'checked':''}> Dynamic pricing (raise rates when nearly full, cut them when empty)</label>` : `<div style="color:#9fb3a8;font-size:11px;margin-top:6px;">${officeHint('revmgr')}</div>`}
+    ${officeOn('revmgr') ? `<label style="display:block;margin-top:6px;font-size:11px;"><input type="checkbox" id="hDyn" ${hotel.dynamic?'checked':''}> Dynamic pricing (the Revenue Manager keeps rates at the level that earns the most, higher when nearly full)</label>` : `<div style="color:#9fb3a8;font-size:11px;margin-top:6px;">${officeHint('revmgr')}</div>`}
     <div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:12px 0 2px;">Check-in hours</div>
     <div style="display:flex;gap:8px;align-items:center;font-size:12px;flex-wrap:wrap;">
       <span>Desk takes check-ins from</span>
@@ -1820,6 +1829,7 @@ function updateDiningGuest(npc, dt){
       const total = price + tip;
       npc.wallet -= total;
       addCash(total); ledger.food += total;
+      addCash(-MEAL_COST); ledger.cogs += MEAL_COST; ledger.cogsFood += MEAL_COST;
       DS().meals = (DS().meals || 0) + 1;
       if(k) k.covers = (k.covers || 0) + 1;
       spawnFloatingText('+$' + total + (tip ? ' + tip' : ''), new THREE.Vector3(npc.pos.x, npc.pos.y + 2.1, npc.pos.z), '#8fd6a8');
@@ -1871,9 +1881,25 @@ function tryGoEat(npc){
 // they need the loo, they walk over, they queue if it's busy, and a bar with a waitress behind it
 // serves quicker and takes a tip. Nothing to run out of - just somewhere to be.
 const BAR_SEATS = 4, LOO_SLOTS = 3, DRINK_BASE = 12;
+// What the house pays for one serving, fixed whatever the price or the kitchen (a comped serving still costs it).
+const DRINK_COST = 3, MEAL_COST = 8;
+// The price a middling guest finds fair for a drink, before the guest's wallet and the casino's stars move it.
+const DRINK_FAIR = 30;
 function bars(){ return machines.filter(m => m.type === 'bar'); }
 function restrooms(){ return machines.filter(m => m.type === 'restroom'); }
 function drinkPrice(m){ return Math.max(2, Math.round(m.drinkPrice === undefined ? DRINK_BASE : m.drinkPrice)); }
+// Same shape as mealAcceptChance: a fair price sells nearly every time, a dear one hardly ever. Fair moves up with the
+// guest's wallet and with the casino's overall star rating (looked up at most every 8 game seconds).
+let drinkStarsAt = -1, drinkStarsVal = 3;
+function drinkStarsFactor(){
+  const stamp = currentDay * 1000 + Math.floor(dayTime / 8);
+  if(stamp !== drinkStarsAt){ drinkStarsAt = stamp; drinkStarsVal = computeCasinoStars().overall; }
+  return 0.75 + 0.1 * drinkStarsVal;
+}
+function drinkAcceptChance(price, npc){
+  const fair = DRINK_FAIR * drinkStarsFactor() * (npc.startingWallet >= 500 ? 1.6 : npc.startingWallet >= 200 ? 1.1 : 0.8);
+  return Math.max(0.05, Math.min(0.97, 1.15 - (price / Math.max(4, fair)) * 0.75));
+}
 function barSeatPos(m, i){ return localToWorld(m, (i - (BAR_SEATS-1)/2) * 0.75, m.radius + 0.55); }
 function looSpot(m, i){ return localToWorld(m, (i - (LOO_SLOTS-1)/2) * 0.7, m.radius + 0.5); }
 function freeSpotAt(list, npc, cap, held){
@@ -1893,6 +1919,13 @@ function tryGoDrink(npc){
   const taken = npcs.filter(n => n.bar === m).map(n => n.barSeat);
   let seat = 0; while(seat < BAR_SEATS && taken.includes(seat)) seat++;
   if(seat >= BAR_SEATS) return false;
+  // one look at the menu: too dear for them and they put it off for a while (club comps halve the price they see)
+  const seen = clubComps(npc).drink ? Math.round(drinkPrice(m) * 0.5) : drinkPrice(m);
+  if(Math.random() > drinkAcceptChance(seen, npc)){
+    npc.wantsDrink = false; npc.thirstyAt = 60 + Math.random() * 120;
+    if(seen > DRINK_BASE * 1.5) gripe('dearDrinks');
+    return false;
+  }
   npc.bar = m; npc.barSeat = seat; m.drinkers = (m.drinkers || 0) + 1;
   npc.via = (m.level || 0) !== (npc.level || 0) ? (routeToLevel(npc, m.level || 0) || []) : [];
   npc.state = 'toBar';
@@ -1939,6 +1972,7 @@ function updateServiceGuest(npc, dt){
       const price = comped ? Math.round(drinkPrice(m) * 0.5) : drinkPrice(m), tip = isStaffed(m) ? Math.round(price * 0.15) : 0;
       npc.wallet -= price + tip;
       addCash(price + tip); ledger.drinks += price + tip;
+      addCash(-DRINK_COST); ledger.cogs += DRINK_COST; ledger.cogsBar += DRINK_COST;
       if(comped) spawnFloatingText('on the house', new THREE.Vector3(npc.pos.x, npc.pos.y + 2.4, npc.pos.z), '#cfd9e8');
       DS().drinks = (DS().drinks || 0) + 1;
       m.covers = (m.covers || 0) + 1;
@@ -2205,10 +2239,21 @@ function nearestCage(npc){
   return pool.reduce((best, m) => (best === null || (m.x-npc.pos.x)**2 + (m.z-npc.pos.z)**2 < (best.x-npc.pos.x)**2 + (best.z-npc.pos.z)**2) ? m : best, null);
 }
 // Anyone walking out in front sees the cage first to turn their chips back into money.
+// Past 4% guests start to walk out with their chips rather than pay the cage's cut: a few at 5%, most at 7%, nearly all at 8%.
+// They pay no fee, and each one leaves a little sour (the "steep fee" complaint, a small dent in reputation and loyalty).
+function cageRefuseChance(fee){ const d = Math.max(0, fee - CAGE_FEE); return Math.min(0.9, 0.15 * d + 0.04 * d * d); }
 function wantsCashOut(npc){
   if(npc.cashedOut || (npc.net || 0) <= 120) return false;
   if(!cages().length){ gripe('noCage'); return false; }
-  return true;
+  if(npc.cageSkip === undefined){
+    const c = nearestCage(npc), p = c ? cageRefuseChance(cageFee(c)) : 0;
+    npc.cageSkip = p > 0 && Math.random() < p;
+    if(npc.cageSkip){
+      gripe('steepFee'); rememberForGuest(npc, "Skipped the cage last time, it wanted too big a cut.");
+      reputation = Math.max(0, reputation - 0.15); loyaltyScore = Math.max(0, loyaltyScore - 0.6);
+    }
+  }
+  return !npc.cageSkip;
 }
 function sendToCage(npc){
   const m = nearestCage(npc);
@@ -2309,6 +2354,8 @@ function departmentReport(L){
   get('Hotel').inc = L.rooms;
   get('Dining').inc = L.food;
   get('Bar').inc = L.drinks;
+  get('Bar').out += L.cogsBar || 0;      // what the drinks themselves cost
+  get('Dining').out += L.cogsFood || 0;  // what the food itself cost
   get('Investor').inc = 0;
   // wages, split by what each role looks after
   Object.entries(staffCounts).forEach(([role, n])=>{
@@ -2358,7 +2405,7 @@ const GRIPES = {
   noChef:     { text:'The kitchen is shut - no chef on it',               fix:'Hire a Chef (Staff)' },
   longQueue:  { text:'Queues at the desk and the cage',                   fix:'Hire a Clerk, or open a second cage' },
   noCage:     { text:'Nowhere to cash out on the way home',               fix:"Build a Cashier's Cage" },
-  steepFee:   { text:'The cage takes too big a cut',                      fix:'Drop the exchange fee below 4%' },
+  steepFee:   { text:'The cage takes too big a cut',                      fix:'Drop the exchange fee to 4% or less' },
   brokenKit:  { text:'Playing on machines that are falling apart',        fix:'Repair them yourself (F) or hire a Mechanic' },
   nothingNew: { text:'Nothing here they fancy playing',                   fix:'Add more machines, or a wider spread of games' },
   crowded:    { text:'Turned away at the door - the lot is full',          fix:'Expand parking (Building) or add Valet Parking' },
@@ -2368,12 +2415,14 @@ const GRIPES = {
   farWalk:    { text:'Long treks across the floor',                       fix:'Put in a Lift or another Staircase' },
   stuckRoom:  { text:"A guest gave up trying to reach their room",        fix:"Check nothing is blocking a room's door (or the path to the front desk)" },
   dinerFull:  { text:'Every table was full - gave up on dinner',          fix:'Add more Dining Tables' },
+  dearDrinks: { text:'Drinks cost too much - guests are turning them down', fix:'Lower the price of a drink (click a bar)' },
 };
 let gripes = {}, gripeGuests = 0;
 // Guests only grumble about things you can act on: no complaints about restrooms before you can build one, and so on.
 const GRIPE_NEEDS = {
   noLoo: () => isUnlocked('restroom'), looQueue: () => isUnlocked('restroom'),
   noDrink: () => isUnlocked('bar'),
+  dearDrinks: () => isUnlocked('bar'),
   noFood: () => isUnlocked('restaurant'), noChef: () => isUnlocked('restaurant'), dinerFull: () => isUnlocked('restaurant'),
   longQueue: () => isUnlocked('cashier') || isUnlocked('frontdesk'),
   noCage: () => isUnlocked('cashier'), steepFee: () => isUnlocked('cashier'),
@@ -3147,7 +3196,7 @@ const BUILD_ITEMS = {
   viplounge: { name:'VIP Lounge',       cost:5000, income:0,  radius:2.2,  category:'amenity',
     desc:'A roped-off high-limit room. Draws bigger spenders and keeps them playing longer. Requires a strong reputation to unlock.' },
   revmgr:    { name:'Revenue Manager',  cost:3000, income:0,  radius:1.5,  category:'amenity',
-    desc:"A desk and pricing software for the hotel. Room rates rise when you are nearly full and fall when you are empty, on their own. Switches on dynamic pricing in the Hotel tab." },
+    desc:"A desk and pricing software for the hotel. It keeps room rates at the level that earns the most from the guests who ask, and pushes them higher when you are nearly full, on its own. Switches on dynamic pricing in the Hotel tab." },
   hroffice:  { name:'HR Office',        cost:2500, income:0,  radius:1.5,  category:'amenity',
     desc:"Lets you set each job's pay rate and train staff up a level. You only need one." },
   mktoffice: { name:"Player's Club Desk", cost:2000, income:0,  radius:1.5,  category:'amenity',
@@ -5335,7 +5384,7 @@ function settleDayFinances(dayNet){
 addCash(0);
 
 // Running ledger for the end-of-day breakdown: where money came from and where it went.
-function newLedger(){ return { slotWon:0, slotPaid:0, tableWon:0, tablePaid:0, atmFees:0, wages:0, upkeep:0, bribes:0, theft:0, debtRepaid:0, personalWon:0, personalLost:0, rooms:0, food:0, drinks:0, cage:0, purchases:0 }; }
+function newLedger(){ return { slotWon:0, slotPaid:0, tableWon:0, tablePaid:0, atmFees:0, wages:0, upkeep:0, bribes:0, theft:0, debtRepaid:0, personalWon:0, personalLost:0, rooms:0, food:0, drinks:0, cage:0, purchases:0, cogs:0, cogsBar:0, cogsFood:0 }; }
 let ledger = newLedger();
 // Money spent buying things (machines, hires, training, upgrades, floor, parking, wallpaper, club tiers, room furnishing). Only used so the day report can say how much of a day's net went on purchases.
 function spendOn(amount){ addCash(-amount); ledger.purchases += amount; }
@@ -5718,10 +5767,10 @@ function showDaySummary(day, net, guests, L, S){
   const plain = (label, value)=> `<div style="display:flex;justify-content:space-between;gap:16px;"><span>${label}</span><span>${value}</span></div>`;
   const slotNet = L.slotWon - L.slotPaid, tableNet = L.tableWon - L.tablePaid;
   const personalNet = L.personalWon - L.personalLost; // your own bets come out of / go into your cash directly
-  const known = slotNet + tableNet + L.atmFees + L.rooms + L.food + L.drinks + L.cage - L.wages - L.upkeep - L.bribes - L.theft - L.debtRepaid - L.purchases + personalNet;
+  const known = slotNet + tableNet + L.atmFees + L.rooms + L.food + L.drinks + L.cage - L.wages - L.upkeep - L.bribes - L.theft - L.debtRepaid - L.purchases - (L.cogs || 0) + personalNet;
   const other = net - known; // building, selling, expanding, ads, etc.
   const takenIn = L.slotWon + L.tableWon, paidOut = L.slotPaid + L.tablePaid;
-  const otherMinus = L.wages + L.upkeep + L.bribes + L.theft + L.debtRepaid + L.purchases + Math.max(0, -other) + Math.max(0, -personalNet);
+  const otherMinus = (L.cogs || 0) + L.wages + L.upkeep + L.bribes + L.theft + L.debtRepaid + L.purchases + Math.max(0, -other) + Math.max(0, -personalNet);
   const otherPlus = L.atmFees + L.rooms + L.food + L.drinks + L.cage + Math.max(0, other) + Math.max(0, personalNet);
   const barBonus = (L.slotWon + L.tableWon) * (1 - 1/amenitySpendMultiplier());
   const repDelta = reputation - S.repStart;
@@ -5770,6 +5819,7 @@ function showDaySummary(day, net, guests, L, S){
       ${L.drinks > 0 ? row('Bar takings', L.drinks, 1) : ''}
       ${L.cage > 0 ? row('Cage fees', L.cage, 1) : ''}
       ${sh('Costs')}
+      ${(L.cogs || 0) > 0 ? row('Food and drink served', L.cogs, -1) : ''}
       ${row('Staff wages', L.wages, -1)}
       ${row('Electricity &amp; upkeep', L.upkeep, -1)}
       ${L.bribes > 0 ? row('Inspector fines', L.bribes, -1) : ''}
@@ -12622,7 +12672,7 @@ function openMachineConfig(m){
       <p id="cfgStakeInfo" style="color:#cfd9d0;font-size:11px;margin:4px 0 8px 0;"></p>`;
   }
   if(m.type === 'cashier'){
-    html += `<p style="color:#9fb3a8;font-size:11px;margin:0 0 8px;">Winners come here on their way out. Take a slice as they cash out - but charge too much and they leave sour and remember it.</p>
+    html += `<p style="color:#9fb3a8;font-size:11px;margin:0 0 8px;">Winners come here on their way out. Take a slice as they cash out. Up to 4% nobody minds; above that more and more of them skip the cage and keep the whole stack, and the ones who do pay leave sour. The best fee is usually around 4 to 5%.</p>
       <div style="display:flex;justify-content:space-between;"><span>Clerk behind the glass</span><span style="color:${isStaffed(m)?'#8fd6a8':'#e08a8a'};">${isStaffed(m) ? 'yes' : 'nobody'}</span></div>
       <div style="display:flex;justify-content:space-between;"><span>In the queue</span><span style="color:${queueLength(m) > 3 ? '#e08a8a' : '#cfd9d0'};">${queueLength(m)}</span></div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Cashed out here</span><span>${m.covers || 0}</span></div>
@@ -12630,7 +12680,7 @@ function openMachineConfig(m){
       <input type="range" id="cfgFee" min="0" max="8" value="${cageFee(m)}" style="width:100%;margin:6px 0;">`;
   }
   if(m.type === 'bar'){
-    html += `<p style="color:#9fb3a8;font-size:11px;margin:0 0 8px;">Thirsty guests come over for a drink and pay on the spot. A waiter behind the bar pours faster and picks up a tip.</p>
+    html += `<p style="color:#9fb3a8;font-size:11px;margin:0 0 8px;">Thirsty guests come over for a drink and pay on the spot. A waiter behind the bar pours faster and picks up a tip. Each drink costs you $${DRINK_COST} to pour. Charge too little and you make nothing on it; charge too much and guests turn it down.</p>
       <div style="display:flex;justify-content:space-between;"><span>Waiter on this bar</span><span style="color:${isStaffed(m)?'#8fd6a8':'#e08a8a'};">${isStaffed(m) ? 'yes' : 'nobody'}</span></div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Drinks poured here</span><span>${m.covers || 0}</span></div>
       <label style="display:flex;justify-content:space-between;gap:10px;">Price of a drink <span id="cfgDrinkVal">$${drinkPrice(m)}</span></label>
@@ -12645,7 +12695,7 @@ function openMachineConfig(m){
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Covers served here</span><span>${m.covers || 0}</span></div>
       <label style="display:flex;justify-content:space-between;gap:10px;">Price of a meal <span id="cfgMealVal">$${mealPrice(m)}</span></label>
       <input type="range" id="cfgMeal" min="4" max="90" value="${mealPrice(m)}" style="width:100%;margin:6px 0;">
-      <p style="color:#9fb3a8;font-size:11px;">Charge what the kitchen is worth. Push it past what the food is like and people walk away hungry; a fair price with a good chef fills every table.</p>`;
+      <p style="color:#9fb3a8;font-size:11px;">Charge what the kitchen is worth. Push it past what the food is like and people walk away hungry; a fair price with a good chef fills every table. Each meal costs you $${MEAL_COST} to cook.</p>`;
   }
   if(m.category === 'gambling'){
     html += machineStatsHtml(m);
