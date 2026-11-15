@@ -6342,12 +6342,19 @@ let eventHistory = [];           // newest first, 12 kept
 let eventCooldownUntil = {};     // key -> first day it can be booked for again
 let eventVis = null;             // the performer and light beams of a live show (own scene objects, never children of the frozen stage)
 let eventCheckT = 0;
-const EV_BOOST_T = (18 - 8) / 24 * DAY_LENGTH, EV_START_T = (19 - 8) / 24 * DAY_LENGTH, EV_LEN = 6 / 24 * DAY_LENGTH;
+// Every EVENTS entry carries its own clock, in game hours (the day starts at 08:00): boostHour (crowds and doors),
+// startHour, maxHours (the hard stop), and its own venue test (venueOk / venueText / venueGone).
+function evHourT(h){ return (h - 8) / 24 * DAY_LENGTH; }
+function evBoostT(def){ return evHourT(def.boostHour); }
+function evStartT(def){ return evHourT(def.startHour); }
+function evLen(def){ return def.maxHours / 24 * DAY_LENGTH; }
+function evHourText(h){ return String(((h % 24) + 24) % 24).padStart(2, '0') + ':00'; }
+function evMoney(v){ return (v < 0 ? '-' : '') + '$' + Math.abs(Math.round(v)).toLocaleString(); }
 function eventStage(){ return machines.find(m => m.type === 'stage') || null; }
-// The crowd boost: from an hour before the show until it ends.
+// The crowd boost: from the event's boost hour until it ends.
 function eventBoost(){
   if(eventActive){ const d = EVENTS[eventActive.key]; return d ? d.boost : 0; }
-  if(eventBooked && eventBooked.day === currentDay && dayTime >= EV_BOOST_T && dayTime < EV_START_T){ const d = EVENTS[eventBooked.key]; return d ? d.boost : 0; }
+  if(eventBooked && eventBooked.day === currentDay){ const d = EVENTS[eventBooked.key]; if(d && dayTime >= evBoostT(d) && dayTime < evStartT(d)) return d.boost; }
   return 0;
 }
 function eventReadiness(rows){ const r = rows.filter(x => !x.required); return r.length ? r.filter(x => x.ok).length / r.length : 1; }
@@ -6453,10 +6460,336 @@ function animateShowVisuals(dt){
   v.performer.userData.rig.body.rotation.z = Math.sin(t * 1.6) * 0.04;
   for(let i = 0; i < v.beams.length; i++){ const b = v.beams[i]; b.pivot.rotation.x = Math.sin(t * 0.55 + b.ph) * 0.38; b.pivot.rotation.z = Math.cos(t * 0.43 + b.ph * 1.3) * 0.38; }
 }
+// ----- the Poker tournament: runs on the Hold'em tables, with its own state (tourney) from registration to the last hand -----
+// Entrants pay $200 (guests: $160 into the prize pool, $40 to the house), get 1,500 chips, and play on staffed Hold'em
+// tables with no rake and a rising blind ladder. Busted players stand up; when the field fits at one table it is merged
+// there; the last player standing (or the chip leader at the hard stop) wins 65% of the pool, second place 35%.
+const TOURNEY_UNLOCK = 15000;
+const TOURNEY = { entry:200, pool:160, fee:40, chips:1500, perTable:6, levelMin:10, pace:0.4, prizes:[0.65, 0.35],
+  blinds:[[25, 50], [50, 100], [100, 200], [200, 400], [400, 800], [800, 1600], [1500, 3000]] };   // then it doubles
+let tourney = null;   // { phase:'reg'|'play', tables, entrants, pool, fees, voided, hands, done, lastOut, finalTable, acc, t }
+// The blind level follows the game clock: a new one every levelMin (10) game minutes from the start (applies at each table's next hand).
+function tourneyLevel(){ return tourney ? Math.floor(tourney.t / (TOURNEY.levelMin / 60 * DAY_LENGTH / 24)) : 0; }
+function tourneyBlinds(level){
+  const L = TOURNEY.blinds;
+  if(level < L.length) return L[level];
+  const k = Math.pow(2, level - L.length + 1), last = L[L.length - 1];
+  return [last[0] * k, last[1] * k];
+}
+// A staffed Hold'em table (the assigned dealer, not whether they are at their post this second).
+function tourneyTables(){ return machines.filter(m => m.type === 'holdem' && (m.staffer || houseDealerOn())); }
+function tourneyRows(){
+  const guards = staffNPCs.filter(s => s.type === 'security').length, n = tourneyTables().length;
+  return [
+    { label:"A Hold'em table with a dealer", required:true, ok: n >= 1, gripe:"there was no Hold'em table" },
+    { label:"A second Hold'em table with a dealer", ok: n >= 2, gripe:'only one table for the whole field' },
+    { label:'A staffed bar', ok: machines.some(m => m.type === 'bar' && isStaffed(m)), gripe:'the bar had nobody serving' },
+    { label:'Security on duty', ok: guards >= 1 && roleLoad('security') <= 1, gripe:'too few security guards for the crowd' },
+    { label:'Restrooms', ok: machines.some(m => m.type === 'restroom'), gripe:'no restrooms' },
+  ];
+}
+function tourneyAlive(){ return tourney ? tourney.entrants.filter(e => !e.out) : []; }
+function tourneyYou(){ return tourney ? (tourney.entrants.find(e => e.human) || null) : null; }
+function tourneyCount(m){ return tourney ? tourney.entrants.filter(e => !e.out && ((e.table === m && e.seated) || (e.dest === m && !e.seated))).length : 0; }
+function tourneyIncoming(m){ return tourney ? tourney.entrants.filter(e => !e.out && !e.seated && e.dest === m).length : 0; }
+function tourneyChipsOf(e){
+  if(e.out) return 0;
+  if(e.seated && e.table && e.table.hd){
+    const t = e.table.hd.t, p = t.seats[e.seat];
+    if(p) return p.stack + (p.inHand && t.street !== 'done' && t.street !== 'idle' ? p.total : 0);
+  }
+  return e.chips;
+}
+// Chips in play (seats, pots and players walking between tables) and chips lost with forfeits - for the checks.
+function tourneyChipTotal(){ let n = 0; if(tourney) tourney.entrants.forEach(e => { n += tourneyChipsOf(e); }); return n; }
+function tourneyOrdinal(n){ return n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'); }
+function holdemCashRules(m){
+  const t = m.hd.t, bb = holdemBB(m);
+  t.sb = Math.max(1, Math.floor(bb / 2)); t.bb = bb; t.rakePct = 0.05; t.rakeCap = Math.round(bb * HOLDEM_RAKE_CAP_BB);
+}
+// Registration opens at the boost hour: the tables are reserved, cash players finish their hand and are stood up.
+function tourneyOpen(){
+  const tables = tourneyTables();
+  tourney = { phase:'reg', tables, entrants:[], pool:0, fees:0, voided:0, hands:0, done:false, lastOut:null, finalTable:false, acc:0, t:0 };
+  tables.forEach(m => {
+    const hd = holdemRuntime(m);
+    hd.npc.forEach(g => { if(g) g.hdLeave = true; });
+    if(hd.human && !hd.human.tour && managerGame && managerGame.kind === 'holdem' && managerGame.m === m){
+      logEvent("The tables are being cleared for the Poker tournament", '#9fb3a8'); cancelManagerGame();   // (your stack goes back to cash)
+    }
+    hd.tour = { hands:0, void:false, noDealerT:0 };
+    hd.t.rakePct = 0; hd.t.rakeCap = 0;
+  });
+  logEvent(`Registration is open for the Poker tournament: $${TOURNEY.entry} at a staffed Hold'em table`, '#e6c34a');
+}
+function tourneyEnsure(){ if(!tourney) tourneyOpen(); return tourney; }
+// Releases a table from the tournament (flags off, cash rules back).
+function tourneyReleaseTable(m){
+  const hd = m.hd; if(!hd) return;
+  hd.tour = null; holdemCashRules(m);
+}
+// Everything is over (or cancelled): chips are void, players stand up, the tables go back to cash games.
+function tourneyClose(){
+  const T = tourney; if(!T) return;
+  T.tables.forEach(m => {
+    const hd = m.hd; if(!hd) return;
+    if(hd.human && hd.human.tour && managerGame && managerGame.kind === 'holdem' && managerGame.m === m){
+      const e = tourneyYou(); if(e && !e.out){ e.out = true; }
+      logEvent('The tournament is over - you leave the table', '#e6c34a'); cancelManagerGame();
+    }
+    holdemAbortHand(hd);
+    for(let i = 0; i < 6; i++){
+      const g = hd.npc[i];
+      if(g && g.tour){ hd.t.seats[i] = null; hd.npc[i] = null; g.hdSeated = false; g.hdLeave = true; }
+    }
+  });
+  T.entrants.forEach(e => { e.out = true; if(e.npc) e.npc.tour = null; });
+  T.tables.forEach(m => tourneyReleaseTable(m));
+  tourney = null;
+}
+// Registration phase: a refund (guest wallet and house entry fee, or your cash). Play phase: nothing comes back.
+function tourneyRefund(e){
+  const T = tourney, i = T ? T.entrants.indexOf(e) : -1; if(i < 0) return;
+  T.entrants.splice(i, 1);
+  e.out = true;
+  if(e.human){ addCash(e.paid); T.pool -= e.paid; return; }
+  const npc = e.npc;
+  if(e.seated) tourneyUnseat(e);
+  if(npc){ npc.wallet += e.paid; npc.net = (npc.net || 0) + e.paid; npc.tour = null; if(e.seated || npc.hdSeated) npc.hdLeave = true; }
+  T.pool -= TOURNEY.pool; T.fees -= TOURNEY.fee; addCash(-TOURNEY.fee); ledger.events -= TOURNEY.fee;
+}
+// Takes an entrant's seat away and returns the chips it held (they are void: nobody gets them).
+function tourneyUnseat(e){
+  const m = e.table; let chips = 0;
+  if(!m || !m.hd || !e.seated) { e.seated = false; return 0; }
+  const hd = m.hd, t = hd.t;
+  if(e.human){ chips = tourneyChipsOf(e); e.seated = false; return chips; }   // (holdemPlayerLeave clears your own seat)
+  const p0 = t.seats[e.seat];
+  if(p0 && p0.inHand) holdemAbortHand(hd);
+  const p = t.seats[e.seat];
+  chips = p ? p.stack : 0;
+  holdemLeave(t, e.seat); hd.npc[e.seat] = null;
+  if(e.npc) e.npc.hdSeated = false;
+  e.seated = false;
+  return chips;
+}
+// An entrant is out: 'bust' (no chips), 'forfeit' (left, forced out) or 'void' (their table was shut or sold).
+function tourneyOut(e, how){
+  const T = tourney; if(!T || e.out) return;
+  if(T.phase === 'reg'){ tourneyRefund(e); return; }
+  const wasSeated = e.seated;
+  if(how !== 'bust') T.voided += e.seated ? tourneyUnseat(e) : e.chips;
+  const before = T.entrants.filter(x => !x.out).length;
+  e.out = true; e.place = before; e.chips = 0; T.lastOut = e;
+  if(e.npc){ e.npc.tour = null; if(wasSeated && how !== 'forfeit') e.npc.hdLeave = true; }
+  if(T.entrants.filter(x => !x.out).length <= 1) T.done = true;
+}
+// At the end of a hand on a tournament table: anyone with no chips is out (the longer stack at the start of the hand lasts longer).
+function tourneyHandBreak(m, hd){
+  const T = tourney; if(!T || T.phase !== 'play') return;
+  const t = hd.t;
+  const bust = T.entrants.filter(e => !e.out && e.seated && e.table === m && (!t.seats[e.seat] || t.seats[e.seat].stack <= 0));
+  bust.sort((a, b) => (hd.snap[a.seat] || 0) - (hd.snap[b.seat] || 0));
+  bust.forEach(e => {
+    tourneyOut(e, 'bust');
+    if(e.human){
+      logEvent(`You are out of the tournament: ${tourneyOrdinal(e.place)} place`, '#e08a8a'); playSound('lose');
+      if(managerGame && managerGame.kind === 'holdem' && managerGame.m === m) cancelManagerGame();
+    } else logEvent(`${e.name} is out: ${tourneyOrdinal(e.place)}`, '#9fb3a8');
+  });
+}
+// Sends an entrant (seated or still on the way) to a seat at table D, chips kept. False if D has no free seat.
+function tourneyMove(e, D){
+  const npc = e.npc; if(!npc || e.human) return false;
+  const seat = claimSeat(D, npc); if(seat < 0) return false;
+  if(e.seated){
+    const S = e.table, hdS = S.hd, p = hdS.t.seats[e.seat];
+    e.chips = p ? p.stack : e.chips;
+    holdemLeave(hdS.t, e.seat); hdS.npc[e.seat] = null;
+    npc.hdSeated = false; e.seated = false; e.table = null;
+    S.occupants = Math.max(0, (S.occupants || 0) - 1);
+  }
+  if(npc.machine) releaseSeat(npc.machine, npc.seatIndex, npc);
+  D.seatOwners.forEach((o, i) => { if(o === npc && i !== seat) D.seatOwners[i] = null; });
+  npc.machine = D; npc.seatIndex = seat;
+  const p2 = seatStandPos(D, seat); npc.target.set(p2.x, 0, p2.z);
+  npc.via = (D.level || 0) !== (npc.level || 0) ? (routeToLevel(npc, D.level || 0) || []) : [];
+  npc.state = 'toMachine'; npc.waitTimer = 0; npc.travelT = 0; npc.path = null;
+  e.dest = D; e.walkT = 0;
+  return true;
+}
+// Called once a second while the tournament is on: stragglers, lost guests, tables that went away.
+function tourneyValidate(step){
+  const T = tourney;
+  T.entrants.slice().forEach(e => {
+    if(e.out || e.human) return;
+    const npc = e.npc;
+    if(!npcs.includes(npc)){ tourneyOut(e, 'forfeit'); return; }
+    if(e.seated){ if(!npc.hdSeated || npc.machine !== e.table) tourneyOut(e, 'forfeit'); return; }
+    e.walkT += step;
+    if(npc.state !== 'toMachine' || npc.machine !== e.dest){
+      if(!e.dest || !machines.includes(e.dest) || !tourneyMove(e, e.dest)) tourneyOut(e, 'forfeit');
+      return;
+    }
+    if(e.walkT > 12){ const p = seatStandPos(e.dest, npc.seatIndex); npc.pos.set(p.x, npc.pos.y, p.z); npc.via = []; npc.path = null; }
+  });
+}
+function tourneyVoidTable(m){
+  const T = tourney, hd = m.hd; hd.tour.void = true;
+  T.entrants.filter(e => !e.out && ((e.table === m && e.seated) || (e.dest === m && !e.seated))).forEach(e => {
+    const you = e.human;
+    tourneyOut(e, 'void');
+    if(you){
+      logEvent(`${m.name} was shut down: your chips are void`, '#e08a8a');
+      if(managerGame && managerGame.kind === 'holdem' && managerGame.m === m) cancelManagerGame();
+    } else logEvent(`${e.name} is out: the table was shut`, '#9fb3a8');
+  });
+}
+// Keeps the field in step: when everyone fits at one table they are brought to it (the final table); a table left with
+// one player would stall, so someone is sent over (or, if that one is you, company is sent to you).
+function tourneyBalance(){
+  const T = tourney; if(T.done) return;
+  const live = T.tables.filter(m => machines.includes(m) && !m.hd.tour.void);
+  const inPlay = live.filter(m => tourneyCount(m) > 0), alive = tourneyAlive();
+  const idle = m => m.hd.phase === 'wait';
+  if(inPlay.length > 1 && alive.length <= TOURNEY.perTable){
+    const you = tourneyYou(), yt = you && !you.out && you.table;
+    const feature = (yt && inPlay.includes(yt)) ? yt : inPlay[0];
+    if(!T.finalTable){ T.finalTable = true; logEvent(`Final table: ${alive.length} players`, '#e6c34a'); playSound('bell'); }
+    feature.hd.tour.hands = Math.max(feature.hd.tour.hands, ...inPlay.map(m => m.hd.tour.hands));
+    inPlay.forEach(S => {
+      if(S === feature) return;
+      T.entrants.filter(e => !e.out && e.dest !== feature && ((e.table === S && e.seated && idle(S)) || (!e.seated && e.dest === S))).forEach(e => { tourneyMove(e, feature); });
+    });
+    return;
+  }
+  inPlay.forEach(L => {
+    if(tourneyCount(L) !== 1 || !idle(L) || tourneyIncoming(L) > 0) return;
+    const e = T.entrants.find(x => !x.out && x.table === L && x.seated);
+    if(!e) return;
+    const others = inPlay.filter(m => m !== L);
+    if(!others.length) return;
+    if(!e.human){
+      const D = others.filter(m => tourneyCount(m) < TOURNEY.perTable).sort((a, b) => tourneyCount(b) - tourneyCount(a))[0];
+      if(D){ tourneyMove(e, D); return; }
+    }
+    const S = others.filter(m => idle(m)).sort((a, b) => tourneyCount(b) - tourneyCount(a))[0];
+    if(!S) return;
+    const movers = T.entrants.filter(x => !x.out && !x.human && x.table === S && x.seated);
+    if(tourneyCount(S) >= 3) tourneyMove(movers[0], L); else movers.forEach(x => tourneyMove(x, L));
+  });
+}
+// Registration: sends guests who can afford it to free seats, up to the readiness target.
+function tourneyRegTick(dt){
+  const T = tourney; if(!T || T.phase !== 'reg') return;
+  T.acc += dt; if(T.acc < 0.5) return;
+  const step = T.acc; T.acc = 0;
+  tourneyValidate(step);
+  T.tables.forEach(m => { if(!machines.includes(m) || (!m.staffer && !houseDealerOn())) T.entrants.filter(e => e.dest === m || e.table === m).forEach(e => tourneyOut(e, 'forfeit')); });
+  const ready = eventReadiness(tourneyRows()), live = T.tables.filter(m => machines.includes(m));
+  const target = Math.round((0.6 + 0.4 * ready) * live.length * TOURNEY.perTable);
+  let sent = 0;
+  const tdist = g => { let d = Infinity; live.forEach(x => { d = Math.min(d, Math.hypot(x.x - g.pos.x, x.z - g.pos.z) + ((x.level || 0) !== (g.level || 0) ? 40 : 0)); }); return d; };
+  const order = npcs.map(g => ({ g, d: tdist(g) })).sort((x, y) => x.d - y.d).map(x => x.g);   // the nearest guests sit down first
+  for(let k = 0; k < order.length && sent < 3 && T.entrants.length < target; k++){
+    const npc = order[k];
+    if((npc.state !== 'wander' && npc.state !== 'toMachine') || npc.tour || npc.wantsRoom || npc.hotelGuest || npc.wallet < TOURNEY.entry) continue;
+    if(npc.via && npc.via.length) continue;
+    const m = live.filter(x => (x.level || 0) === (npc.level || 0) && tourneyCount(x) < TOURNEY.perTable && freeSeatCount(x) > 0)
+      .sort((a, b) => Math.hypot(a.x - npc.pos.x, a.z - npc.pos.z) - Math.hypot(b.x - npc.pos.x, b.z - npc.pos.z))[0];
+    if(!m) break;
+    if(npc.machine) releaseNpcFromMachine(npc, false);
+    if(!pickMachineSpot(npc, m)){ npc.machine = null; npc.via = []; npc.state = 'wander'; pickWanderTarget(npc); continue; }
+    const e = { id:npc.name, name:npc.name, npc, human:false, chips:TOURNEY.chips, paid:TOURNEY.entry, w0:npc.wallet, out:false, place:0, table:null, seat:-1, seated:false, dest:m, walkT:0 };
+    npc.wallet -= TOURNEY.entry; npc.net = (npc.net || 0) - TOURNEY.entry;
+    T.pool += TOURNEY.pool; T.fees += TOURNEY.fee; addCash(TOURNEY.fee); ledger.events += TOURNEY.fee;
+    spawnFloatingText('+$' + TOURNEY.fee + ' entry', new THREE.Vector3(npc.pos.x, npc.pos.y + 2.1, npc.pos.z), '#e6c34a');
+    npc.tour = e; npc.state = 'toMachine'; npc.waitTimer = 0; npc.travelT = 0;
+    T.entrants.push(e); sent++;
+  }
+}
+// A guest arriving at a tournament table sits with their tournament chips (no buy-in from the wallet).
+function tourneyGuestSit(npc, m){
+  const e = npc.tour, hd = holdemRuntime(m);
+  if(!e || e.out || !hd.tour || hd.tour.void || e.dest !== m) return false;
+  if(!holdemSit(hd.t, npc.seatIndex, { id:npc.name, stack:e.chips, isHuman:false, style:holdemStyleFor(npc) })){ tourneyOut(e, 'forfeit'); return false; }
+  hd.npc[npc.seatIndex] = npc;
+  npc.hdSeated = true; npc.hdLeave = false; npc.hdHands = 999;
+  e.seated = true; e.table = m; e.seat = npc.seatIndex; e.dest = null; e.chips = 0;
+  return true;
+}
+function tourneyChipLeader(){
+  let best = null, bc = -1;
+  tourneyAlive().forEach(e => { const c = tourneyChipsOf(e); if(c > bc){ bc = c; best = e; } });
+  return best ? { name:best.name, chips:bc } : null;
+}
+function tourneyBlindsNow(){
+  let bb = 0;
+  if(tourney) tourney.tables.forEach(m => { if(m.hd && m.hd.tour && !m.hd.tour.void && tourneyCount(m) > 0) bb = Math.max(bb, m.hd.t.bb); });
+  if(!bb) bb = tourneyBlinds(0)[1];
+  const L = TOURNEY.blinds.find(x => x[1] === bb) || [bb / 2, bb];
+  return L[0].toLocaleString() + ' / ' + L[1].toLocaleString();
+}
+// Cards in the air.
+function tourneyStart(ev){
+  const T = tourneyEnsure();
+  T.tables = T.tables.filter(m => machines.includes(m) && m.hd && m.hd.tour && !m.hd.tour.void);
+  T.tables.forEach(m => {   // anyone still sitting in a cash game stands up now (the stack goes back to their wallet)
+    const hd = m.hd;
+    hd.npc.forEach(g => { if(g && !g.tour){ holdemGuestLeave(g); g.hdLeave = true; } });
+    if(hd.human && !hd.human.tour && managerGame && managerGame.m === m) cancelManagerGame();
+  });
+  if(T.entrants.length < 2) return 'not enough players';
+  T.tables.filter(m => tourneyCount(m) === 0).forEach(m => tourneyReleaseTable(m));   // tables nobody entered go back to cash play
+  T.tables = T.tables.filter(m => m.hd.tour);
+  T.phase = 'play'; T.t = 0; T.acc = 0; T.startEntrants = T.entrants.length;
+  const b = tourneyBlinds(0);
+  T.tables.forEach(m => { m.hd.t.sb = b[0]; m.hd.t.bb = b[1]; m.hd.t.rakePct = 0; m.hd.t.rakeCap = 0; });
+  logEvent(`Cards in the air: ${T.entrants.length} players at ${T.tables.length} table${T.tables.length > 1 ? 's' : ''}, ${TOURNEY.chips.toLocaleString()} chips each`, '#e6c34a'); playSound('applause', { gain:0.5 });
+  return null;
+}
+function tourneyTick(ev, dt){
+  const T = tourney; if(!T) return 'tournament lost';
+  T.t = ev.t; ev.tickets = T.entrants.length; ev.ticketMoney = T.fees;
+  T.acc += dt; if(T.acc < 0.5) return null;
+  const step = T.acc; T.acc = 0;
+  T.tables.forEach(m => {
+    const tr = m.hd && m.hd.tour; if(!tr || tr.void) return;
+    tr.noDealerT = machines.includes(m) && dealerPresent(m) ? 0 : tr.noDealerT + step;
+    if(!machines.includes(m) || m.closed || (!m.staffer && !houseDealerOn()) || tr.noDealerT > 30) tourneyVoidTable(m);
+  });
+  if(!T.tables.some(m => machines.includes(m) && m.hd.tour && !m.hd.tour.void)) return 'no tournament table left';
+  tourneyValidate(step);
+  tourneyBalance();
+  return T.done ? 'end' : null;
+}
+// The aborted ending (table gone, not enough players, reload): everyone gets their $200 back.
+function tourneyAbortRefund(){
+  const T = tourney; if(!T) return;
+  const you = tourneyYou();
+  if(you && managerGame && managerGame.kind === 'holdem' && T.tables.includes(managerGame.m)){ T.phase = 'reg'; cancelManagerGame(); }   // (forfeit in 'reg' = refund)
+  T.phase = 'reg';
+  T.entrants.slice().forEach(e => tourneyRefund(e));
+  tourneyClose();
+}
+function tourneyPrize(e, amt, msg){
+  if(!e || amt <= 0) return;
+  if(e.human){ addCash(amt); ledger.personalWon += amt; spawnFloatingText('+$' + amt.toLocaleString() + ' prize', new THREE.Vector3(player.pos.x, 2.4, player.pos.z), '#e6c34a'); }
+  else if(e.npc){ e.npc.wallet += amt; e.npc.net = (e.npc.net || 0) + amt; if(npcs.includes(e.npc)) spawnFloatingText('+$' + amt.toLocaleString() + ' prize', new THREE.Vector3(e.npc.pos.x, e.npc.pos.y + 2.1, e.npc.pos.z), '#e6c34a'); }
+  e.prize = amt;
+  logEvent(msg, '#e6c34a');
+}
 // ----- the data table -----
 const EVENTS = {
   show: {
     key:'show', name:'Headline show', cost:500, cooldownDays:3, boost:0.3, ticket:35, maxWatchers:24,
+    boostHour:18, startHour:19, maxHours:6,
+    venueOk(){ return !!eventStage(); }, venueText:'Needs a Stage', venueGone:'stage sold',
+    timesText:'Crowds from 18:00, show at 19:00 until 01:00',
+    doorsText:"Doors open for tonight's show",
+    lost(ev){ return machines.includes(ev.stage) ? null : 'stage sold'; },
+    cleanup(ev){ releaseAllWatchers(); removeShowVisuals(); },
+    liveHtml(ev){ return `Watching now: <b>${showWatcherCount()}</b> &middot; tickets sold: <b>${ev.tickets}</b> (${evMoney(ev.ticketMoney)}) &middot; bar takings since the show began: <b>${evMoney(ledger.drinks - ev.drinks0)}</b>`; },
     desc:'A headline act takes the Stage from 19:00 to 01:00. Crowds build from 18:00 (+30% guests), and 10 to 24 pay $35 a head to watch (more when the night is well run), and they keep drinking. A well-run night earns a rave review; a shambles earns a bad one.',
     requires: headlineRows,
     start(ev){
@@ -6493,6 +6826,57 @@ const EVENTS = {
       return { review };
     },
   },
+    tourney: {
+    key:'tourney', name:'Poker tournament', cost:400, cooldownDays:4, boost:0.2, unlockRevenue:TOURNEY_UNLOCK,
+    boostHour:17, startHour:18, maxHours:9,
+    venueOk(){ return tourneyTables().length >= 1; }, venueText:"Needs a Hold'em table with a dealer", venueGone:"no Hold'em table",
+    timesText:'Registration 17:00, cards at 18:00, hard stop 03:00',
+    desc:"A sit-and-go on your Hold'em tables. Registration opens at 17:00 (+20% guests): $200 a head, $160 into the prize pool and $40 to you. Cards go in the air at 18:00, 1,500 chips each, no rake, blinds rising every 10 minutes. Play goes on until there is a champion or 03:00 (then the chip leader wins). 1st takes 65% of the pool, 2nd 35%. You can enter too. More dealt tables, a staffed bar, security and restrooms fill the field and earn better reviews.",
+    requires: tourneyRows,
+    regTick(b, dt){
+      if(!tourney){ if(!tourneyTables().length) return; tourneyOpen(); }
+      tourneyRegTick(dt);
+    },
+    regHtml(){ return (tourney && tourney.phase === 'reg') ? `Registration open: <b>${tourney.entrants.length}</b> entered (${evMoney(tourney.fees)} in entry fees so far)` : ''; },
+    onDrop(){ tourneyAbortRefund(); },
+    cleanup(ev, why){ if(tourney){ tourneyAbortRefund(); ev.tickets = 0; ev.ticketMoney = 0; } },   // (after a reload there is nothing to refund: the guests are gone and the entry fees stay)
+    start(ev){ return tourneyStart(ev); },
+    tick(ev, dt){ return tourneyTick(ev, dt); },
+    liveHtml(ev){
+      const T = tourney; if(!T) return 'Wrapping up...';
+      const tables = T.tables.filter(m => m.hd && m.hd.tour && !m.hd.tour.void && tourneyCount(m) > 0).length, lead = tourneyChipLeader();
+      return `Players left: <b>${tourneyAlive().length}</b> of ${T.startEntrants || T.entrants.length} &middot; tables in play: <b>${tables}</b> &middot; blinds: <b>${tourneyBlindsNow()}</b><br>Prize pool: <b>${evMoney(T.pool)}</b> &middot; entry fees so far: <b>${evMoney(T.fees)}</b> &middot; chip leader: <b>${lead ? lead.name + ' (' + lead.chips.toLocaleString() + ' chips)' : '-'}</b>`;
+    },
+    end(ev){
+      const T = tourney, readiness = ev.readiness, failed = ev.failed;
+      if(!T) return { review:'-' };
+      T.tables.forEach(m => { if(m.hd) holdemAbortHand(m.hd); });   // the hard stop voids a hand in progress (chips back to their stacks)
+      const alive = tourneyAlive().sort((a, b) => tourneyChipsOf(b) - tourneyChipsOf(a));
+      const outs = T.entrants.filter(e => e.out).sort((a, b) => a.place - b.place);
+      const ranked = alive.concat(outs), champ = ranked[0] || null, second = ranked[1] || null;
+      ev.tickets = T.entrants.length; ev.ticketMoney = T.fees;
+      const P = T.pool, first = Math.round(P * TOURNEY.prizes[0]), secondAmt = second ? P - first : 0;
+      if(champ){
+        if(!T.done) logEvent('Three in the morning: the chip leader takes the Poker tournament', '#e6c34a');
+        tourneyPrize(champ, second ? first : P, `${champ.human ? 'You are' : champ.name + ' is'} the Poker tournament champion and ${champ.human ? 'take' : 'takes'} $${(second ? first : P).toLocaleString()}`);
+        tourneyPrize(second, secondAmt, `${second.human ? 'You take' : second.name + ' takes'} $${secondAmt.toLocaleString()} for second place`);
+        if(champ.npc) champ.npc.visitLeft += 5;   // a winner stays on for a while
+      }
+      const you = tourneyYou(); if(you && !you.prize) ledger.personalLost += you.paid;
+      T.champion = champ;
+      const r = Math.random(), pGood = 0.2 + 0.6 * readiness, pBad = 0.45 * (1 - readiness);
+      let review, rep;
+      if(r < pGood){ review = 'rave'; rep = 6; logEvent('Rave review: the Poker tournament was the talk of the town', '#e6c34a'); }
+      else if(r < pGood + pBad){ review = 'bad'; rep = -5; logEvent('Bad review for the Poker tournament: ' + (failed.length ? failed.join(', ') : 'a flat night'), '#e08a8a'); }
+      else { review = 'middling'; rep = 1; logEvent('The Poker tournament went down fine', '#cfd9d0'); }
+      reputation = Math.max(0, Math.min(100, reputation + rep));
+      playSound('applause');
+      const name = champ ? (champ.human ? 'you' : champ.name) : 'nobody';
+      ev.summary = { entrants:T.entrants.length, tables:T.tables.length, hands:T.hands, champion:name, pool:T.pool, fees:T.fees, voided:T.voided, done:T.done, prizes:(champ ? (second ? first : P) : 0) + secondAmt };
+      tourneyClose();
+      return { review: review + ', won by ' + name };
+    },
+  },
 };
 function pushEventHistory(entry){ eventHistory.unshift(entry); if(eventHistory.length > 12) eventHistory.length = 12; }
 function eventAvailableDay(key){ return eventCooldownUntil[key] || 0; }
@@ -6501,6 +6885,7 @@ function bookEvent(key, day){
   if(!def || eventBooked || eventActive) return false;
   if(day <= currentDay || day > currentDay + 3 || day < eventAvailableDay(key)) return false;
   if(def.requires().some(r => r.required && !r.ok)) return false;
+  if(def.unlockRevenue && lifetimeRevenue() < def.unlockRevenue) return false;
   if(cash < def.cost) return false;
   addCash(-def.cost); ledger.eventCost += def.cost;
   eventBooked = { key, day, fee: def.cost };
@@ -6516,20 +6901,25 @@ function cancelEventBooking(){
   pushEventHistory({ day:b.day, key:b.key, name:def.name, review:'cancelled', tickets:0, ticketMoney:0, drinks:0, fee:b.fee - back, net:-(b.fee - back) });
   logEvent(`${def.name} cancelled, $${back} refunded`, '#cfd9d0');
   eventBooked = null;
+  if(def.onDrop) def.onDrop();
 }
 function startBookedEvent(){
   const b = eventBooked, def = EVENTS[b.key]; eventBooked = null;
   if(!def) return;
   if(casinoClosed){
     pushEventHistory({ day:b.day, key:b.key, name:def.name, review:'cancelled (closed)', tickets:0, ticketMoney:0, drinks:0, fee:b.fee, net:-b.fee });
-    logEvent(`The ${def.name} was cancelled: the casino was closed (no refund)`, '#e08a8a'); return;
+    logEvent(`The ${def.name} was cancelled: the casino was closed (no refund)`, '#e08a8a');
+    if(def.onDrop) def.onDrop();
+    return;
   }
-  if(!eventStage()){ refundEvent(b, def, 'stage sold'); return; }
+  if(!def.venueOk()){ refundEvent(b, def, def.venueGone); return; }
   const rows = def.requires();
   eventActive = { key:b.key, day:b.day, t:0, fee:b.fee, tickets:0, ticketMoney:0, drinks0:ledger.drinks, readiness:eventReadiness(rows), failed:rows.filter(r => !r.ok && !r.required).map(r => r.gripe) };
-  def.start(eventActive);
+  const stop = def.start(eventActive);
+  if(typeof stop === 'string') finishEvent(stop);   // an event that cannot get going is cut short like any other
 }
 function refundEvent(b, def, why){
+  if(def.onDrop) def.onDrop();
   const back = Math.round(b.fee / 2);
   addCash(back); ledger.eventCost -= back;
   pushEventHistory({ day:b.day, key:b.key, name:def.name, review:'cancelled (' + why + ')', tickets:0, ticketMoney:0, drinks:0, fee:b.fee - back, net:-(b.fee - back) });
@@ -6542,7 +6932,7 @@ function finishEvent(aborted){
   let res = { review:'-' }, fee = ev.fee;
   if(aborted){
     const back = Math.round(ev.fee / 2); addCash(back); ledger.eventCost -= back; fee = ev.fee - back;
-    releaseAllWatchers(); removeShowVisuals(); res = { review:'cut short (' + aborted + ')' };
+    if(def.cleanup) def.cleanup(ev, aborted); res = { review:'cut short (' + aborted + ')' };
     logEvent(`The ${def.name} was cut short (${aborted}), $${back} refunded`, '#e08a8a');
   } else res = def.end(ev) || res;
   pushEventHistory({ day:ev.day, key:ev.key, name:def.name, review:res.review, tickets:ev.tickets, ticketMoney:ev.ticketMoney, drinks, fee, net:ev.ticketMoney + drinks - fee, readiness:ev.readiness });
@@ -6551,34 +6941,41 @@ function updateEvents(simDt, dt){
   if(eventVis) animateShowVisuals(dt);
   if(eventActive){
     const ev = eventActive;
-    if(!machines.includes(ev.stage)){ finishEvent('stage sold'); return; }
+    const def = EVENTS[ev.key], lost = def.lost ? def.lost(ev) : null;
+    if(lost){ finishEvent(lost); return; }
     ev.t += simDt;
-    if(ev.t >= EV_LEN){ finishEvent(null); return; }
-    EVENTS[ev.key].tick(ev, simDt);
+    if(ev.t >= evLen(def)){ finishEvent(null); return; }
+    const r = def.tick(ev, simDt);       // a string ends it: 'end' normally, anything else cuts it short
+    if(r === 'end') finishEvent(null); else if(typeof r === 'string') finishEvent(r);
     return;
   }
   if(!eventBooked) return;
   const b = eventBooked, def = EVENTS[b.key];
   if(!def){ eventBooked = null; return; }
   eventCheckT -= dt;
-  if(eventCheckT <= 0){ eventCheckT = 1; if(!eventStage()){ eventBooked = null; refundEvent(b, def, 'stage sold'); return; } }
-  if(currentDay > b.day || (currentDay === b.day && dayTime >= EV_START_T + EV_LEN)){
+  if(eventCheckT <= 0){ eventCheckT = 1; if(!def.venueOk()){ eventBooked = null; refundEvent(b, def, def.venueGone); return; } }
+  if(currentDay > b.day || (currentDay === b.day && dayTime >= evStartT(def) + evLen(def))){
     eventBooked = null; pushEventHistory({ day:b.day, key:b.key, name:def.name, review:'missed', tickets:0, ticketMoney:0, drinks:0, fee:b.fee, net:-b.fee });
-    logEvent(`The ${def.name} on Day ${b.day} never happened`, '#e08a8a'); return;
+    logEvent(`The ${def.name} on Day ${b.day} never happened`, '#e08a8a');
+    if(def.onDrop) def.onDrop();
+    return;
   }
   if(currentDay !== b.day) return;
-  if(dayTime >= EV_BOOST_T && !b.doors){ b.doors = true; logEvent("Doors open for tonight's show", '#e6c34a'); }
-  if(dayTime >= EV_START_T) startBookedEvent();
+  if(dayTime >= evBoostT(def)){
+    if(!b.doors){ b.doors = true; if(def.doorsText) logEvent(def.doorsText, '#e6c34a'); }
+    if(def.regTick) def.regTick(b, simDt);   // registration (the tournament): opens itself on the first call
+  }
+  if(dayTime >= evStartT(def)) startBookedEvent();
 }
 // Saved state. A show caught live by a save does not resume: on load it ends with half the fee back.
 function eventsSaveState(){
   return { eventBooked, eventActive: eventActive ? { key:eventActive.key, day:eventActive.day, t:eventActive.t, fee:eventActive.fee, tickets:eventActive.tickets, ticketMoney:eventActive.ticketMoney, drinks0:eventActive.drinks0, readiness:eventActive.readiness, failed:eventActive.failed } : null, eventHistory, eventCooldownUntil };
 }
 function eventsResetState(){
-  eventBooked = null; eventActive = null; eventHistory = []; eventCooldownUntil = {}; removeShowVisuals();
+  eventBooked = null; eventActive = null; eventHistory = []; eventCooldownUntil = {}; removeShowVisuals(); tourney = null;
 }
 function eventsLoadState(data){
-  removeShowVisuals();
+  removeShowVisuals(); tourney = null;
   eventBooked = (data.eventBooked && EVENTS[data.eventBooked.key] && Number.isFinite(data.eventBooked.day)) ? { key:data.eventBooked.key, day:data.eventBooked.day, fee:data.eventBooked.fee || EVENTS[data.eventBooked.key].cost, doors:!!data.eventBooked.doors } : null;
   eventHistory = Array.isArray(data.eventHistory) ? data.eventHistory.slice(0, 12) : [];
   eventCooldownUntil = (data.eventCooldownUntil && typeof data.eventCooldownUntil === 'object') ? Object.assign({}, data.eventCooldownUntil) : {};
@@ -8369,6 +8766,7 @@ function checkTabUnlocks(silent){
     if(!silent){ logEvent(`New tab unlocked: ${u.name} [${u.key}]`, '#e6c34a'); playSound('achievement'); showUnlockPopup(`${icn('key')}New tab: <b>${u.name}</b> [${u.key}]`); }
   }
   applyTabVisibility();
+  if(!silent && unlockedTabs.has('tabEvents') && lifetimeRevenue() >= TOURNEY_UNLOCK) tip('tourneyReady', 'The Poker tournament is ready to book in the Events tab [8]. It runs on your Hold\'em tables.');
 }
 // An older save (or a fiddled one) might hold tabs out of order - keep only the run from the start.
 function normalizeUnlockedTabs(){
@@ -9586,6 +9984,7 @@ function guestSuitsMachine(npc, m){
   if(isSlotLike(m) && managerAtMachine(m)) return false; // you're sitting there
   if(isHighRollerMachine(m) && npc.startingWallet < 350) return false;
   if(m.type === 'holdem' && npc.wallet < holdemBB(m) * HOLDEM_MIN_BUYIN_BB) return false; // can't cover a buy-in
+  if(m.type === 'holdem' && m.hd && m.hd.tour) return false; // reserved for the Poker tournament
   if(isSlotMachine(m)){
     const unit = slotUnit(m);
     if(npc.wallet < unit * 3) return false;
@@ -11180,6 +11579,8 @@ function holdemRuntime(m){
 function holdemLonelyFactor(m){ return (m.type === 'holdem' && m.seatOwners && m.seatOwners.filter(Boolean).length === 1) ? 0.5 : 1; } // a table with one player waiting draws company
 function holdemGuestSit(npc, m){
   const hd = holdemRuntime(m), bb = hd.t.bb;
+  if(npc.tour) return tourneyGuestSit(npc, m);   // a tournament entrant sits with their tournament chips
+  if(hd.tour) return false;                       // the table is reserved for the tournament
   const buyIn = Math.min(Math.floor(npc.wallet), bb * (40 + Math.floor(Math.random() * 61)));
   if(buyIn < bb * HOLDEM_MIN_BUYIN_BB) return false;
   if(!holdemSit(hd.t, npc.seatIndex, { id:npc.name, stack:buyIn, isHuman:false, style:holdemStyleFor(npc) })) return false;
@@ -11195,7 +11596,7 @@ function holdemAbortHand(hd){
   for(let i = 0; i < 6; i++){ const p = t.seats[i]; if(p && p.inHand){ p.stack += p.total; p.total = 0; p.bet = 0; } }
   t.pot = 0; t.street = 'done'; t.toAct = -1; t.lastResult = null;
   hd.phase = 'wait'; hd.timer = 0; hd.pending = null; hd.revealed = false; hd.dealShown = 0; hd.boardShown = 0;
-  if(hd.human && hd.human.leaving){ const r = holdemLeave(t, hd.human.seat); if(r && r.left) addCash(r.stack); hd.human = null; }
+  if(hd.human && hd.human.leaving){ const r = holdemLeave(t, hd.human.seat); if(r && r.left && !hd.human.tour) addCash(r.stack); hd.human = null; }
 }
 // Takes the guest's stack back to their wallet. (The normal exits wait for the hand to end; this is also reached when the
 // table is shut or moved, which voids a hand in progress.)
@@ -11228,34 +11629,45 @@ function bookHoldemRake(m, rake, pot){
   }
   addWear(m);
 }
+// A tournament table in play deals chips (no rake, no money) at a faster pace.
+function hdChips(hd){ return !!(hd.tour && tourney && tourney.phase === 'play'); }
+function hdPace(hd){ return hd.tour ? TOURNEY.pace : 1; }
+function hdAmt(hd, v){ return (hd.human && hd.human.tour) || hdChips(hd) ? Math.round(v).toLocaleString() + ' chips' : hdMoney(v); }
 function hdStartHand(m, hd){
   const t = hd.t;
   hd.snap = {};
   for(let i = 0; i < 6; i++) if(t.seats[i]) hd.snap[i] = t.seats[i].stack;
   hd.timer = 0;
+  const chips = hdChips(hd);
+  if(chips){ const b = tourneyBlinds(tourneyLevel()); t.sb = b[0]; t.bb = b[1]; }
   if(!holdemStartHand(t)) return;
+  if(chips){ hd.tour.hands++; tourney.hands++; }
   hd.dealOrder = t.events.filter(e => e.type === 'deal').map(e => e.seat);
   hd.phase = 'deal'; hd.dealT = 0; hd.dealShown = 0; hd.boardShown = 0; hd.bt = 0; hd.revealed = false; hd.pending = null;
 }
 function hdSettle(m, hd){
-  const t = hd.t, L = t.lastResult, humanSeat = hd.human ? hd.human.seat : -1;
+  const t = hd.t, L = t.lastResult, humanSeat = hd.human ? hd.human.seat : -1, chips = hdChips(hd);
   for(let i = 0; i < 6; i++){
     const g = hd.npc[i], p = t.seats[i];
     if(!g || !p || hd.snap[i] === undefined || !p.inHand) continue;
+    if(chips) continue;   // (tournament chips are not money: a bust is handled at the hand break)
     const delta = p.stack - hd.snap[i];
     recordGuestResult(g, -delta, 0, m);
     g.hdHands--;
     if(p.stack < t.bb || g.hdHands <= 0) g.hdLeave = true;   // busted (no top-up) or played their share of hands
   }
   let pot = 0; L.pots.forEach(q => { pot += q.amount; });
-  bookHoldemRake(m, L.rake, pot);
+  if(!chips) bookHoldemRake(m, L.rake, pot);
   const lift = 1.9 + mLevelY(m);
   L.winners.forEach(w => {
     if(w.seat === humanSeat) return;   // (your own result is reported below)
     const a = HOLDEM_SEAT_ANG[w.seat], p = localToWorld(m, Math.sin(a) * 1.3, Math.cos(a) * 1.0);
-    spawnFloatingText('+$' + w.amount + (w.handName ? ' ' + w.handName : ''), new THREE.Vector3(p.x, lift, p.z), '#8fd6a8');
+    spawnFloatingText((chips ? '+' : '+$') + w.amount + (w.handName ? ' ' + w.handName : ''), new THREE.Vector3(p.x, lift, p.z), '#8fd6a8');
   });
-  if(hd.human){   // your own hand: the result goes to your own ledger (never the house's), your pots are never raked
+  if(hd.human && hd.human.tour){   // your tournament seat: chips only, nothing touches your cash until the prizes
+    const lv2 = t.events.find(e => e.type === 'leave' && e.seat === hd.human.seat);
+    if(lv2){ logEvent('You leave the tournament', '#9fb3a8'); hd.human = null; }
+  } else if(hd.human){   // your own hand: the result goes to your own ledger (never the house's), your pots are never raked
     const s2 = hd.human.seat, lv = t.events.find(e => e.type === 'leave' && e.seat === s2), hp = t.seats[s2];
     const fin = lv ? lv.stack : (hp ? hp.stack : null);
     if(fin !== null && hd.snap[s2] !== undefined && (lv || (hp && hp.inHand))){
@@ -11275,7 +11687,7 @@ function hdSettle(m, hd){
     if(lv){ addCash(lv.stack); logEvent('You leave the table with ' + hdMoney(lv.stack), '#e6c34a'); hd.human = null; }
   }
   if(L.rake > 0){ const p = localToWorld(m, 0, -0.5); spawnFloatingText('+$' + L.rake + ' rake', new THREE.Vector3(p.x, 1.5 + mLevelY(m), p.z), '#e6c34a'); }
-  hd.phase = 'showdown'; hd.timer = L.showdown ? 2.6 : 1.0; hd.revealed = !!L.showdown; hd.pending = null;
+  hd.phase = 'showdown'; hd.timer = (L.showdown ? 2.6 : 1.0) * hdPace(hd); hd.revealed = !!L.showdown; hd.pending = null;
 }
 // ---- you at a Hold'em table: buy in, play your turns with the keys, cash out when you leave ----
 // Sitting: the interact key at a table with a free seat and a dealer opens a buy-in prompt (a 'holdemBuyIn' game, so the
@@ -11289,6 +11701,14 @@ function startHoldemSit(m){
   const hd = holdemRuntime(m), bb = hd.t.bb;
   if(freeSeatCount(m) === 0){ logEvent(`${m.name} is full - no free seat`, '#9fb3a8'); return; }
   if(!dealerPresent(m)){ logEvent(`${m.name} has no dealer at it right now - it needs one before anyone can play`, '#9fb3a8'); return; }
+  if(hd.tour){   // reserved for the Poker tournament: you can enter while registration is open
+    if(hd.tour.void || !tourney || tourney.phase !== 'reg'){ logEvent(`${m.name} is playing the Poker tournament - it is closed to new players`, '#9fb3a8'); return; }
+    if(tourneyYou()){ logEvent('You are already entered in the tournament', '#9fb3a8'); return; }
+    if(cash < TOURNEY.entry){ logEvent(`The entry is $${TOURNEY.entry} - you have ${hdMoney(Math.max(0, cash))}`, '#e08a8a'); return; }
+    const tg = { kind:'holdemBuyIn', m, tour:true, buyBB:0, maxBB:0, sprites:[] };
+    activeGames.push(tg); managerGame = tg; lockCameraForGame(tg, m);
+    return;
+  }
   if(cash < bb * 40){ logEvent(`Hold'em here needs a buy-in of at least ${hdMoney(bb * 40)} (40 big blinds) - you have ${hdMoney(Math.max(0, cash))}`, '#e08a8a'); return; }
   const maxBB = Math.min(100, Math.floor(cash / bb));
   const game = { kind:'holdemBuyIn', m, buyBB:maxBB, maxBB, sprites:[] };
@@ -11296,7 +11716,24 @@ function startHoldemSit(m){
   managerGame = game;
   lockCameraForGame(game, m);
 }
+function holdemConfirmTourney(g){
+  const m = g.m, hd = holdemRuntime(m), t = hd.t, seat = managerCameraLock && managerCameraLock.seat;
+  if(!hd.tour || !tourney || tourney.phase !== 'reg'){ logEvent('Registration has closed', '#e08a8a'); cancelManagerGame(); return; }
+  if(cash < TOURNEY.entry){ logEvent(`The entry is $${TOURNEY.entry} - you have ${hdMoney(Math.max(0, cash))}`, '#e08a8a'); return; }
+  if(tourneyYou() || tourneyCount(m) >= TOURNEY.perTable || seat === undefined || seat === null || t.seats[seat] || !holdemSit(t, seat, { id:'You', stack:TOURNEY.chips, isHuman:true, style:'regular' })){
+    logEvent('That seat was taken - try again', '#e08a8a'); cancelManagerGame(); return;
+  }
+  addCash(-TOURNEY.entry);
+  tourney.pool += TOURNEY.entry;   // (your own entry is all prize money: only guests' entries pay the house a fee)
+  tourney.entrants.push({ id:'You', name:'You', npc:null, human:true, chips:0, paid:TOURNEY.entry, out:false, place:0, table:m, seat, seated:true, dest:null, walkT:0 });
+  hd.human = { seat, leaving:false, tour:true };
+  hd.npc[seat] = null;
+  g.kind = 'holdem'; g.seat = seat; g.raiseTo = null; g.turnKey = '';
+  playSound('click'); playedAMachine = true;
+  logEvent(`You enter the Poker tournament at ${m.nick || m.name}: ${TOURNEY.chips.toLocaleString()} chips`, '#e6c34a');
+}
 function holdemConfirmBuyIn(g){
+  if(g.tour){ holdemConfirmTourney(g); return; }
   const m = g.m, hd = holdemRuntime(m), t = hd.t, seat = managerCameraLock && managerCameraLock.seat;
   const stack = g.buyBB * t.bb;
   if(stack > cash){ logEvent(`You only have ${hdMoney(cash)} - lower the buy-in`, '#e08a8a'); return; }
@@ -11315,15 +11752,19 @@ function holdemConfirmBuyIn(g){
 function holdemPlayerLeave(game){
   const m = game.m, hd = m.hd;
   if(!hd || !hd.human) return;
-  const t = hd.t, s = hd.human.seat, p = t.seats[s];
+  const t = hd.t, s = hd.human.seat, p = t.seats[s], tour = !!hd.human.tour;
+  if(tour){ const e = tourneyYou(); if(e && !e.out) tourneyOut(e, 'forfeit'); }   // leaving a tournament forfeits the chips (before the cards: a refund)
   if(p && p.inHand && hd.phase !== 'wait' && t.street !== 'done'){
     hd.human.leaving = true;
     holdemLeave(t, s);
     if(t.toAct === s) holdemAct(t, { type:'fold' });
-    logEvent('You fold and get up - your chips come back when the hand ends', '#9fb3a8');
+    logEvent(tour ? 'You fold and get up - your tournament chips are forfeit' : 'You fold and get up - your chips come back when the hand ends', '#9fb3a8');
   } else {
     const r = holdemLeave(t, s);
-    if(r && r.left){ addCash(r.stack); logEvent(`You leave the table with ${hdMoney(r.stack)}`, '#e6c34a'); }
+    if(r && r.left){
+      if(tour) logEvent('You leave the tournament table', '#9fb3a8');
+      else { addCash(r.stack); logEvent(`You leave the table with ${hdMoney(r.stack)}`, '#e6c34a'); }
+    }
     hd.human = null;
   }
 }
@@ -11359,8 +11800,8 @@ function holdemActionWords(hd, e){
   const who = e.seat === (hd.human && hd.human.seat) ? 'You' : (hd.npc[e.seat] ? hd.npc[e.seat].name : 'Someone');
   if(e.act === 'fold') return who + ' folded';
   if(e.act === 'check') return who + ' checked';
-  if(e.act === 'call') return who + ' called ' + hdMoney(e.amount || 0);
-  return who + (e.allin ? ' went all-in to ' : ' raised to ') + hdMoney(e.to);
+  if(e.act === 'call') return who + ' called ' + hdAmt(hd, e.amount || 0);
+  return who + (e.allin ? ' went all-in to ' : ' raised to ') + hdAmt(hd, e.to);
 }
 function holdemPlayerPromptText(g){
   const m = g.m, hd = m.hd, t = hd.t, s = g.seat, p = t.seats[s];
@@ -11370,23 +11811,23 @@ function holdemPlayerPromptText(g){
   const l1 = [];
   if(inIt && p.cards.length && hd.dealShown >= hd.dealOrder.length * 2) l1.push('Your cards: ' + p.cards.map(hdCardText).join(' '));
   if(hd.boardShown > 0) l1.push('Board: ' + t.board.slice(0, hd.boardShown).map(hdCardText).join(' '));
-  if(hd.phase !== 'wait' && t.pot > 0) l1.push('Pot ' + hdMoney(t.pot));
-  l1.push('Stack ' + hdMoney(p.stack));
+  if(hd.phase !== 'wait' && t.pot > 0) l1.push('Pot ' + hdAmt(hd, t.pot));
+  l1.push('Stack ' + hdAmt(hd, p.stack));
   const la = (hd.phase === 'act' && hd.boardShown >= t.board.length) ? holdemLegalActions(t) : null;
   let l2;
   if(la && la.seat === s){
     const turnKey = t.handNo + ':' + t.street + ':' + t.events.length;
     if(g.turnKey !== turnKey){ g.turnKey = turnKey; g.raiseTo = la.canRaise ? la.minRaiseTo : null; }
     if(la.canRaise) g.raiseTo = Math.max(la.minRaiseTo, Math.min(la.maxRaiseTo, g.raiseTo || la.minRaiseTo));
-    l1.push('To call ' + hdMoney(la.toCall));
-    l2 = `Your turn: ${key('holdemFold')} Fold  ${key('holdemCall')} ${la.canCheck ? 'Check' : 'Call ' + hdMoney(la.toCall)}`;
-    if(la.canRaise) l2 += `  ${key('holdemRaise')} ${t.curBet > 0 ? 'Raise' : 'Bet'} to ${hdMoney(g.raiseTo)} [Up/Down] size  [1] half pot  [2] pot  [3] max  ${key('holdemAllin')} All-in ${hdMoney(la.maxRaiseTo)}`;
+    l1.push('To call ' + hdAmt(hd, la.toCall));
+    l2 = `Your turn: ${key('holdemFold')} Fold  ${key('holdemCall')} ${la.canCheck ? 'Check' : 'Call ' + hdAmt(hd, la.toCall)}`;
+    if(la.canRaise) l2 += `  ${key('holdemRaise')} ${t.curBet > 0 ? 'Raise' : 'Bet'} to ${hdAmt(hd, g.raiseTo)} [Up/Down] size  [1] half pot  [2] pot  [3] max  ${key('holdemAllin')} All-in ${hdAmt(hd, la.maxRaiseTo)}`;
   } else if(hd.phase === 'wait'){
     let seated = 0; for(let i = 0; i < 6; i++) if(t.seats[i] && t.seats[i].stack > 0) seated++;
     l2 = seated < 2 ? 'Waiting for another player...' : 'Next hand coming up...';
   } else if(hd.phase === 'showdown'){
     const L = t.lastResult;
-    l2 = L && L.winners.length ? L.winners.map(w => (w.seat === s ? 'You' : (hd.npc[w.seat] ? hd.npc[w.seat].name : 'Someone')) + ' won ' + hdMoney(w.seat === s && hd.lastHumanDelta > 0 ? hd.lastHumanDelta : w.amount) + (w.handName ? ' with ' + w.handName : '')).join(' · ') : 'Hand over';
+    l2 = L && L.winners.length ? L.winners.map(w => (w.seat === s ? 'You' : (hd.npc[w.seat] ? hd.npc[w.seat].name : 'Someone')) + ' won ' + hdAmt(hd, w.seat === s && hd.lastHumanDelta > 0 ? hd.lastHumanDelta : w.amount) + (w.handName ? ' with ' + w.handName : '')).join(' · ') : 'Hand over';
   } else if(!p.inHand){
     l2 = 'Sitting out until the next hand...';
   } else {
@@ -11394,10 +11835,11 @@ function holdemPlayerPromptText(g){
     const last = (() => { for(let i = t.events.length - 1; i >= 0; i--) if(t.events[i].type === 'action') return t.events[i]; return null; })();
     l2 = (p.folded ? 'You folded. ' : '') + (who ? who + ' is thinking...' : 'Dealing...') + (last ? '  (' + holdemActionWords(hd, last) + ')' : '');
   }
-  const out = (hd.phase === 'wait' || hd.phase === 'showdown' || !inIt) ? `${key('interact')} Leave the table` : `${key('interact')} Fold and leave`;
+  const tr = !!(hd.human && hd.human.tour), out = tr ? `${key('interact')} Leave (forfeits your chips)` : (hd.phase === 'wait' || hd.phase === 'showdown' || !inIt) ? `${key('interact')} Leave the table` : `${key('interact')} Fold and leave`;
   return l1.join(' · ') + '\n' + l2 + '   ' + out;
 }
 function holdemBuyInPromptText(g){
+  if(g.tour) return `Enter the tournament: $${TOURNEY.entry} (Enter to confirm, [${bindKey('interact')}] to back out)`;
   const bb = g.m.hd ? g.m.hd.t.bb : holdemBB(g.m);
   return `Buy in for ${hdMoney(g.buyBB * bb)} (${g.buyBB} big blinds of ${hdMoney(bb)}) · [Up/Down] 10 big blinds  [Enter] sit down  [${bindKey('interact')}] cancel`;
 }
@@ -11405,6 +11847,7 @@ window.addEventListener('keydown', (e)=>{
   const g = managerGame;
   if(!g) return;
   if(g.kind === 'holdemBuyIn'){
+    if(g.tour){ if(e.code === 'Enter'){ e.preventDefault(); holdemConfirmBuyIn(g); } return; }
     if(e.code === 'ArrowUp' || e.code === 'Equal'){ e.preventDefault(); g.buyBB = Math.min(g.maxBB, g.buyBB + 10); }
     else if(e.code === 'ArrowDown' || e.code === 'Minus'){ e.preventDefault(); g.buyBB = Math.max(Math.min(40, g.maxBB), g.buyBB - 10); }
     else if(e.code === 'Enter'){ e.preventDefault(); holdemConfirmBuyIn(g); }
@@ -11432,6 +11875,7 @@ function holdemSeatedCash(){
   let sum = 0;
   machines.forEach(m => {
     if(m.type !== 'holdem' || !m.hd || !m.hd.human) return;
+    if(m.hd.human.tour){ const e = tourneyYou(); if(e && !e.out) sum += e.paid; return; }   // a save ends the tournament: your entry comes back
     const p = m.hd.t.seats[m.hd.human.seat];
     if(p) sum += p.stack + (p.inHand && m.hd.t.street !== 'done' ? p.total : 0);
   });
@@ -11442,15 +11886,19 @@ function updateHoldemTable(m, dt){
   const hd = m.hd;
   if(!hd) return;
   const t = hd.t;
+  const pace = hdPace(hd);
   if(hd.phase === 'wait'){
     let seated = 0;
     for(let i = 0; i < 6; i++) if((hd.npc[i] || (hd.human && hd.human.seat === i)) && t.seats[i] && t.seats[i].stack > 0) seated++;
-    if(seated >= 2 && dealerPresent(m) && !m.broken && !m.closed){
+    // a tournament table waits for the cards to go in the air, for players still walking over, and stops when it is decided
+    const hold = !!hd.tour && (!tourney || tourney.phase !== 'play' || tourney.done || hd.tour.void || tourneyIncoming(m) > 0);
+    if(seated >= 2 && !hold && dealerPresent(m) && !m.broken && !m.closed){
       hd.lonely = 0; hd.timer += dt;
-      if(hd.timer >= 1.5) hdStartHand(m, hd);
+      if(hd.timer >= 1.5 * pace) hdStartHand(m, hd);
     } else {
       hd.timer = 0;
-      if(m.seatOwners.some(Boolean)){
+      if(hd.tour) hd.lonely = 0;
+      else if(m.seatOwners.some(Boolean)){
         hd.lonely += dt;   // nobody to play, or no dealer: they give up after a while
         if(hd.lonely > 40){ hd.lonely = 0; hd.npc.forEach(g => { if(g) g.hdLeave = true; }); }
       } else hd.lonely = 0;
@@ -11458,12 +11906,12 @@ function updateHoldemTable(m, dt){
   } else if(hd.phase === 'deal'){
     hd.dealT += dt;
     const total = hd.dealOrder.length * 2;
-    hd.dealShown = Math.min(total, Math.floor(hd.dealT / 0.16));
-    if(hd.dealT > total * 0.16 + 0.4) hd.phase = 'act';
+    hd.dealShown = Math.min(total, Math.floor(hd.dealT / (0.16 * pace)));
+    if(hd.dealT > (total * 0.16 + 0.4) * pace) hd.phase = 'act';
   } else if(hd.phase === 'act'){
     if(hd.boardShown < t.board.length){   // the next street is turned over before anyone acts
       hd.bt += dt;
-      if(hd.bt >= 0.8){ hd.bt = 0; hd.boardShown = hd.boardShown === 0 ? 3 : hd.boardShown + 1; }
+      if(hd.bt >= 0.8 * pace){ hd.bt = 0; hd.boardShown = hd.boardShown === 0 ? 3 : hd.boardShown + 1; }
     } else if(t.street === 'done'){
       hdSettle(m, hd);
     } else if(hd.human && !hd.human.leaving && t.toAct === hd.human.seat){
@@ -11471,7 +11919,7 @@ function updateHoldemTable(m, dt){
     } else {
       if(!hd.pending){
         hd.pending = holdemAiDecide(t, Math.random);
-        hd.thinkT = hd.pending ? hd.pending.think * machineSpeedFactor(m) : 0;
+        hd.thinkT = hd.pending ? hd.pending.think * machineSpeedFactor(m) * pace : 0;
       }
       hd.thinkT -= dt;
       if(hd.thinkT <= 0){
@@ -11483,7 +11931,8 @@ function updateHoldemTable(m, dt){
     hd.timer -= dt;
     if(hd.timer <= 0){
       hd.phase = 'wait'; hd.timer = 0; hd.revealed = false; hd.dealShown = 0; hd.boardShown = 0;
-      if(hd.human && !hd.human.leaving){   // out of chips: you cannot top up, so you are done for the night
+      if(hd.tour) tourneyHandBreak(m, hd);
+      if(hd.human && !hd.human.leaving && !hd.human.tour){   // out of chips: you cannot top up, so you are done for the night
         const hp = t.seats[hd.human.seat];
         if(!hp || hp.stack < t.bb){ if(managerGame && managerGame.kind === 'holdem' && managerGame.m === m){ logEvent("You're out of chips - you leave the table", '#e08a8a'); cancelManagerGame(); } }
       }
@@ -11729,6 +12178,7 @@ function updateActiveGames(dt){
 // playing) and, at card tables, the seat they reserved.
 function releaseNpcFromMachine(npc, wasGambling){
   const m = npc.machine;
+  if(npc.tour && !npc.tour.out) tourneyOut(npc.tour, 'forfeit');   // pulled away from a tournament: the chips are forfeit (a refund before the cards)
   if(m){
     if(m.type === 'holdem') holdemGuestLeave(npc);
     if(wasGambling) m.occupants = Math.max(0, (m.occupants||0) - 1);
@@ -11846,8 +12296,8 @@ function updateNPCs(dt){
         // a guest who has a floor waiter on the way keeps playing until the drink arrives (the waiter gives up after 60 s)
         npc.gambleTimeLeft = floorClaimed(npc) ? Math.max(1, npc.gambleTimeLeft - dt) : npc.gambleTimeLeft - dt;
       }
-      let brokeOut = npc.wallet <= 5 && !npc.hdSeated;
-      const walkedAwayHappy = npc.wallet > npc.startingWallet*2.5 && Math.random() < 0.02;
+      let brokeOut = npc.wallet <= 5 && !npc.hdSeated && !npc.tour;
+      const walkedAwayHappy = !npc.tour && npc.wallet > npc.startingWallet*2.5 && Math.random() < 0.02;
       const midHand = m && isSeatedTable(m) && (m.type === 'holdem' ? holdemGuestMidHand(npc) : tableHands(m).some(g => g.actor === npc)); // finish the hand they're in first
       if(!midHand && (npc.gambleTimeLeft <= 0 || !m || !machines.includes(m) || m.closed || m.broken || brokeOut || walkedAwayHappy || npc.hdLeave)){
         releaseNpcFromMachine(npc, true);
@@ -13795,31 +14245,36 @@ function updateEventsPanel(){
   const money = v => (v < 0 ? '-' : '') + '$' + Math.abs(Math.round(v)).toLocaleString();
   const sh = t => `<div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:12px 0 4px;">${t}</div>`;
   let html = `<h3 style="margin:0 0 4px 0;color:#e6c34a;font-weight:normal;font-size:13px;">Events</h3>
-    <p style="color:#9fb3a8;font-size:11px;margin:0 0 6px 0;">Book a night, and the casino puts on a show. The fee is paid when you book (cancel and half comes back). The show starts at 19:00 and runs until 01:00; crowds build from 18:00.</p>`;
+    <p style="color:#9fb3a8;font-size:11px;margin:0 0 6px 0;">Book a night, and the casino puts on an event. The fee is paid when you book (cancel and half comes back). Each event has its own times, shown on its card.</p>`;
   if(eventActive){
-    const ev = eventActive, def = EVENTS[ev.key], left = Math.max(0, Math.ceil((EV_LEN - ev.t) / EV_LEN * 6 * 60));
+    const ev = eventActive, def = EVENTS[ev.key], len = evLen(def), left = Math.max(0, Math.ceil((len - ev.t) / len * def.maxHours * 60));
     html += `<div style="padding:8px 10px;margin:6px 0;border-radius:6px;background:rgba(201,162,39,0.14);border:1px solid #c9a227;">
-      <b style="color:#e6c34a;">LIVE: ${def.name}</b> &middot; ${Math.floor(left / 60)}h ${left % 60}m of the show left<br>
-      Watching now: <b>${showWatcherCount()}</b> &middot; tickets sold: <b>${ev.tickets}</b> (${money(ev.ticketMoney)}) &middot; bar takings since the show began: <b>${money(ledger.drinks - ev.drinks0)}</b></div>`;
+      <b style="color:#e6c34a;">LIVE: ${def.name}</b> &middot; ${Math.floor(left / 60)}h ${left % 60}m left<br>
+      ${def.liveHtml(ev)}</div>`;
   }
   if(eventBooked){
     const b = eventBooked, def = EVENTS[b.key];
     html += `<div style="padding:8px 10px;margin:6px 0;border-radius:6px;background:rgba(60,140,90,0.14);border:1px solid #3fae6a;display:flex;justify-content:space-between;align-items:center;gap:10px;">
       <span><b>${def.name}</b> booked for <b>Day ${b.day}</b> (${weekday(b.day).name}), fee ${money(b.fee)} paid</span>
       <button id="evCancel" class="hotbarSlot" style="font-size:11px;">Cancel (refund ${money(Math.round(b.fee / 2))})</button></div>`;
+    const rg = def.regHtml ? def.regHtml() : '';
+    if(rg) html += `<div style="padding:6px 10px;margin:6px 0;border-radius:6px;background:rgba(201,162,39,0.10);border:1px solid #6b5a1e;font-size:12px;">${rg} &middot; sit at a Hold'em table to enter yourself</div>`;
   }
   html += sh('Available events');
   Object.keys(EVENTS).forEach(key => {
     const def = EVENTS[key], rows = def.requires(), ready = eventReadiness(rows), reqFail = rows.some(r => r.required && !r.ok);
     const until = eventAvailableDay(key), busy = !!(eventBooked || eventActive);
+    const locked = !!(def.unlockRevenue && lifetimeRevenue() < def.unlockRevenue);
     const rowHtml = rows.map(r => `<div style="font-size:11px;"><span style="color:${r.ok ? '#8fd6a8' : '#e08a8a'};font-weight:bold;">${r.ok ? '&#10003;' : '&#10007;'}</span> ${r.label}${r.required ? ' <span style="color:#9fb3a8;font-size:10px;">(required)</span>' : ''}</div>`).join('');
     const btns = [1, 2, 3].map(n => {
       const d = currentDay + n;
-      const why = reqFail ? 'Needs a Stage' : busy ? 'Another event is booked or running' : d < until ? 'Available Day ' + until : cash < def.cost ? 'Not enough cash' : '';
+      const why = locked ? 'Unlocks at $' + def.unlockRevenue.toLocaleString() + ' lifetime revenue' : reqFail ? def.venueText : busy ? 'Another event is booked or running' : d < until ? 'Available Day ' + until : cash < def.cost ? 'Not enough cash' : '';
       return `<button class="hotbarSlot evBook" data-k="${key}" data-d="${d}" style="font-size:11px;${why ? 'opacity:.4;' : ''}" ${why ? 'disabled' : ''} title="${why || weekday(d).name}">Book for Day ${d}</button>`;
     }).join('');
-    html += `<div style="padding:10px 12px;margin-top:4px;border-radius:6px;background:rgba(0,0,0,0.22);border:1px solid #2a4a3c;">
+    html += `<div style="padding:10px 12px;margin-top:4px;border-radius:6px;background:rgba(0,0,0,0.22);border:1px solid #2a4a3c;${locked ? 'opacity:.55;' : ''}">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><b style="font-size:14px;color:#e6c34a;">${def.name}</b><span>Fee <b>${money(def.cost)}</b> &middot; cooldown ${def.cooldownDays} days</span></div>
+      <div style="color:#9fb3a8;font-size:11px;margin-top:2px;">${def.timesText}</div>
+      ${locked ? `<div style="color:#e6c34a;font-size:12px;margin:4px 0;">Unlocks at $${def.unlockRevenue.toLocaleString()} lifetime revenue</div>` : ''}
       <div style="color:#cfd9d0;font-size:11px;margin:4px 0 6px;">${def.desc}</div>
       ${rowHtml}
       <div style="margin:6px 0 2px;font-size:12px;">Readiness <b style="color:${ready >= 0.75 ? '#8fd6a8' : ready >= 0.5 ? '#e6c34a' : '#e08a8a'};">${Math.round(ready * 100)}%</b> <span style="color:#9fb3a8;font-size:10px;">(better readiness means a bigger audience and better reviews)</span></div>
@@ -13829,8 +14284,8 @@ function updateEventsPanel(){
   if(!eventHistory.length) html += '<div style="color:#9fb3a8;font-size:11px;">Nothing yet.</div>';
   else {
     const g = 'display:grid;grid-template-columns:44px 1.2fr 1.2fr 56px 80px 70px 70px 80px;gap:6px;align-items:center;';
-    html += `<div style="${g}color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;"><span>Day</span><span>Event</span><span>Review</span><span>Tickets</span><span>Ticket $</span><span>Drinks</span><span>Fee</span><span>Net</span></div>`;
-    html += eventHistory.map(h => `<div style="${g}padding:3px 0;border-top:1px solid #2a4a3c;font-size:11px;"><span>${h.day}</span><span>${h.name}</span><span style="color:${h.review === 'rave' ? '#e6c34a' : h.review === 'bad' ? '#e08a8a' : '#cfd9d0'};">${h.review}</span><span>${h.tickets}</span><span>${money(h.ticketMoney)}</span><span>${money(h.drinks)}</span><span>${money(-h.fee)}</span><span style="color:${h.net >= 0 ? '#8fd6a8' : '#e08a8a'};font-weight:bold;">${money(h.net)}</span></div>`).join('');
+    html += `<div style="${g}color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;"><span>Day</span><span>Event</span><span>Review</span><span>Seats / Tickets</span><span>Takings</span><span>Drinks</span><span>Fee</span><span>Net</span></div>`;
+    html += eventHistory.map(h => `<div style="${g}padding:3px 0;border-top:1px solid #2a4a3c;font-size:11px;"><span>${h.day}</span><span>${h.name}</span><span style="color:${String(h.review).startsWith('rave') ? '#e6c34a' : String(h.review).startsWith('bad') ? '#e08a8a' : '#cfd9d0'};">${h.review}</span><span>${h.tickets}</span><span>${money(h.ticketMoney)}</span><span>${money(h.drinks)}</span><span>${money(-h.fee)}</span><span style="color:${h.net >= 0 ? '#8fd6a8' : '#e08a8a'};font-weight:bold;">${money(h.net)}</span></div>`).join('');
   }
   html += '<button id="eventsClose" class="hotbarSlot" style="width:100%;margin-top:12px;">Close</button>';
   eventsPanelEl.innerHTML = html;
