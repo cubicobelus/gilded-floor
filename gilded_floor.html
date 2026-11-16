@@ -31,6 +31,13 @@
     box-shadow:0 2px 8px rgba(0,0,0,0.45);
   }
   #checklist, #unlockHint{ border-color:rgba(201,162,39,0.35) !important; }
+  /* Scrollbars in the house style: a thin dark track with a gold thumb, instead of the browser's grey bar. */
+  *{ scrollbar-width:thin; scrollbar-color:#8a7226 rgba(0,0,0,0.28); }
+  ::-webkit-scrollbar{ width:8px; height:8px; }
+  ::-webkit-scrollbar-track{ background:rgba(0,0,0,0.28); border-radius:4px; }
+  ::-webkit-scrollbar-thumb{ background:#8a7226; border-radius:4px; }
+  ::-webkit-scrollbar-thumb:hover{ background:#c9a227; }
+  ::-webkit-scrollbar-corner{ background:transparent; }
   .sideTab:hover, .hotbarSlot:hover, #settingsBtn:hover, #helpBtn:hover, #minimap:hover{ border-color:#c9a227 !important; }
   #modeBtn{ background:linear-gradient(180deg,#d6b13a,#b8921f) !important; border-radius:6px !important; box-shadow:0 2px 8px rgba(0,0,0,0.45); }
   #modeBtn:hover{ background:linear-gradient(180deg,#e6c34a,#c9a227) !important; }
