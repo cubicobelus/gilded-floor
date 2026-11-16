@@ -7161,7 +7161,7 @@ function runPrPush(auto=false){
 // absent 3+ days), with no way to intervene until they're gone for good. This is a direct lever for
 // that, and the only campaign whose cost and effect are read from real roster data rather than a flat
 // number - it does nothing (and is disabled) if nobody actually needs winning back.
-const WINBACK_MAILER = { name:'Win-Back Mailer', baseCost:80, costPerRegular:35, affinityBoost:18, cooldown:90, desc:"A personal note to regulars who've been drifting - restores some of their loyalty and makes them likelier to swing by again soon (pickReturningRegular already weights by affinity, so this is a real, not cosmetic, boost)." };
+const WINBACK_MAILER = { name:'Win-Back Mailer', baseCost:80, costPerRegular:35, affinityBoost:18, cooldown:90, desc:"A personal note to regulars who've been drifting - restores some of their loyalty and makes them likelier to swing by again soon." };
 let winbackCooldown = 0;
 function atRiskRegulars(){ return regularPool.filter(e => !e.onFloor && e.affinity < 80); }
 function winbackCost(){ return WINBACK_MAILER.baseCost + WINBACK_MAILER.costPerRegular * atRiskRegulars().length; }
