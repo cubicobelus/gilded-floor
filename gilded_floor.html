@@ -5523,14 +5523,21 @@ const tipsSeen = new Set(), tipList = [];
 let unlockPopupsEnabled = true;
 const unlockPopupEl = document.getElementById('unlockPopup'), unlockPopupTextEl = document.getElementById('unlockPopupText');
 let unlockPopupQueue = [], unlockPopupTimer = null;
-// The toast sits top-centre, but that is exactly where open panels keep their headers and tabs. While any
-// managed panel is open it moves to the bottom centre (above the hint line) instead; still click to dismiss.
+// The toast sits top-centre, but that is exactly where open panels keep their headers and tabs, and the
+// bottom centre is where they keep their last rows and Close buttons. While any managed panel is open the
+// toast becomes a narrow card in the bottom-right corner (above the mode button); still click to dismiss.
 function positionUnlockPopup(){
   if(unlockPopupEl.style.display === 'none') return;
   let panelOpen = false;
   try{ panelOpen = MANAGED_POPUP_IDS.some(id => { const el = document.getElementById(id); return el && el.style.display === 'block'; }); }catch(e){} // list is declared further down
-  unlockPopupEl.style.top = panelOpen ? 'auto' : '68px';
-  unlockPopupEl.style.bottom = panelOpen ? '44px' : 'auto';
+  const st = unlockPopupEl.style;
+  st.top = panelOpen ? 'auto' : '68px';
+  st.bottom = panelOpen ? '62px' : 'auto';
+  st.left = panelOpen ? 'auto' : '50%';
+  st.right = panelOpen ? '14px' : 'auto';
+  st.transform = panelOpen ? 'none' : 'translateX(-50%)';
+  st.maxWidth = panelOpen ? '216px' : 'min(440px,88vw)';
+  st.fontSize = panelOpen ? '12px' : '13px';
 }
 setInterval(positionUnlockPopup, 300);
 function advanceUnlockPopup(){
