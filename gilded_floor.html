@@ -6853,7 +6853,7 @@ const EVENTS = {
     doorsText:"Doors open for tonight's show",
     lost(ev){ return machines.includes(ev.stage) ? null : 'stage sold'; },
     cleanup(ev){ releaseAllWatchers(); removeShowVisuals(); },
-    liveHtml(ev){ return `Watching now: <b>${showWatcherCount()}</b> &middot; tickets sold: <b>${ev.tickets}</b> (${evMoney(ev.ticketMoney)}) &middot; bar takings since the show began: <b>${evMoney(ledger.drinks - ev.drinks0)}</b>`; },
+    liveStats(ev){ return [{ l:'Watching now', v:showWatcherCount() }, { l:'Tickets sold', v:ev.tickets, s:evMoney(ev.ticketMoney) }, { l:'Bar since showtime', v:evMoney(ledger.drinks - ev.drinks0) }]; },
     desc:'A headline act takes the Stage from 19:00 to 01:00. Crowds build from 18:00 (+30% guests), and 10 to 24 pay $35 a head to watch (more when the night is well run), and they keep drinking. A well-run night earns a rave review; a shambles earns a bad one.',
     requires: headlineRows,
     start(ev){
@@ -6906,10 +6906,11 @@ const EVENTS = {
     cleanup(ev, why){ if(tourney){ tourneyAbortRefund(); ev.tickets = 0; ev.ticketMoney = 0; } },   // (after a reload there is nothing to refund: the guests are gone and the entry fees stay)
     start(ev){ return tourneyStart(ev); },
     tick(ev, dt){ return tourneyTick(ev, dt); },
-    liveHtml(ev){
-      const T = tourney; if(!T) return 'Wrapping up...';
+    liveStats(ev){
+      const T = tourney; if(!T) return [{ l:'Status', v:'Wrapping up' }];
       const tables = T.tables.filter(m => m.hd && m.hd.tour && !m.hd.tour.void && tourneyCount(m) > 0).length, lead = tourneyChipLeader();
-      return `Players left: <b>${tourneyAlive().length}</b> of ${T.startEntrants || T.entrants.length} &middot; tables in play: <b>${tables}</b> &middot; blinds: <b>${tourneyBlindsNow()}</b><br>Prize pool: <b>${evMoney(T.pool)}</b> &middot; entry fees so far: <b>${evMoney(T.fees)}</b> &middot; chip leader: <b>${lead ? lead.name + ' (' + lead.chips.toLocaleString() + ' chips)' : '-'}</b>`;
+      return [{ l:'Players left', v:tourneyAlive().length, s:'of ' + (T.startEntrants || T.entrants.length) }, { l:'Tables in play', v:tables }, { l:'Blinds', v:tourneyBlindsNow() },
+        { l:'Prize pool', v:evMoney(T.pool), c:'#e6c34a' }, { l:'Entry fees to you', v:evMoney(T.fees), c:'#8fd6a8' }, { l:'Chip leader', v:lead ? lead.name : '-', s:lead ? lead.chips.toLocaleString() + ' chips' : '' }];
     },
     end(ev){
       const T = tourney, readiness = ev.readiness, failed = ev.failed;
@@ -6962,10 +6963,11 @@ const EVENTS = {
       hirollAdvance(dt, ev.readiness);
       ev.tickets = hirollState.arrived; ev.ticketMoney = hirollTakings(ev);
     },
-    liveHtml(ev){
-      const H = hirollState; if(!H) return '';
+    liveStats(ev){
+      const H = hirollState; if(!H) return [];
       const tk = hirollTakings(ev);
-      return `Guests of honour on the floor: <b>${hirollOnFloor(ev)}</b> &middot; arrived <b>${H.arrived}</b> of ${H.invited} invited &middot; takings so far: <b style="color:${tk >= 0 ? '#8fd6a8' : '#e08a8a'};">${evMoney(tk)}</b><br>Biggest win by a guest: <b style="color:#e08a8a;">${evMoney(H.maxWin)}</b> &middot; biggest loss by a guest: <b style="color:#8fd6a8;">${evMoney(H.maxLoss)}</b>`;
+      return [{ l:'On the floor', v:hirollOnFloor(ev) }, { l:'Arrived', v:H.arrived, s:'of ' + H.invited + ' invited' }, { l:'Takings so far', v:evMoney(tk), c:tk >= 0 ? '#8fd6a8' : '#e08a8a' },
+        { l:'Biggest guest win', v:evMoney(H.maxWin), c:'#e08a8a' }, { l:'Biggest guest loss', v:evMoney(H.maxLoss), c:'#8fd6a8' }];
     },
     end(ev){
       const readiness = ev.readiness, failed = ev.failed;
@@ -14349,45 +14351,70 @@ setInterval(()=>{ if(regularsPanelEl.style.display === 'block') updateRegularsPa
 // ---------------- Events tab ----------------
 const eventsPanelEl = document.getElementById('eventsPanel');
 eventsPanelEl.addEventListener('click', (e)=> e.stopPropagation());
+const evOpen = new Set();   // which event cards have their details open (not saved)
+const EV_ICON = {
+  show: '<path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM6 11a6 6 0 0 0 12 0M12 17v4M8.5 21h7"/>',
+  tourney: '<path d="M12 3C9 7.5 5 9.8 5 13.2a3.4 3.4 0 0 0 6.2 1.9L10 20h4l-1.2-4.9A3.4 3.4 0 0 0 19 13.2C19 9.8 15 7.5 12 3z"/>',
+  hiroll: '<path d="M3.5 8l4.2 4L12 5l4.3 7 4.2-4-1.7 10H5.2zM5.5 21h13"/>',
+};
+function evIcon(key, size){
+  const z = size || 40;
+  return `<span style="flex:0 0 ${z}px;width:${z}px;height:${z}px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(201,162,39,0.12);border:1px solid #c9a227;"><svg viewBox="0 0 24 24" width="${Math.round(z * 0.56)}" height="${Math.round(z * 0.56)}" fill="none" stroke="#e6c34a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${EV_ICON[key] || ''}</svg></span>`;
+}
 function updateEventsPanel(){
   const scroll = eventsPanelEl.scrollTop;
   const money = v => (v < 0 ? '-' : '') + '$' + Math.abs(Math.round(v)).toLocaleString();
   const sh = t => `<div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:12px 0 4px;">${t}</div>`;
+  const hh = h => String(h % 24).padStart(2, '0') + ':00';
+  const chip = (l, v) => `<span style="display:inline-block;padding:2px 9px;border-radius:10px;background:rgba(0,0,0,0.28);border:1px solid #2a4a3c;font-size:11px;white-space:nowrap;"><span style="color:#9fb3a8;">${l}</span> <b>${v}</b></span>`;
+  const bar = (f, col, h) => `<div style="height:${h || 6}px;background:#0d1a14;border-radius:3px;overflow:hidden;"><div style="height:100%;width:${Math.round(Math.max(0, Math.min(1, f)) * 100)}%;background:${col};border-radius:3px;"></div></div>`;
+  const tile = t => `<div style="background:rgba(0,0,0,0.25);border-radius:6px;padding:7px 9px;"><div style="color:#9fb3a8;font-size:10px;">${t.l}</div><b style="font-size:16px;color:${t.c || 'inherit'};">${t.v}</b>${t.s ? ` <span style="color:#9fb3a8;font-size:10px;">${t.s}</span>` : ''}</div>`;
   let html = `<h3 style="margin:0 0 4px 0;color:#e6c34a;font-weight:normal;font-size:13px;">Events</h3>
-    <p style="color:#9fb3a8;font-size:11px;margin:0 0 6px 0;">Book a night, and the casino puts on an event. The fee is paid when you book (cancel and half comes back). Each event has its own times, shown on its card.</p>`;
+    <p style="color:#9fb3a8;font-size:11px;margin:0 0 6px 0;">Book a night. The fee is paid when you book; cancel and half comes back.</p>`;
   if(eventActive){
     const ev = eventActive, def = EVENTS[ev.key], len = evLen(def), left = Math.max(0, Math.ceil((len - ev.t) / len * def.maxHours * 60));
-    html += `<div style="padding:8px 10px;margin:6px 0;border-radius:6px;background:rgba(201,162,39,0.14);border:1px solid #c9a227;">
-      <b style="color:#e6c34a;">LIVE: ${def.name}</b> &middot; ${Math.floor(left / 60)}h ${left % 60}m left<br>
-      ${def.liveHtml(ev)}</div>`;
+    html += `<div style="padding:10px 12px;margin:6px 0;border-radius:6px;background:rgba(201,162,39,0.14);border:1px solid #c9a227;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">${evIcon(ev.key)}
+        <div style="flex:1;min-width:0;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline;"><b style="color:#e6c34a;font-size:14px;">LIVE: ${def.name}</b><span style="font-size:11px;">${Math.floor(left / 60)}h ${left % 60}m left</span></div>
+        <div style="margin-top:5px;">${bar(ev.t / len, '#e6c34a')}</div></div></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;">${def.liveStats(ev).map(tile).join('')}</div></div>`;
   }
   if(eventBooked){
     const b = eventBooked, def = EVENTS[b.key];
-    html += `<div style="padding:8px 10px;margin:6px 0;border-radius:6px;background:rgba(60,140,90,0.14);border:1px solid #3fae6a;display:flex;justify-content:space-between;align-items:center;gap:10px;">
-      <span><b>${def.name}</b> booked for <b>Day ${b.day}</b> (${weekday(b.day).name}), fee ${money(b.fee)} paid</span>
-      <button id="evCancel" class="hotbarSlot" style="font-size:11px;">Cancel (refund ${money(Math.round(b.fee / 2))})</button></div>`;
     const rg = def.regHtml ? def.regHtml() : '';
-    if(rg) html += `<div style="padding:6px 10px;margin:6px 0;border-radius:6px;background:rgba(201,162,39,0.10);border:1px solid #6b5a1e;font-size:12px;">${rg} &middot; sit at a Hold'em table to enter yourself</div>`;
+    html += `<div style="padding:8px 12px;margin:6px 0;border-radius:6px;background:rgba(60,140,90,0.14);border:1px solid #3fae6a;">
+      <div style="display:flex;align-items:center;gap:10px;">${evIcon(b.key, 32)}
+        <span style="flex:1;min-width:0;"><b>${def.name}</b><br><span style="font-size:11px;color:#cfd9d0;">Booked for <b>Day ${b.day}</b> (${weekday(b.day).name}) &middot; fee ${money(b.fee)} paid</span></span>
+        <button id="evCancel" class="hotbarSlot" style="font-size:11px;">Cancel (refund ${money(Math.round(b.fee / 2))})</button></div>
+      ${rg ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #2a4a3c;font-size:12px;">${rg} &middot; sit at a Hold'em table to enter yourself</div>` : ''}</div>`;
   }
   html += sh('Available events');
   Object.keys(EVENTS).forEach(key => {
     const def = EVENTS[key], rows = def.requires(), ready = eventReadiness(rows), reqFail = rows.some(r => r.required && !r.ok);
     const until = eventAvailableDay(key), busy = !!(eventBooked || eventActive);
     const locked = !!(def.unlockRevenue && lifetimeRevenue() < def.unlockRevenue);
-    const rowHtml = rows.map(r => `<div style="font-size:11px;"><span style="color:${r.ok ? '#8fd6a8' : '#e08a8a'};font-weight:bold;">${r.ok ? '&#10003;' : '&#10007;'}</span> ${r.label}${r.required ? ' <span style="color:#9fb3a8;font-size:10px;">(required)</span>' : ''}</div>`).join('');
+    const open = evOpen.has(key), okN = rows.filter(r => r.ok).length;
+    const rcol = ready >= 0.75 ? '#8fd6a8' : ready >= 0.5 ? '#e6c34a' : '#e08a8a';
+    const line = r => `<div style="font-size:11px;margin-top:3px;"><span style="color:${r.ok ? '#8fd6a8' : '#e08a8a'};font-weight:bold;">${r.ok ? '&#10003;' : '&#10007;'}</span> ${r.label}${r.required ? ' <span style="color:#9fb3a8;font-size:10px;">(required)</span>' : ''}</div>`;
     const btns = [1, 2, 3].map(n => {
       const d = currentDay + n;
       const why = locked ? 'Unlocks at $' + def.unlockRevenue.toLocaleString() + ' lifetime revenue' : reqFail ? def.venueText : busy ? 'Another event is booked or running' : d < until ? 'Available Day ' + until : cash < def.cost ? 'Not enough cash' : '';
-      return `<button class="hotbarSlot evBook" data-k="${key}" data-d="${d}" style="font-size:11px;${why ? 'opacity:.4;' : ''}" ${why ? 'disabled' : ''} title="${why || weekday(d).name}">Book for Day ${d}</button>`;
+      return `<button class="hotbarSlot evBook" data-k="${key}" data-d="${d}" style="font-size:11px;${why ? 'opacity:.4;' : ''}" ${why ? 'disabled' : ''} title="${why || weekday(d).name}">Day ${d}<br><span style="font-size:10px;color:#cfd9d0;">${weekday(d).name}</span></button>`;
     }).join('');
-    html += `<div style="padding:10px 12px;margin-top:4px;border-radius:6px;background:rgba(0,0,0,0.22);border:1px solid #2a4a3c;${locked ? 'opacity:.55;' : ''}">
-      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><b style="font-size:14px;color:#e6c34a;">${def.name}</b><span>Fee <b>${money(def.cost)}</b> &middot; cooldown ${def.cooldownDays} days</span></div>
-      <div style="color:#9fb3a8;font-size:11px;margin-top:2px;">${def.timesText}</div>
-      ${locked ? `<div style="color:#e6c34a;font-size:12px;margin:4px 0;">Unlocks at $${def.unlockRevenue.toLocaleString()} lifetime revenue</div>` : ''}
-      <div style="color:#cfd9d0;font-size:11px;margin:4px 0 6px;">${def.desc}</div>
-      ${rowHtml}
-      <div style="margin:6px 0 2px;font-size:12px;">Readiness <b style="color:${ready >= 0.75 ? '#8fd6a8' : ready >= 0.5 ? '#e6c34a' : '#e08a8a'};">${Math.round(ready * 100)}%</b> <span style="color:#9fb3a8;font-size:10px;">(better readiness means a bigger audience and better reviews)</span></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:center;">${btns}${(until > currentDay + 1 && !busy) ? `<span style="color:#9fb3a8;font-size:10px;">available Day ${until}</span>` : ''}</div></div>`;
+    html += `<div style="padding:10px 12px;margin-top:6px;border-radius:6px;background:rgba(0,0,0,0.22);border:1px solid #2a4a3c;">
+      <div style="display:flex;gap:10px;align-items:center;${locked ? 'opacity:.55;' : ''}">${evIcon(key)}
+        <div style="flex:1;min-width:0;"><b style="font-size:14px;color:#e6c34a;">${def.name}</b>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">${chip('Fee', money(def.cost))}${chip('Hours', hh(def.startHour) + ' to ' + hh(def.startHour + def.maxHours))}${chip('Every', def.cooldownDays + ' days')}</div></div>
+        <button class="hotbarSlot evMore" data-k="${key}" style="font-size:11px;">${open ? 'Less' : 'Details'}</button></div>
+      ${locked ? `<div style="color:#e6c34a;font-size:12px;margin-top:8px;">${icn('lock')}Unlocks at $${def.unlockRevenue.toLocaleString()} lifetime revenue</div>` : `
+      <div style="display:grid;grid-template-columns:70px 1fr 96px;gap:8px;align-items:center;margin-top:9px;font-size:11px;"><span style="color:#9fb3a8;">Readiness</span>${bar(ready, rcol, 8)}<span style="text-align:right;"><b style="color:${rcol};font-size:13px;">${Math.round(ready * 100)}%</b> <span style="color:#9fb3a8;font-size:10px;">${okN} of ${rows.length}</span></span></div>
+      ${open ? '' : rows.filter(r => r.required && !r.ok).map(line).join('')}`}
+      ${open ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #2a4a3c;">
+        <div style="color:#9fb3a8;font-size:11px;">${def.timesText}</div>
+        <div style="color:#cfd9d0;font-size:11px;margin:4px 0 6px;">${def.desc}</div>
+        ${rows.map(line).join('')}
+        <div style="color:#9fb3a8;font-size:10px;margin-top:4px;">Better readiness means a bigger turnout and better reviews.</div></div>` : ''}
+      ${locked ? '' : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px;align-items:center;"><span style="color:#9fb3a8;font-size:11px;">Book for</span>${btns}${(until > currentDay + 1 && !busy) ? `<span style="color:#9fb3a8;font-size:10px;">available Day ${until}</span>` : ''}</div>`}</div>`;
   });
   html += sh('Past events');
   if(!eventHistory.length) html += '<div style="color:#9fb3a8;font-size:11px;">Nothing yet.</div>';
@@ -14398,6 +14425,7 @@ function updateEventsPanel(){
   }
   html += '<button id="eventsClose" class="hotbarSlot" style="width:100%;margin-top:12px;">Close</button>';
   eventsPanelEl.innerHTML = html;
+  eventsPanelEl.querySelectorAll('.evMore').forEach(b => b.addEventListener('click', (ev)=>{ ev.stopPropagation(); const k = b.dataset.k; if(evOpen.has(k)) evOpen.delete(k); else evOpen.add(k); updateEventsPanel(); }));
   eventsPanelEl.querySelectorAll('.evBook').forEach(b => b.addEventListener('click', (ev)=>{ ev.stopPropagation(); if(bookEvent(b.dataset.k, parseInt(b.dataset.d))) updateEventsPanel(); }));
   const c = document.getElementById('evCancel'); if(c) c.addEventListener('click', (ev)=>{ ev.stopPropagation(); cancelEventBooking(); updateEventsPanel(); });
   document.getElementById('eventsClose').addEventListener('click', (ev)=>{ ev.stopPropagation(); eventsPanelEl.style.display = 'none'; });
