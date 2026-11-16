@@ -31,6 +31,10 @@
     box-shadow:0 2px 8px rgba(0,0,0,0.45);
   }
   #checklist, #unlockHint{ border-color:rgba(201,162,39,0.35) !important; }
+  /* Every side-tab panel has the same width and the same top edge, so flipping through 1 to 9 only changes the content. */
+  #categoryPopup, #clubPanel, #staffPanel, #statsPanel, #buildingPanel, #regularsPanel, #riggingPanel, #eventsPanel, #hotelPanel{
+    width:min(860px,94vw) !important; top:5vh !important; transform:translateX(-50%) !important; max-height:90vh !important; box-sizing:border-box !important;
+  }
   /* Scrollbars in the house style: a thin dark track with a gold thumb, instead of the browser's grey bar. */
   *{ scrollbar-width:thin; scrollbar-color:#8a7226 rgba(0,0,0,0.28); }
   ::-webkit-scrollbar{ width:8px; height:8px; }
@@ -7783,7 +7787,7 @@ function renderStaffPanel(){
   const wageBill = totalWageBill();
   let html = `<p style="color:#9fb3a8;font-size:11px;margin:0 0 8px;">Set the rate for each job and keep the posts covered. <span title="Everyone starts Green, turns Seasoned after a week on the job and Expert after two (same wage at every level). Pay under the going rate and the mood slides, pay over it and they stay sweet. Too few people for the posts wears them out." style="color:#e6c34a;cursor:help;">Hover for how it works.</span></p>${hr ? '' : `<div style="color:#9fb3a8;font-size:10px;margin:0 0 8px;">${officeHint('hroffice')}</div>`}
     <div style="margin-bottom:6px;">Wage bill: <b>$${Math.round(wageBill).toLocaleString()}</b> a day, paid when the day ends${staffNPCs.length ? ` &middot; ${staffNPCs.length} on the books` : ''}</div>
-    <div style="display:grid;grid-template-columns:minmax(0,1fr);gap:8px;">`;
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:8px;align-items:start;">`;
   Object.entries(STAFF_TYPES).forEach(([key, st])=>{
     if(key === 'housekeeper' && !upperBuilt) return;
     if(key === 'clerk' && !upperBuilt && !cages().length) return;
