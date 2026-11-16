@@ -13453,7 +13453,7 @@ function updateStatsPanel(){
   document.getElementById('overallStars').textContent = starString(overall);
   document.getElementById('overallStarsNum').textContent = overall.toFixed(1) + ' / 5';
   document.getElementById('starCategoryList').innerHTML = categories.map(c=>
-    `<div class="starRow"><span>${c.name}</span><span class="starVal">${starString(c.stars)} ${c.stars.toFixed(1)}</span></div>`
+    `<div class="starRow" style="gap:10px;margin-bottom:13px;"><span style="flex:0 0 118px;">${c.name}</span><span style="flex:1;">${uiBar(c.stars / 5, c.stars >= 4 ? '#8fd6a8' : c.stars >= 2.5 ? '#e6c34a' : '#e08a8a', 8)}</span><span class="starVal" style="flex:0 0 30px;text-align:right;font-weight:bold;">${c.stars.toFixed(1)}</span></div>`
   ).join('');
 
   updateBusinessPanel();
