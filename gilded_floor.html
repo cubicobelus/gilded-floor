@@ -8852,7 +8852,7 @@ const TAB_UNLOCKS = [
   { id:'tabRigging',  name:'Rigging',  key:'7', icon:ICON_HTML('rigging'), need:'earn $5,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 5000 },
   // Events (money) and Hotel (an upper floor) are both independent of the chain and of each other: whichever
   // is reached first unlocks first, and neither holds the others up.
-  { id:'tabEvents',   name:'Events',   key:'8', icon:ICON_HTML('star'), need:'earn $10,000 in lifetime revenue',                  ok: ()=> lifetimeRevenue() >= 10000, independent:true },
+  { id:'tabEvents',   name:'Events',   key:'8', icon:ICON_HTML('ticket'), need:'earn $10,000 in lifetime revenue',                  ok: ()=> lifetimeRevenue() >= 10000, independent:true },
   { id:'tabHotel',    name:'Hotel',    key:'9', icon:ICON_HTML('hotel'), need:'build an upper floor (Building tab)',               ok: ()=> upperBuilt, independent:true },
 ];let unlockedTabs = new Set(['tabBuild']);
 function tabUnlocked(id){ return (typeof devUnlockAll !== 'undefined' && devUnlockAll) || sandbox || unlockedTabs.has(id); }
@@ -13116,6 +13116,16 @@ staffPanel.addEventListener('click', (e)=> e.stopPropagation());
 document.getElementById('staffPanelClose').addEventListener('click', (e)=>{ e.stopPropagation(); staffPanel.style.display = 'none'; });
 
 
+// Small shared pieces for the panels: a bar, a chip and a stacked bar with its legend.
+const clubOpen = new Set();   // which Club & Guests sections have their details open (not saved)
+function uiBar(f, col, h){ return `<div style="height:${h || 6}px;background:#0d1a14;border-radius:3px;overflow:hidden;"><div style="height:100%;width:${Math.round(Math.max(0, Math.min(1, f)) * 100)}%;background:${col};border-radius:3px;"></div></div>`; }
+function uiChip(l, v){ return `<span style="display:inline-block;padding:2px 9px;border-radius:10px;background:rgba(0,0,0,0.28);border:1px solid #2a4a3c;font-size:11px;white-space:nowrap;"><span style="color:#9fb3a8;">${l}</span> <b>${v}</b></span>`; }
+function uiStack(parts){   // parts: [{ name, n, col, tip, label }]
+  const total = parts.reduce((a, p) => a + p.n, 0) || 1;
+  return `<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;background:#0d1a14;">${parts.filter(p => p.n > 0).map(p => `<div title="${p.name}" style="width:${p.n / total * 100}%;background:${p.col};"></div>`).join('')}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:3px 14px;margin-top:6px;font-size:11px;">${parts.map(p => `<span title="${p.tip || ''}" style="${p.n > 0 ? '' : 'opacity:.5;'}"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${p.col};margin-right:5px;"></span>${p.name} <span style="color:#9fb3a8;">${p.label}</span></span>`).join('')}</div>`;
+}
+const UI_PALETTE = ['#e6c34a', '#8fd6a8', '#9fd3ff', '#e08a8a', '#c7a6f0', '#f0a96b', '#cfd9d0', '#7fd0c8'];
 function updateBusinessPanel(){
   document.getElementById('repVal').textContent = Math.round(reputation);
   document.getElementById('guestCountVal').textContent = npcs.length;
@@ -13128,8 +13138,8 @@ function updateBusinessPanel(){
     npcs.forEach(n => { counts[n.archetype] = (counts[n.archetype] || 0) + 1; });
     const total = npcs.length;
     const box = document.getElementById('crowdMixBox');
-    box.innerHTML = total ? Object.keys(ARCHETYPES).filter(k => counts[k]).sort((a,b)=>counts[b]-counts[a])
-      .map(k => `<span title="${ARCHETYPES[k].desc}">${ARCHETYPES[k].name} <span style="color:#9fb3a8;">${Math.round(counts[k]/total*100)}%</span></span>`).join(' &middot; ')
+    const all = Object.keys(ARCHETYPES);
+    box.innerHTML = total ? uiStack(all.filter(k => counts[k]).sort((a,b)=>counts[b]-counts[a]).map(k => ({ name:ARCHETYPES[k].name, n:counts[k], col:UI_PALETTE[all.indexOf(k) % UI_PALETTE.length], tip:ARCHETYPES[k].desc, label:Math.round(counts[k]/total*100) + '%' })))
       : '<span style="color:#9fb3a8;">Nobody on the floor right now.</span>';
   }
   updateMarketingPanel();
@@ -13164,12 +13174,17 @@ function updateBusinessPanel(){
     document.getElementById('clubStatusP').innerHTML = "Not launched - buy the Player&#39;s Club Desk (Build tab, Amenities) to launch it at Tier 1.";
   } else {
     const info = clubInfo(), total = counts.reduce((a,b)=>a+b,0);
-    const perk = (have, text)=> `<span style="color:${have?'#8fd6a8':'#6b8078'};">${text}${have?'':' (locked)'}</span>`;
+    const open = clubOpen.has('club');
+    const perk = (have, text)=> `<div style="font-size:11px;margin-top:3px;color:${have?'#f0e6d2':'#6b8078'};"><span style="color:${have?'#8fd6a8':'#6b8078'};font-weight:bold;">${have?'&#10003;':icn('lock')}</span> ${text}</div>`;
+    const pips = CLUB_LEVELS.slice(1).map((l, i)=> `<span title="${l.name}" style="flex:1;height:6px;border-radius:3px;background:${i < clubLevel ? '#e6c34a' : '#0d1a14'};"></span>`).join('');
     document.getElementById('clubStatusP').innerHTML = `
-      <div>Desk tier: <b style="color:#e6c34a;">${info.name}</b></div>
-      <div style="font-size:10px;color:#9fb3a8;margin-top:2px;">${Math.round(info.join*100)}% of new arrivals sign up &middot; members earn points at ${Math.round(info.earn*100)}% of what they lose &middot; perks: ${perk(clubLevel>=2,'half-price drinks for Silver-rank members')}, ${perk(clubLevel>=3,'half-price meals for Gold-rank members')}, ${perk(clubLevel>=3,'free rooms for Platinum-rank members')}</div>
-      <div style="margin-top:6px;">Members on the floor: <b>${total}</b></div>
-      <div style="font-size:10px;color:#9fb3a8;">Member ranks (each guest&#39;s own standing, earned from their personal losses - separate from your desk tier above, and reachable at ANY desk tier given enough time): ${CLUB_TIERS.map((t,i)=> `<span style="color:${t.col};">${t.name} ${counts[i]}</span>`).join(' &middot; ')}</div>`;
+      <div style="display:flex;align-items:center;gap:10px;"><b style="color:#e6c34a;font-size:14px;">${info.name}</b><div style="display:flex;gap:4px;flex:0 1 130px;">${pips}</div><button class="hotbarSlot" id="clubMore" style="font-size:11px;margin-left:auto;">${open ? 'Less' : 'Details'}</button></div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">${uiChip('Sign up', Math.round(info.join*100) + '%')}${uiChip('Points', Math.round(info.earn*100) + '% of losses')}${uiChip('Members here', total)}</div>
+      <div style="margin-top:6px;">${perk(clubLevel>=2,'Half-price drinks for Silver members')}${perk(clubLevel>=3,'Half-price meals for Gold members')}${perk(clubLevel>=3,'Free rooms for Platinum members')}</div>
+      <div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:10px 0 4px;">Member ranks on the floor</div>
+      ${total ? uiStack(CLUB_TIERS.map((t, i)=> ({ name:t.name, n:counts[i], col:t.col, label:counts[i] }))) : '<span style="color:#9fb3a8;font-size:11px;">No members on the floor right now.</span>'}
+      ${open ? `<div style="font-size:11px;color:#9fb3a8;margin-top:8px;padding-top:8px;border-top:1px solid #2a4a3c;">The desk tier is what you buy and upgrade here: it sets how many new arrivals sign up, how fast members earn points and which perks are on. A member's rank is each guest's own standing, earned from their personal losses. It is separate from your desk tier, and reachable at any desk tier given enough time.</div>` : ''}`;
+    document.getElementById('clubMore').addEventListener('click', (e)=>{ e.stopPropagation(); if(clubOpen.has('club')) clubOpen.delete('club'); else clubOpen.add('club'); updateBusinessPanel(); });
   }
   const clubB = document.getElementById('clubBtn');
   // Tier 1 is free and comes bundled with the desk (see placeMachine) - there's nothing to click here
@@ -13278,42 +13293,45 @@ function updateMarketingPanel(){
       chart.style.display = 'none';
     }
   }
-  let html = '';
-  const row = (name, statusRight, desc, btnId, btnCls, disabled, btnLabel)=> `
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-top:1px solid #2a4a3c;">
-      <div style="flex:1;min-width:0;">
-        <b>${name}</b> <span style="color:#9fb3a8;font-size:10px;">${statusRight}</span>
-        <div style="color:#9fb3a8;font-size:10px;">${desc}</div>
-      </div>
-      <button class="hotbarSlot ${btnCls}" ${btnId ? `id="${btnId}"` : ''} ${disabled ? 'disabled' : ''} style="min-width:108px;font-size:11px;${disabled ? 'opacity:.45;' : ''}">${btnLabel}</button>
+  const open = clubOpen.has('mkt');
+  let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 6px;padding-top:6px;border-top:1px solid #2a4a3c;"><span style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;">Campaigns</span><button class="hotbarSlot" id="mktMore" style="font-size:11px;">${open ? 'Less' : 'Details'}</button></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px;">`;
+  // One card per campaign: name, a short status, the cost on the button. frac (0 to 1) draws a bar while
+  // it runs or cools down; live is the one-line effect shown while it runs; desc sits behind Details.
+  const card = (name, status, desc, btnId, btnCls, disabled, btnLabel, frac, live)=> `
+    <div style="display:flex;flex-direction:column;gap:5px;padding:8px 9px;border-radius:6px;background:rgba(0,0,0,0.25);border:1px solid ${live ? '#3fae6a' : '#2a4a3c'};">
+      <div><b>${name}</b><div style="color:#9fb3a8;font-size:10px;min-height:13px;">${status}</div></div>
+      ${frac != null ? uiBar(frac, live ? '#8fd6a8' : '#8a7226', 4) : ''}
+      ${live ? `<div style="color:#8fd6a8;font-size:10px;">${live}</div>` : ''}
+      ${open ? `<div style="color:#9fb3a8;font-size:10px;">${desc}</div>` : ''}
+      <button class="hotbarSlot ${btnCls}" ${btnId ? `id="${btnId}"` : ''} ${disabled ? 'disabled' : ''} title="${desc.replace(/"/g, '&quot;')}" style="width:100%;margin-top:auto;font-size:11px;${disabled ? 'opacity:.45;' : ''}">${btnLabel}</button>
     </div>`;
-  // Buttons now show the cost itself instead of the word "Launch" - the cost used to be duplicated
-  // in the status line above the button; dropped from there to avoid saying it twice.
+  // Buttons show the cost itself instead of the word "Launch".
   Object.entries(CAMPAIGNS).forEach(([key, c])=>{
     const running = campaignKey === key && campaignTimeLeft > 0;
     const disabled = cash < c.cost;
-    // Real, honest effectiveness readout instead of a "trust me": campaignStrength is the actual
-    // number computeTargetGuestCount() adds to its target while this is live - not a separate
-    // made-up stat, so it can never say something the crowd math itself doesn't back up.
-    const desc = running ? `${c.desc} <span style="color:#8fd6a8;">Pulling in about +${c.strength} to tonight's target crowd right now.</span>` : c.desc;
-    html += row(c.name, `${c.duration / DAY_LENGTH} day${c.duration === DAY_LENGTH ? '' : 's'}`, desc, null, 'campaignBtn', disabled, running ? `Running (${Math.ceil(campaignTimeLeft)}s)` : `$${c.cost}`);
+    // campaignStrength is the actual number computeTargetGuestCount() adds to its target while this is live.
+    html += card(c.name, `${c.duration / DAY_LENGTH} day${c.duration === DAY_LENGTH ? '' : 's'} &middot; +${c.strength} guests`, c.desc, null, 'campaignBtn', disabled, running ? `Running (${Math.ceil(campaignTimeLeft)}s)` : `$${c.cost}`,
+      running ? campaignTimeLeft / c.duration : null, running ? `About +${c.strength} to tonight's crowd` : '');
   });
   { const running = hrOutreachTimeLeft > 0, disabled = cash < HR_OUTREACH.cost;
-    const desc = running ? `${HR_OUTREACH.desc} <span style="color:#8fd6a8;">New arrivals are skewing richer while this runs.</span>` : HR_OUTREACH.desc;
-    html += row(HR_OUTREACH.name, `${HR_OUTREACH.duration}s`, desc, 'hrOutreachBtn', '', disabled, running ? `Running (${Math.ceil(hrOutreachTimeLeft)}s)` : `$${HR_OUTREACH.cost}`); }
+    html += card(HR_OUTREACH.name, `${HR_OUTREACH.duration}s &middot; richer guests`, HR_OUTREACH.desc, 'hrOutreachBtn', '', disabled, running ? `Running (${Math.ceil(hrOutreachTimeLeft)}s)` : `$${HR_OUTREACH.cost}`,
+      running ? hrOutreachTimeLeft / HR_OUTREACH.duration : null, running ? 'New arrivals are skewing richer' : ''); }
   { const cost = prPushCost(), onCooldown = prPushCooldown > 0, disabled = onCooldown || cash < cost;
-    html += row(PR_PUSH.name, onCooldown ? `ready in ${Math.ceil(prPushCooldown)}s` : '', PR_PUSH.desc, 'prPushBtn', '', disabled, onCooldown ? `Wait ${Math.ceil(prPushCooldown)}s` : `$${cost.toLocaleString()}`); }
-  { // Win-Back Mailer: the one campaign that reads real Regulars data instead of a flat number - see
-    // WINBACK_MAILER above. Zero at-risk regulars isn't a locked feature, just nothing to do right
-    // now, so it says so plainly instead of just sitting greyed out with no explanation.
+    html += card(PR_PUSH.name, onCooldown ? `ready in ${Math.ceil(prPushCooldown)}s` : `+${PR_PUSH.repair} reputation now`, PR_PUSH.desc, 'prPushBtn', '', disabled, onCooldown ? `Wait ${Math.ceil(prPushCooldown)}s` : `$${cost.toLocaleString()}`,
+      onCooldown ? 1 - prPushCooldown / PR_PUSH.cooldown : null, ''); }
+  { // Win-Back Mailer: the one campaign that reads real Regulars data instead of a flat number. Zero
+    // at-risk regulars isn't a locked feature, just nothing to do right now, so it says so plainly.
     const at = atRiskRegulars(), cost = winbackCost(), onCooldown = winbackCooldown > 0;
     const none = at.length === 0;
     const disabled = none || onCooldown || cash < cost;
-    const status = onCooldown ? `ready in ${Math.ceil(winbackCooldown)}s` : none ? 'nobody drifting right now' : `${at.length} at risk`;
+    const status = onCooldown ? `ready in ${Math.ceil(winbackCooldown)}s` : none ? 'nobody drifting right now' : `${at.length} regular${at.length === 1 ? '' : 's'} at risk`;
     const label = onCooldown ? `Wait ${Math.ceil(winbackCooldown)}s` : none ? 'Nobody to mail' : `$${cost.toLocaleString()}`;
-    html += row(WINBACK_MAILER.name, status, WINBACK_MAILER.desc, 'winbackBtn', '', disabled, label);
+    html += card(WINBACK_MAILER.name, status, WINBACK_MAILER.desc, 'winbackBtn', '', disabled, label, onCooldown ? 1 - winbackCooldown / WINBACK_MAILER.cooldown : null, '');
   }
+  html += '</div>';
   document.getElementById('marketingBody').innerHTML = html;
+  document.getElementById('mktMore').addEventListener('click', (e)=>{ e.stopPropagation(); if(clubOpen.has('mkt')) clubOpen.delete('mkt'); else clubOpen.add('mkt'); updateMarketingPanel(); });
   document.getElementById('marketingBody').querySelectorAll('.campaignBtn').forEach((b, i)=>{
     const key = Object.keys(CAMPAIGNS)[i];
     b.addEventListener('click', (e)=>{ e.stopPropagation(); if(runCampaign(key)) updateMarketingPanel(); });
