@@ -14094,64 +14094,109 @@ function openMachineConfig(m){
 const riggingPanelEl = document.getElementById('riggingPanel');
 riggingPanelEl.addEventListener('click', (e)=> e.stopPropagation());
 let riggingRows = [];
+const rigOpen = new Set();   // machine kinds whose individual rows are showing (not saved)
 function updateRiggingPanel(){
+  const scroll = riggingPanelEl.scrollTop;
   const gambling = machines.filter(m => m.category === 'gambling' && m.type !== 'holdem');
   const slots = gambling.filter(isSlotLike), tables = gambling.filter(m => !isSlotLike(m));
+  const ctrl = officeOn('controlroom');
   riggingRows = [];
+  const rigGroups = [];
   const ordinals = {}, totals = {};
   gambling.forEach(m => totals[m.name] = (totals[m.name]||0) + 1);
-  const row = (m)=>{
+  const valOf = m => isSlotLike(m) ? Math.round(m.payout*100) : Math.round((m.edge||0)*100);
+  const rigged = m => isSlotLike(m) ? m.payout < 0.8 : (m.edge||0) > 0;
+  const life = v => `<span style="color:${v>=0?'#8fd6a8':'#e08a8a'};font-weight:bold;">${v>=0?'+':'-'}$${Math.abs(Math.round(v)).toLocaleString()}</span>`;
+  const cols = 'display:grid;grid-template-columns:minmax(150px,1.3fr) 1.4fr 70px 150px;gap:8px;align-items:center;';
+  const row = (m, inner)=>{
     const slotLike = isSlotLike(m);
     ordinals[m.name] = (ordinals[m.name]||0) + 1;
     const label = m.nick ? `${m.nick} <span style="color:#9fb3a8;">(${m.name})</span>` : (totals[m.name] > 1 ? `${m.name} #${ordinals[m.name]}` : m.name);
-    const where = `at ${Math.round(m.x)}, ${Math.round(m.z)}`;
+    const where = (m.level ? 'Upper' : 'Ground') + ' floor';
     const idx = riggingRows.push(m) - 1;
     const stake = SLOT_CATALOG[m.type] ? ` <span style="color:#9fb3a8;">(${m.lines}x$${fmtStake(m.denom)})</span>` : '';
-    const val = slotLike ? Math.round(m.payout*100) : Math.round((m.edge||0)*100);
+    const val = valOf(m);
     const cl = !!m.closed;
-    return `<div style="position:relative;display:grid;grid-template-columns:minmax(150px,1.3fr) 1.4fr 70px 150px;gap:8px;align-items:center;padding:4px 0;border-top:1px solid #2a4a3c;${cl?'opacity:.75;':''}">
+    return `<div style="position:relative;${cols}padding:4px 0 4px ${inner ? 14 : 0}px;border-top:1px solid ${inner ? '#1d3a2e' : '#2a4a3c'};${cl?'opacity:.75;':''}">
       ${cl?'<div style="position:absolute;left:0;right:0;top:50%;height:2px;background:#e53935;pointer-events:none;"></div>':''}
-      <div>${label}${stake}${cl?' <span style="color:#ff6b6b;font-size:10px;font-weight:bold;">CLOSED - press F at it to unrig</span>':''}<div style="color:#9fb3a8;font-size:10px;">${where} · lifetime <span style="color:${(m.lifetimeIncome||0)>=0?'#8fd6a8':'#e08a8a'};font-weight:bold;">${(m.lifetimeIncome||0)>=0?'+':'-'}$${Math.abs(Math.round(m.lifetimeIncome||0)).toLocaleString()}</span></div></div>
+      <div>${label}${stake}${cl?' <span style="color:#ff6b6b;font-size:10px;font-weight:bold;">CLOSED - press F at it to unrig</span>':''}<div style="color:#9fb3a8;font-size:10px;">${where} · lifetime ${life(m.lifetimeIncome||0)}</div></div>
       <input type="range" class="rigSlider" data-i="${idx}" min="${slotLike?SLOT_RTP_MIN:0}" max="${slotLike?SLOT_RTP_MAX:TABLE_RIG_MAX}" value="${val}" ${cl?"disabled":""} style="width:100%;">
       <span id="rigVal${idx}" style="text-align:right;">${slotLike?'RTP ':'Rig '}${val}%</span>
       <div><div id="rigState${idx}" style="font-size:10px;">${cl?"<span style=\"color:#ff6b6b;\">Shut down by inspectors</span>":rigWarning(m)}</div></div>
     </div>`;
   };
+  // One line per kind of machine (a big floor has well over a hundred machines); a kind with several
+  // machines opens to show each one. The kind's own slider sets them all and needs the Control Room.
+  const section = list => {
+    const kinds = []; list.forEach(m => { let g = kinds.find(k => k.name === m.name); if(!g){ g = { name:m.name, ms:[] }; kinds.push(g); } g.ms.push(m); });
+    return kinds.map(g => {
+      if(g.ms.length === 1) return row(g.ms[0], false);
+      const gi = rigGroups.push(g) - 1, open = rigOpen.has(g.name), slotLike = isSlotLike(g.ms[0]);
+      const vals = g.ms.map(valOf), same = vals.every(v => v === vals[0]), avg = Math.round(vals.reduce((x, y) => x + y, 0) / vals.length);
+      const nRig = g.ms.filter(rigged).length, nClosed = g.ms.filter(m => m.closed).length;
+      const total = g.ms.reduce((x, m) => x + (m.lifetimeIncome||0), 0);
+      const state = nClosed ? `<span style="color:#ff6b6b;">${nClosed} shut down by inspectors</span>` : nRig ? `<span style="color:#e08a8a;">${nRig} of ${g.ms.length} rigged</span>` : '<span style="color:#8fd6a8;">All fair</span>';
+      return `<div style="${cols}padding:6px 0;border-top:1px solid #2a4a3c;">
+        <div style="display:flex;align-items:center;gap:8px;"><button class="hotbarSlot rigGrp" data-g="${gi}" title="${open ? 'Hide' : 'Show'} each machine" style="font-size:12px;padding:0;min-width:0;width:22px;height:22px;line-height:1;flex:0 0 22px;">${open ? '&minus;' : '+'}</button>
+          <div><b>${g.name}</b> <span style="color:#9fb3a8;">&times;${g.ms.length}</span><div style="color:#9fb3a8;font-size:10px;">lifetime ${life(total)}</div></div></div>
+        ${ctrl ? `<input type="range" class="rigGrpSlider" data-g="${gi}" min="${slotLike?SLOT_RTP_MIN:0}" max="${slotLike?SLOT_RTP_MAX:TABLE_RIG_MAX}" value="${avg}" style="width:100%;">` : '<span></span>'}
+        <span id="rigGVal${gi}" style="text-align:right;">${same ? (slotLike?'RTP ':'Rig ') + vals[0] + '%' : 'mixed'}</span>
+        <div style="font-size:10px;">${state}</div>
+      </div>${open ? g.ms.map(m => row(m, true)).join('') : ''}`;
+    }).join('');
+  };
+  const mean = (list, d) => list.length ? Math.round(list.reduce((x, m) => x + valOf(m), 0) / list.length) : d;
+  const slotHtml = section(slots), tableHtml = section(tables);
   riggingPanelEl.innerHTML = `
     <h3 style="margin:0 0 4px 0;color:#e6c34a;font-weight:normal;font-size:13px;">Rigging</h3>
-    <p style="color:#9fb3a8;font-size:11px;margin:0 0 8px 0;">Set every machine's payout (slots, wheels) or rig level (tables). Rigging earns more but makes guests grumpier (reputation and how long they stay). An inspector visits at random - you'll see him walk in - and may catch anything rigged; set a machine back to fair before he reaches it and it passes. Slots only count as rigged below 80% RTP; a 100% rig means guests never win.</p>
-    ${officeOn('controlroom') ? `
+    <p style="color:#9fb3a8;font-size:11px;margin:0 0 8px 0;">Set the payout (slots, wheels) or rig level (tables). Rigging earns more but guests get grumpier, and an inspector may catch it. <span title="An inspector visits at random - you'll see him walk in - and may catch anything rigged; set a machine back to fair before he reaches it and it passes. Slots only count as rigged below 80% RTP; a 100% rig means guests never win." style="color:#e6c34a;cursor:help;">Hover for the rules.</span></p>
+    ${ctrl ? `
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px;">
-      <label style="flex:1 1 220px;display:flex;align-items:center;gap:8px;">All slots RTP <input type="range" id="rigAllSlots" min="${SLOT_RTP_MIN}" max="${SLOT_RTP_MAX}" value="90" style="flex:1;"> <span id="rigAllSlotsVal" style="min-width:38px;text-align:right;">90%</span></label>
-      <label style="flex:1 1 220px;display:flex;align-items:center;gap:8px;">All tables rig <input type="range" id="rigAllTables" min="0" max="${TABLE_RIG_MAX}" value="0" style="flex:1;"> <span id="rigAllTablesVal" style="min-width:38px;text-align:right;">0%</span></label>
+      <label style="flex:1 1 220px;display:flex;align-items:center;gap:8px;">All slots RTP <input type="range" id="rigAllSlots" min="${SLOT_RTP_MIN}" max="${SLOT_RTP_MAX}" value="${mean(slots, 90)}" style="flex:1;"> <span id="rigAllSlotsVal" style="min-width:38px;text-align:right;">${mean(slots, 90)}%</span></label>
+      <label style="flex:1 1 220px;display:flex;align-items:center;gap:8px;">All tables rig <input type="range" id="rigAllTables" min="0" max="${TABLE_RIG_MAX}" value="${mean(tables, 0)}" style="flex:1;"> <span id="rigAllTablesVal" style="min-width:38px;text-align:right;">${mean(tables, 0)}%</span></label>
     </div>
     ` : `<div style="color:#9fb3a8;font-size:11px;margin-bottom:8px;">${officeHint('controlroom')}</div>`}
-    ${slots.length ? `<div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:6px 0 2px;">Slots &amp; wheels</div>${slots.map(row).join('')}` : ''}
-    ${tables.length ? `<div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:10px 0 2px;">Tables</div>${tables.map(row).join('')}` : ''}
+    ${slots.length ? `<div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:6px 0 2px;">Slots &amp; wheels</div>${slotHtml}` : ''}
+    ${tables.length ? `<div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:10px 0 2px;">Tables</div>${tableHtml}` : ''}
     ${gambling.length ? '' : '<p style="color:#9fb3a8;">No gambling machines yet.</p>'}
     <button id="riggingClose" class="hotbarSlot" style="width:100%;margin-top:10px;">Close</button>`;
+  const apply = (m, v)=>{ if(isSlotLike(m)) m.payout = v/100; else m.edge = v/100; };
   const setValue = (i, v)=>{
     const m = riggingRows[i];
-    if(isSlotLike(m)) m.payout = v/100; else m.edge = v/100;
+    apply(m, v);
     document.getElementById('rigVal'+i).textContent = (isSlotLike(m)?'RTP ':'Rig ') + v + '%';
     document.getElementById('rigState'+i).innerHTML = rigWarning(m);
   };
   riggingPanelEl.querySelectorAll('.rigSlider').forEach(s=>{
     s.addEventListener('input', ()=> setValue(parseInt(s.dataset.i), parseInt(s.value)));
+    s.addEventListener('change', ()=> updateRiggingPanel());   // refresh the kind's summary line
   });
-  const master = (id, wantSlots)=>{
+  riggingPanelEl.querySelectorAll('.rigGrp').forEach(b => b.addEventListener('click', (e)=>{
+    e.stopPropagation(); const n = rigGroups[parseInt(b.dataset.g)].name;
+    if(rigOpen.has(n)) rigOpen.delete(n); else rigOpen.add(n);
+    updateRiggingPanel();
+  }));
+  riggingPanelEl.querySelectorAll('.rigGrpSlider').forEach(s=>{
+    const g = rigGroups[parseInt(s.dataset.g)];
+    s.addEventListener('input', ()=>{
+      const v = parseInt(s.value);
+      g.ms.forEach(m => { if(!m.closed) apply(m, v); });
+      document.getElementById('rigGVal' + s.dataset.g).textContent = (isSlotLike(g.ms[0])?'RTP ':'Rig ') + v + '%';
+    });
+    s.addEventListener('change', ()=> updateRiggingPanel());
+  });
+  const master = (id, list)=>{
     const el = document.getElementById(id); if(!el) return;
     const valEl = document.getElementById(id + 'Val');
     el.addEventListener('input', ()=>{
       if(valEl) valEl.textContent = el.value + '%';
-      riggingPanelEl.querySelectorAll('.rigSlider').forEach(s=>{
-        const i = parseInt(s.dataset.i);
-        if(!riggingRows[i].closed && isSlotLike(riggingRows[i]) === wantSlots){ s.value = el.value; setValue(i, parseInt(el.value)); }
-      });
+      list.forEach(m => { if(!m.closed) apply(m, parseInt(el.value)); });
     });
+    el.addEventListener('change', ()=> updateRiggingPanel());
   };
-  master('rigAllSlots', true); master('rigAllTables', false);
+  master('rigAllSlots', slots); master('rigAllTables', tables);
   document.getElementById('riggingClose').addEventListener('click', (e)=>{ e.stopPropagation(); riggingPanelEl.style.display = 'none'; });
+  riggingPanelEl.scrollTop = scroll;
 }
 // ---------------- Building tab: floor size, wallpaper, parking ----------------
 const buildingPanelEl = document.getElementById('buildingPanel');
