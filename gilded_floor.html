@@ -15,6 +15,13 @@
     line-height:1.5;
   }
   #hud b{color:#e6c34a;}
+  #hudStars{ margin-left:10px; pointer-events:auto; cursor:pointer; }
+  #hudStarsRow{ color:#e6c34a; white-space:nowrap; }
+  #hudStarGlyphs{ letter-spacing:1px; }
+  #starCard{ display:none; position:fixed; top:52px; left:86px; width:270px; box-sizing:border-box; padding:8px 10px; background:rgba(10,20,15,0.94); border:1px solid #2a4a3c; border-radius:6px; font-size:11px; text-shadow:none; z-index:7; cursor:default; }
+  #hudStars:hover #starCard, #hudStars.pinned #starCard{ display:block; }
+  /* while the card is open it takes the place of the event log and the top-centre popup, so nothing is drawn under it */
+  body:has(#hudStars:hover) :is(#eventLog,#unlockPopup), body:has(#hudStars.pinned) :is(#eventLog,#unlockPopup){ visibility:hidden; }
   #crosshair{
     position:fixed; top:50%; left:50%; width:6px; height:6px;
     margin:-3px 0 0 -3px; border-radius:50%;
@@ -193,6 +200,14 @@
 <div id="hud">
   Cash: <b id="cashDisp">$2,000</b> · Day <b id="dayVal">1</b> · <b id="clockLabel">8:00 AM</b> <span id="peakLabel" style="color:#e6c34a;"></span> <span id="inspectorLabel" style="color:#ffb347;"></span> <span id="parkingLabel" style="color:#ff9f7a;"></span><br>
   Mode: <b id="modeIndicator">UI Mode</b>
+  <span id="hudStars"><span id="hudStarsRow"><span id="hudStarGlyphs"></span> <b id="hudStarNum">0.0</b></span>
+    <div id="starCard">
+      <div id="starCardRows"></div>
+      <div id="starCardHeld"></div>
+      <div id="starCardAdvice"></div>
+      <button id="starCardStats" class="hotbarSlot" style="display:none;margin-top:6px;width:100%;">Open Stats</button>
+    </div>
+  </span>
 </div>
 <div id="closedBanner" style="display:none;position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(122,31,43,0.92);border:1px solid #e08a8a;border-radius:6px;padding:6px 22px;color:#f0e6d2;font-weight:bold;letter-spacing:2px;z-index:7;pointer-events:none;">CASINO CLOSED</div>
 <div id="debtBox" style="display:none;position:fixed;top:52px;left:50%;transform:translateX(-50%);background:rgba(60,20,26,0.95);border:1px solid #e08a8a;border-radius:6px;padding:6px 12px;color:#f0e6d2;font-size:12px;z-index:7;text-align:center;max-width:460px;">
@@ -244,6 +259,7 @@
               <div style="font-size:11px;color:#9fb3a8;">Overall Casino Score</div>
               <div id="overallStars" style="font-size:22px;color:#e6c34a;">&#9734;&#9734;&#9734;&#9734;&#9734;</div>
               <div id="overallStarsNum" style="font-size:11px;color:#cfd9d0;">0.0 / 5</div>
+              <div id="overallHeld" style="font-size:11px;color:#ffb347;min-height:14px;"></div>
             </div>
             <div id="starCategoryList"></div>
           </div>
@@ -7762,11 +7778,12 @@ function updateAutoComp(dt){
 // Hotel guests who have checked in came for the night: their car is not taking a parking spot.
 function hotelGuestsIn(){ return npcs.filter(n => n.hotelGuest && n.room).length; }
 function carsOnLot(){ return npcs.length - hotelGuestsIn() - npcs.filter(n => n.hiroll).length; }   // (a High-roller night's guests of honour do not take a space)
+const STAR_CROWD_K = 0.12;   // crowd change per star away from 2.5 (the old formula was the same shape with 0.06)
 function crowdDemand(campaignBoost = campaignTimeLeft > 0 ? campaignStrength : 0){
   let target = 3 + (reputation/100) * 12;
   target += campaignBoost;
   const { overall } = computeCasinoStars();
-  target *= 0.85 + (overall/5) * 0.3; // a well-rounded casino (per the star ratings) pulls a bit more foot traffic
+  target *= 1 + (overall - 2.5) * STAR_CROWD_K; // a well-rounded casino (per the star ratings) pulls more foot traffic; 2.5 stars is neutral
   const peak = getPeakPeriod();
   if(peak) target *= peak.guestBoost;
   target *= 0.8 + loyaltyScore/250; // regulars and word of mouth (or angry ex-guests) move the crowd
@@ -7799,6 +7816,7 @@ function campaignGuestsGained(key){
 
 let densityAvg = null, densityAt = 0;
 // Retail-Tycoon-style scoring: five categories, each 0-5 stars, averaged into an overall score.
+const STAR_CAP_GAP = 1.5;   // overall rating may be at most this many stars above the weakest category
 function computeCasinoStars(){
   const amenityCount = machines.filter(m=>m.category==='amenity' && !OFFICE_INFO[m.type]).length;
   const decorationCount = machines.filter(m=>m.category==='decoration' && m.type!=='wall' && m.type!=='stairs' && m.type!=='lift').length;
@@ -7835,8 +7853,14 @@ function computeCasinoStars(){
     { name:'Architecture', stars: Math.min(5, (wallpaperKey !== 'emerald' ? 1.0 : 0) + Math.min(1.5, wallCount * 0.15) + Math.min(1.5, floorExpansions * 0.3) + Math.min(1.0, parkingCapacity / 80) + (upperBuilt ? 1.0 : 0)) },
   ];
   { const hs = hotelStars(); if(hs !== null) categories.push({ name:'Hotel', stars: hs }); }
-  const overall = categories.reduce((s,c)=>s+c.stars,0) / categories.length;
-  return { categories, overall };
+  const plain = categories.reduce((s,c)=>s+c.stars,0) / categories.length;
+  // The overall rating cannot sit more than STAR_CAP_GAP above the weakest category that exists, so no
+  // category can be ignored. A Hotel that has not been built is not in the list and never counts as weakest.
+  let weakest = categories[0];
+  for(const c of categories) if(c.stars < weakest.stars) weakest = c;
+  const capped = weakest.stars + STAR_CAP_GAP;
+  const overall = Math.min(plain, capped);
+  return { categories, overall, plain, cappedBy: capped < plain - 0.005 ? weakest.name : null };
 }
 function starString(value){
   const rounded = Math.max(0, Math.min(5, Math.round(value)));
@@ -13819,9 +13843,10 @@ function showStatsTab(k){
 document.querySelectorAll('#statsPanel .statsTab').forEach(b => b.addEventListener('click', (e)=>{ e.stopPropagation(); showStatsTab(b.dataset.pane); }));
 let statsRefreshT = 0;
 function updateStatsPanel(){
-  const { categories, overall } = computeCasinoStars();
+  const { categories, overall, cappedBy } = computeCasinoStars();
   document.getElementById('overallStars').textContent = starString(overall);
   document.getElementById('overallStarsNum').textContent = overall.toFixed(1) + ' / 5';
+  document.getElementById('overallHeld').textContent = cappedBy ? 'Held back by ' + cappedBy : '';
   document.getElementById('starCategoryList').innerHTML = categories.map(c=>
     `<div class="starRow" style="gap:10px;margin-bottom:13px;"><span style="flex:0 0 118px;">${c.name}</span><span style="flex:1;">${uiBar(c.stars / 5, c.stars >= 4 ? '#8fd6a8' : c.stars >= 2.5 ? '#e6c34a' : '#e08a8a', 8)}</span><span class="starVal" style="flex:0 0 30px;text-align:right;font-weight:bold;">${c.stars.toFixed(1)}</span></div>`
   ).join('');
@@ -13873,6 +13898,45 @@ document.getElementById('tabStats').addEventListener('click', (e)=>{
   if(!tabUnlocked('tabStats')){ tabLockedClick('tabStats'); return; }
   if(pointerLocked) document.exitPointerLock();
   toggleManagedPopup('statsPanel', updateStatsPanel);
+});
+
+// ---------------- Always-on rating in the HUD ----------------
+// Five small stars (to the nearest half) and the number, with a card on hover or click that lists every
+// category, says when the cap is holding the rating back and gives one line of advice. Redrawn about once
+// a second, never per frame.
+let hudStarsT = 0;
+const hudStarsEl = document.getElementById('hudStars');
+function hudStarGlyphs(value){
+  const halves = Math.max(0, Math.min(10, Math.round(value * 2)));
+  let out = '';
+  for(let i = 0; i < 5; i++){
+    const left = halves - i * 2;
+    if(left >= 2) out += '<span>★</span>';
+    else if(left === 1) out += '<span style="background:linear-gradient(90deg,#e6c34a 50%,#6b7d70 50%);-webkit-background-clip:text;background-clip:text;color:transparent;">★</span>';
+    else out += '<span style="color:#6b7d70;">★</span>';
+  }
+  return out;
+}
+function starBarColor(v){ return v >= 4 ? '#8fd6a8' : v >= 2.5 ? '#e6c34a' : '#e08a8a'; }
+function updateHudStars(){
+  const { categories, overall, cappedBy } = computeCasinoStars();
+  document.getElementById('hudStarGlyphs').innerHTML = hudStarGlyphs(overall);
+  document.getElementById('hudStarNum').textContent = overall.toFixed(1);
+  if(!hudStarsEl.matches(':hover') && !hudStarsEl.classList.contains('pinned')) return;   // the card is only built while it is showing
+  document.getElementById('starCardRows').innerHTML = categories.map(c =>
+    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;"><span style="flex:0 0 108px;">${c.name}</span><span style="flex:1;">${uiBar(c.stars / 5, starBarColor(c.stars), 7)}</span><span style="flex:0 0 26px;text-align:right;font-weight:bold;">${c.stars.toFixed(1)}</span></div>`
+  ).join('');
+  document.getElementById('starCardHeld').innerHTML = cappedBy ? `<div style="color:#ffb347;margin-top:2px;">Held back by <b style="color:#ffb347;">${cappedBy}</b></div>` : '';
+  const weakest = categories.reduce((w, c) => c.stars < w.stars ? c : w, categories[0]);
+  document.getElementById('starCardAdvice').innerHTML = weakest.stars < 5 ? `<div style="color:#9fb3a8;margin-top:4px;"><b>${weakest.name}:</b> ${STAR_ADVICE[weakest.name] || ''}</div>` : '';
+  document.getElementById('starCardStats').style.display = tabUnlocked('tabStats') ? 'block' : 'none';
+}
+document.getElementById('hudStarsRow').addEventListener('click', (e)=>{ e.stopPropagation(); hudStarsEl.classList.toggle('pinned'); hudStarsT = 0; });
+document.getElementById('starCardStats').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  hudStarsEl.classList.remove('pinned');
+  if(statsPanel.style.display !== 'block') document.getElementById('tabStats').click();
+  showStatsTab('overview');
 });
 
 const helpBtn = document.getElementById('helpBtn');
@@ -15738,6 +15802,7 @@ function animate(ts){        // machine - a standing banner says so regardless o
   updateStatsTracking(simDt);
   updateDayNight(simDt);
   updateSellHold(dt); // player interaction, unaffected by game speed
+  hudStarsT -= dt; if(hudStarsT <= 0){ hudStarsT = 1; updateHudStars(); }
   statsRefreshT -= dt;
   if((statsPanel.style.display === 'block' || moneyPanelEl.style.display === 'block') && statsRefreshT <= 0){ statsRefreshT = 0.25; updateStatsPanel(); }
   if(document.getElementById('devPanel').style.display === 'block') updateDevDebugInfo();
