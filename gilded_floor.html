@@ -6779,6 +6779,70 @@ function tourneyPrize(e, amt, msg){
   e.prize = amt;
   logEvent(msg, '#e6c34a');
 }
+// ----- the High-roller night: invited big players come for one long night and play the High Roller tables -----
+// Invitees are made with makeNPC({ vip:true }) (some as whales), tagged npc.hiroll, and are extra guests: flagged dropIn so they
+// do not count against the crowd target, and left out of carsOnLot. Takings = what they lose at the games (guest net, negative when they win).
+const HIROLL_UNLOCK = 27500;
+function hirollTables(){ return machines.filter(m => BUILD_ITEMS[m.key] && BUILD_ITEMS[m.key].style === 'highroller' && (m.staffer || houseDealerOn())); }
+function hirollRows(){
+  const guards = staffNPCs.filter(x => x.type === 'security').length, n = hirollTables().length;
+  return [
+    { label:'A High Roller table with a dealer', required:true, ok: n >= 1, gripe:'there was no High Roller table' },
+    { label:'Two more High Roller tables with dealers', ok: n >= 3, gripe:'too few High Roller tables for the guests of honour' },
+    { label:'A VIP Lounge', ok: machines.some(m => m.type === 'viplounge'), gripe:'nowhere private for the guests of honour' },
+    { label:'A free Suite for the guests of honour', ok: hotelRooms().some(m => m.room.tier === 'suite' && !m.room.occupant && !m.room.dirty), gripe:'no suite ready for the guests of honour' },
+    { label:'A staffed bar', ok: machines.some(m => m.type === 'bar' && isStaffed(m)), gripe:'the bar had nobody serving' },
+    { label:'Security on duty', ok: guards >= 1 && roleLoad('security') <= 1, gripe:'too few security guards for the crowd' },
+  ];
+}
+// The night's state lives in hirollState from the first invitee (boost hour) to the end, so takings count from their arrival.
+let hirollState = null;   // { invited, arrived, whales, guests, gap, t, readiness, maxWin, maxLoss, rounds, wagered, takings }
+function hirollNewState(readiness){
+  const invited = Math.round(4 + 6 * readiness);
+  return { invited, arrived:0, whales:0, guests:[], gap:(1.5 / 24 * DAY_LENGTH) / invited, t:0, readiness, maxWin:0, maxLoss:0, rounds:{ hr:0, other:0 }, wagered:0, takings:0 };
+}
+// Takings = what the house won off the invitees at the games (table results only; negative when they win).
+function hirollTakings(ev){ return hirollState ? Math.round(hirollState.takings) : 0; }
+function hirollOnFloor(ev){ return hirollState ? hirollState.guests.filter(g => !g.left && npcs.includes(g.npc)).length : 0; }
+// An invitee comes to play: straight to a High Roller table with a free seat (any table as the fallback), routing across floors if needed.
+function hirollSeek(npc){
+  const spot = findGambleSpot(npc);
+  if(spot && pickMachineSpot(npc, spot)){ npc.state = 'toMachine'; npc.waitTimer = 0; return true; }
+  return false;
+}
+// Called from recordGuestResult for every invitee round (houseNet > 0 means the house won).
+function hirollRound(npc, houseNet, m, bet){
+  const H = hirollState; if(!H) return;
+  const hr = !!(m && BUILD_ITEMS[m.key] && BUILD_ITEMS[m.key].style === 'highroller');
+  H.rounds[hr ? 'hr' : 'other']++;
+  H.takings += houseNet;
+  if(-houseNet > H.maxWin) H.maxWin = -houseNet;
+  if(houseNet > H.maxLoss) H.maxLoss = houseNet;
+  H.wagered += bet || 0;
+}
+function hirollClearTags(ev){ if(hirollState) hirollState.guests.forEach(g => { g.npc.hiroll = false; g.npc.dropIn = false; }); hirollState = null; }
+function hirollSpawn(H){
+  const whale = Math.random() < 0.05 + 0.1 * H.readiness;
+  const g = makeNPC({ vip:true, whale });
+  g.hiroll = true; g.dropIn = true;
+  g.visitLeft *= 1 + 0.5 * H.readiness;     // they make a longer night of it
+  H.guests.push({ npc:g, left:false }); H.arrived++; if(whale) H.whales++;
+  if(g.state === 'wander') hirollSeek(g);   // (no parking space: they are already inside)
+}
+// Arrivals run from the boost hour (spread over the first 90 game minutes), before and after the night proper starts at 16:00.
+function hirollAdvance(dt, readiness){
+  if(!hirollState) hirollState = hirollNewState(readiness);
+  const H = hirollState;
+  H.t += dt;
+  while(H.arrived < H.invited && H.t >= H.arrived * H.gap) hirollSpawn(H);
+  H.guests.forEach(g => {
+    if(g.left || npcs.includes(g.npc)) return;
+    g.left = true;
+    const net = Math.round(g.npc.net || 0);
+    if(net > 2000) logEvent(`${g.npc.name} leaves $${net.toLocaleString()} up`, '#e08a8a');
+    else if(net < -2000) logEvent(`${g.npc.name} leaves $${(-net).toLocaleString()} behind`, '#8fd6a8');
+  });
+}
 // ----- the data table -----
 const EVENTS = {
   show: {
@@ -6877,6 +6941,47 @@ const EVENTS = {
       return { review: review + ', won by ' + name };
     },
   },
+  hiroll: {
+    key:'hiroll', name:'High-roller night', cost:750, cooldownDays:7, boost:0.1, unlockRevenue:HIROLL_UNLOCK,
+    boostHour:15, startHour:16, maxHours:10,
+    venueOk(){ return hirollTables().length >= 1; }, venueText:'Needs a High Roller table with a dealer', venueGone:'no High Roller table',
+    timesText:'Guests of honour arrive from 15:00, until 02:00',
+    doorsText:"The velvet rope is up for tonight's High-roller night",
+    desc:"Invited big players start arriving at 15:00 and make a long night of it, until 02:00, heading for your High Roller tables. A well-run night brings more of them (and the odd whale), and they stay longer and drink. There is no ticket money, and the house can lose on the night: a lucky guest can take thousands off you, a cold one can leave you thousands richer. Wide swings on purpose. A well-run night earns a rave review; a shambles earns a bad one.",
+    requires: hirollRows,
+    lost(ev){ return hirollTables().length ? null : 'no High Roller table left'; },
+    regTick(b, dt){ if(hirollTables().length) hirollAdvance(dt, eventReadiness(hirollRows())); },
+    onDrop(){ hirollClearTags(); },
+    cleanup(ev, why){ hirollClearTags(ev); },
+    start(ev){
+      if(!hirollState) hirollState = hirollNewState(ev.readiness);
+      ev.hi = hirollState;
+      logEvent('The guests of honour are arriving', '#e6c34a'); playSound('applause', { gain:0.4 });
+    },
+    tick(ev, dt){
+      hirollAdvance(dt, ev.readiness);
+      ev.tickets = hirollState.arrived; ev.ticketMoney = hirollTakings(ev);
+    },
+    liveHtml(ev){
+      const H = hirollState; if(!H) return '';
+      const tk = hirollTakings(ev);
+      return `Guests of honour on the floor: <b>${hirollOnFloor(ev)}</b> &middot; arrived <b>${H.arrived}</b> of ${H.invited} invited &middot; takings so far: <b style="color:${tk >= 0 ? '#8fd6a8' : '#e08a8a'};">${evMoney(tk)}</b><br>Biggest win by a guest: <b style="color:#e08a8a;">${evMoney(H.maxWin)}</b> &middot; biggest loss by a guest: <b style="color:#8fd6a8;">${evMoney(H.maxLoss)}</b>`;
+    },
+    end(ev){
+      const readiness = ev.readiness, failed = ev.failed;
+      const H = ev.hi; ev.tickets = H.arrived; ev.ticketMoney = hirollTakings(ev);
+      ev.summary = { invited:H.invited, arrived:H.arrived, whales:H.whales, takings:ev.ticketMoney, maxWin:H.maxWin, maxLoss:H.maxLoss, rounds:H.rounds, wagered:H.wagered };
+      hirollClearTags(ev);                 // anyone still here carries on as an ordinary guest
+      const r = Math.random(), pGood = 0.2 + 0.6 * readiness, pBad = 0.45 * (1 - readiness);
+      let review, rep;
+      if(r < pGood){ review = 'rave'; rep = 6; logEvent('Rave review: the High-roller night was the talk of the town', '#e6c34a'); }
+      else if(r < pGood + pBad){ review = 'bad'; rep = -5; logEvent('Bad review for the High-roller night: ' + (failed.length ? failed.join(', ') : 'a flat night'), '#e08a8a'); }
+      else { review = 'middling'; rep = 1; logEvent('The High-roller night went down fine', '#cfd9d0'); }
+      reputation = Math.max(0, Math.min(100, reputation + rep));
+      playSound('applause');
+      return { review };
+    },
+  },
 };
 function pushEventHistory(entry){ eventHistory.unshift(entry); if(eventHistory.length > 12) eventHistory.length = 12; }
 function eventAvailableDay(key){ return eventCooldownUntil[key] || 0; }
@@ -6972,10 +7077,10 @@ function eventsSaveState(){
   return { eventBooked, eventActive: eventActive ? { key:eventActive.key, day:eventActive.day, t:eventActive.t, fee:eventActive.fee, tickets:eventActive.tickets, ticketMoney:eventActive.ticketMoney, drinks0:eventActive.drinks0, readiness:eventActive.readiness, failed:eventActive.failed } : null, eventHistory, eventCooldownUntil };
 }
 function eventsResetState(){
-  eventBooked = null; eventActive = null; eventHistory = []; eventCooldownUntil = {}; removeShowVisuals(); tourney = null;
+  eventBooked = null; eventActive = null; eventHistory = []; eventCooldownUntil = {}; removeShowVisuals(); tourney = null; hirollState = null;
 }
 function eventsLoadState(data){
-  removeShowVisuals(); tourney = null;
+  removeShowVisuals(); tourney = null; hirollState = null;
   eventBooked = (data.eventBooked && EVENTS[data.eventBooked.key] && Number.isFinite(data.eventBooked.day)) ? { key:data.eventBooked.key, day:data.eventBooked.day, fee:data.eventBooked.fee || EVENTS[data.eventBooked.key].cost, doors:!!data.eventBooked.doors } : null;
   eventHistory = Array.isArray(data.eventHistory) ? data.eventHistory.slice(0, 12) : [];
   eventCooldownUntil = (data.eventCooldownUntil && typeof data.eventCooldownUntil === 'object') ? Object.assign({}, data.eventCooldownUntil) : {};
@@ -7260,7 +7365,7 @@ function updateAutoComp(dt){
 
 // Hotel guests who have checked in came for the night: their car is not taking a parking spot.
 function hotelGuestsIn(){ return npcs.filter(n => n.hotelGuest && n.room).length; }
-function carsOnLot(){ return npcs.length - hotelGuestsIn(); }
+function carsOnLot(){ return npcs.length - hotelGuestsIn() - npcs.filter(n => n.hiroll).length; }   // (a High-roller night's guests of honour do not take a space)
 function crowdDemand(campaignBoost = campaignTimeLeft > 0 ? campaignStrength : 0){
   let target = 3 + (reputation/100) * 12;
   target += campaignBoost;
@@ -8766,6 +8871,7 @@ function checkTabUnlocks(silent){
     if(!silent){ logEvent(`New tab unlocked: ${u.name} [${u.key}]`, '#e6c34a'); playSound('achievement'); showUnlockPopup(`${icn('key')}New tab: <b>${u.name}</b> [${u.key}]`); }
   }
   applyTabVisibility();
+  if(!silent && unlockedTabs.has('tabEvents') && lifetimeRevenue() >= HIROLL_UNLOCK) tip('hirollReady', 'The High-roller night is ready to book in the Events tab [8]. Invited big players come for one long night.');
   if(!silent && unlockedTabs.has('tabEvents') && lifetimeRevenue() >= TOURNEY_UNLOCK) tip('tourneyReady', 'The Poker tournament is ready to book in the Events tab [8]. It runs on your Hold\'em tables.');
 }
 // An older save (or a fiddled one) might hold tabs out of order - keep only the run from the start.
@@ -9829,7 +9935,7 @@ function pickArchetype(tier, isWhale){
   for(const k of keys){ r -= ARCHETYPES[k].weight; if(r <= 0) return k; }
   return keys[0];
 }
-// opts: { regular: {wallet, betStyle} } brings back a happy regular; { vip:true } makes a whale.
+// opts: { regular: {wallet, betStyle} } brings back a happy regular; { vip:true } makes a big spender; { whale:true } makes a true whale (alone or with vip).
 function makeNPC(opts = {}){
   // A clerk on the Player's Club Desk is optional, same as a waitress at a bar -
   // no penalty for leaving it unstaffed, just a real bonus if you do: roughly doubles the sign-up
@@ -9846,7 +9952,7 @@ function makeNPC(opts = {}){
   const peak = getPeakPeriod();
   const vipShift = Math.min(0.35, vipLounges*0.15) + (peak ? peak.vipBias : 0) + (hrOutreachTimeLeft > 0 ? HR_OUTREACH.vipShift : 0);
   let wallet, betStyle, tier, isWhale = false;
-  if(!opts.regular && !opts.vip && Math.random() < WHALE_CHANCE){
+  if(!opts.regular && (opts.whale || (!opts.vip && Math.random() < WHALE_CHANCE))){
     // about 1 in 100: tens of thousands to spend, always betting the casino's current maximum
     isWhale = true;
     wallet = WHALE_MIN + Math.random() * (WHALE_MAX - WHALE_MIN);
@@ -9875,9 +9981,9 @@ function makeNPC(opts = {}){
   const guestName = (opts.regular ? opts.regular.name : randomGuestName());
   if(isMember && clubTierOf(startPoints).mark) prefix = clubTierOf(startPoints).mark + ' ';
   if(opts.regular){ const e = opts.regular, t = affinityTierMult(e.affinity); wallet = e.wallet * (1 + (t - 1) / 2) + (e.freePlay || 0); betStyle = e.betStyle * t; e.freePlay = 0; prefix = '★ '; }
-  if(opts.vip){ wallet = 3000 + Math.random()*3000; betStyle = 4.5; prefix = '👑 '; }
+  if(opts.vip && !isWhale){ wallet = 3000 + Math.random()*3000; betStyle = 4.5; prefix = '👑 '; }
   if(isWhale) prefix = '💎 ';
-  if(opts.regular || opts.vip) tier = wallet >= 800 ? 3 : wallet >= 200 ? 2 : wallet >= 60 ? 1 : 0;
+  if((opts.regular || opts.vip) && !isWhale) tier = wallet >= 800 ? 3 : wallet >= 200 ? 2 : wallet >= 60 ? 1 : 0;
   if(!opts.regular){ const sp = spendScale(); wallet *= sp; betStyle *= sp; } // (after the tier is chosen, so looks do not change)
   // A regular keeps the same personality across visits, same as they keep the same look.
   const archetype = opts.regular ? (opts.regular.archetype || (opts.regular.archetype = pickArchetype(tier, isWhale))) : pickArchetype(tier, isWhale);
@@ -9985,6 +10091,7 @@ function guestSuitsMachine(npc, m){
   if(isHighRollerMachine(m) && npc.startingWallet < 350) return false;
   if(m.type === 'holdem' && npc.wallet < holdemBB(m) * HOLDEM_MIN_BUYIN_BB) return false; // can't cover a buy-in
   if(m.type === 'holdem' && m.hd && m.hd.tour) return false; // reserved for the Poker tournament
+  if(npc.hiroll && (!isSeatedTable(m) || m.type === 'holdem')) return false; // a High-roller night's guests of honour play tables, never slots
   if(isSlotMachine(m)){
     const unit = slotUnit(m);
     if(npc.wallet < unit * 3) return false;
@@ -10013,7 +10120,7 @@ function findGambleSpot(npc){
   if(candidates.length === 0){ gripe('nothingNew', 0.12); return null; }
   // a whale specifically seeks out High Roller tables and high-limit slots when there are any free -
   // falls back to the normal pool if the floor doesn't have one yet, rather than standing idle
-  const hrOnly = npc.wantsMaxBet ? candidates.filter(isHighRollerMachine) : null;
+  const hrOnly = (npc.wantsMaxBet || npc.hiroll) ? candidates.filter(isHighRollerMachine) : null;   // (a High-roller night's guests of honour head for the High Roller tables too)
   const pool0 = hrOnly && hrOnly.length ? hrOnly : candidates;
   pool0.sort((a,b)=>{
     // tables with a dealer standing at them feel "closer" - guests are drawn to them
@@ -10501,7 +10608,7 @@ function earlyLossGuard(houseNet){
   const room = Math.max(0, dayNet + EARLY_LOSS_LIMIT);
   return -houseNet > room ? -room : houseNet;
 }
-function resolvePayout(actor, m, houseNet, pos, bet){
+function resolvePayout(actor, m, houseNet, pos, bet, stake){   // (stake: what was wagered when `bet` is left out on purpose; only the High-roller night's tracking reads it)
   const isManager = actor === null;
   if(!isManager && houseNet < 0){ const cap = payoutCap(); if(-houseNet > cap) houseNet = -cap; } // (bank-sized cap on any one payout)
   if(!isManager) houseNet = earlyLossGuard(houseNet);
@@ -10551,7 +10658,7 @@ function resolvePayout(actor, m, houseNet, pos, bet){
     const rig = unfairRig(m); // 0 unless the machine is actually rigged past the "guests can tell" bar
     if(houseNet > 0 && rig > 0){ gripe('tightOdds', 0.07); reputation = Math.max(0, reputation - 0.15); }
     earnClubPoints(actor, houseNet);
-    recordGuestResult(actor, houseNet, rig, m);
+    recordGuestResult(actor, houseNet, rig, m, bet > 0 ? bet : stake);
   }
 }
 // ---------------- Guest psychology ----------------
@@ -10665,7 +10772,8 @@ function pickReturningRegular(){
 
 let loyaltyScore = 50;
 const REGULAR_EXTRA_VISITS = 1.0; // extra visits a day for a regular at full loyalty (none at 40 or below)
-function recordGuestResult(npc, houseNet, rig, m){
+function recordGuestResult(npc, houseNet, rig, m, bet){
+  if(npc.hiroll) hirollRound(npc, houseNet, m, bet);
   npc.net = (npc.net || 0) - houseNet;
   if(m){ npc.favTally = npc.favTally || {}; npc.favTally[m.name] = (npc.favTally[m.name] || 0) + 1; }
   if(houseNet < 0){ // the guest won
@@ -11274,7 +11382,7 @@ function startBlackjackGame(actor, m, forcedBet){ return startCardTableHand('bla
 function startPokerGame(actor, m, forcedBet){ return startCardTableHand('poker', actor, m, forcedBet); }
 function finishPoker(game){
   const houseNet = riggedResult(game.m, resolvePokerHand(game.playerCards, game.m.round.dealerCards, game.bet, game.folded), game.bet * 2);
-  resolvePayout(game.actor, game.m, houseNet, outcomePosition(game.actor, game.m));
+  resolvePayout(game.actor, game.m, houseNet, outcomePosition(game.actor, game.m), undefined, game.bet);
   game.phase = 'done';
 }
 
@@ -11413,11 +11521,11 @@ function finishBlackjack(game){
   if(game.isSplit){
     const net1 = riggedResult(game.m, resolveBlackjackCards(game.playerCards, dealerCards, game.bet), game.bet);
     const net2 = riggedResult(game.m, resolveBlackjackCards(game.hand2Cards, dealerCards, game.bet2), game.bet2);
-    resolvePayout(game.actor, game.m, net1, pos);
-    resolvePayout(game.actor, game.m, net2, new THREE.Vector3(pos.x, pos.y+0.4, pos.z));
+    resolvePayout(game.actor, game.m, net1, pos, undefined, game.bet);
+    resolvePayout(game.actor, game.m, net2, new THREE.Vector3(pos.x, pos.y+0.4, pos.z), undefined, game.bet2);
   } else {
     const houseNet = riggedResult(game.m, resolveBlackjackCards(game.playerCards, dealerCards, game.bet), game.bet);
-    resolvePayout(game.actor, game.m, houseNet, pos);
+    resolvePayout(game.actor, game.m, houseNet, pos, undefined, game.bet);
   }
   game.phase = 'done';
 }
@@ -12216,7 +12324,7 @@ function updateNPCs(dt){
     if(npc.state === 'arriving' && casinoClosed){ npc.state = 'departing'; npc.route = [{ x:npc.pos.x, z:lotStalls[npc.stall] ? lotStalls[npc.stall].z : npc.pos.z }]; } // turned away at the door
     if(npc.state === 'arriving' || npc.state === 'departing'){ // walking between the car and the door
       const wp = npc.route && npc.route[0];
-      if(!wp){ if(npc.state === 'arriving'){ npc.state = 'wander'; npc.waitTimer = 0.3; pickWanderTarget(npc); maybeWantRoom(npc); if(npc.wantsRoom){ const dk = hotelDesk(npc); npc.state = 'toDesk'; npc.via = (dk.level || 0) !== 0 ? (routeToLevel(npc, dk.level) || []) : []; } else sendToClubDesk(npc); } else { removeNPC(npc); return; } }
+      if(!wp){ if(npc.state === 'arriving'){ npc.state = 'wander'; npc.waitTimer = 0.3; pickWanderTarget(npc); if(npc.hiroll && hirollSeek(npc)) return; maybeWantRoom(npc); if(npc.wantsRoom){ const dk = hotelDesk(npc); npc.state = 'toDesk'; npc.via = (dk.level || 0) !== 0 ? (routeToLevel(npc, dk.level) || []) : []; } else sendToClubDesk(npc); } else { removeNPC(npc); return; } }
       else { npc.target.set(wp.x, 0, wp.z); if(stepToward(npc, dt, null)) npc.route.shift(); }
       npc.mesh.position.set(npc.pos.x, npc.pos.y, npc.pos.z);
       return;
@@ -12248,7 +12356,7 @@ function updateNPCs(dt){
     if(npc.state === 'toMachine'){ // walled-off or unreachable? give up and wander after a while
       npc.travelT = (npc.travelT || 0) + dt;
       if(npc.travelT > 26 && npc.machine && (npc.machine.level || 0) !== (npc.level || 0)) gripe('farWalk', dt * 0.04);
-      if(npc.travelT > 40){ npc.travelT = 0; if(npc.machine) releaseSeat(npc.machine, npc.seatIndex, npc); npc.machine = null; npc.state = 'wander'; pickWanderTarget(npc); }
+      if(npc.travelT > (npc.hiroll ? 120 : 40)){ npc.travelT = 0; if(npc.machine) releaseSeat(npc.machine, npc.seatIndex, npc); npc.machine = null; npc.state = 'wander'; pickWanderTarget(npc); }
     } else npc.travelT = 0;
     if(npc.state === 'toATM'){
       if(stepToward(npc, dt, npc.atmTarget)){
@@ -12325,6 +12433,7 @@ function updateNPCs(dt){
           // instead of wandering off to find something new - "sticks with one machine most of the
           // night." Still runs through the same suitability/room checks as any fresh pick, so it can't
           // strand them at a machine that's since filled up, broken, or stopped suiting their wallet.
+          if(npc.hiroll && !npc.wantsDrink && !npc.needsLoo && !npc.wantsFood && Math.random() < 0.9 && hirollSeek(npc)) return;   // straight on to another table (drinks and the loo still come first)
           const stick = npc.archetype === 'grinder' && m && machines.includes(m) && Math.random() < 0.7
             && guestSuitsMachine(npc, m) && (isSeatedTable(m) ? freeSeatCount(m) > 0 : (m.occupants||0) < maxOccupantsFor(m));
           if(stick && pickMachineSpot(npc, m)){
@@ -14285,7 +14394,7 @@ function updateEventsPanel(){
   else {
     const g = 'display:grid;grid-template-columns:44px 1.2fr 1.2fr 56px 80px 70px 70px 80px;gap:6px;align-items:center;';
     html += `<div style="${g}color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;"><span>Day</span><span>Event</span><span>Review</span><span>Seats / Tickets</span><span>Takings</span><span>Drinks</span><span>Fee</span><span>Net</span></div>`;
-    html += eventHistory.map(h => `<div style="${g}padding:3px 0;border-top:1px solid #2a4a3c;font-size:11px;"><span>${h.day}</span><span>${h.name}</span><span style="color:${String(h.review).startsWith('rave') ? '#e6c34a' : String(h.review).startsWith('bad') ? '#e08a8a' : '#cfd9d0'};">${h.review}</span><span>${h.tickets}</span><span>${money(h.ticketMoney)}</span><span>${money(h.drinks)}</span><span>${money(-h.fee)}</span><span style="color:${h.net >= 0 ? '#8fd6a8' : '#e08a8a'};font-weight:bold;">${money(h.net)}</span></div>`).join('');
+    html += eventHistory.map(h => `<div style="${g}padding:3px 0;border-top:1px solid #2a4a3c;font-size:11px;"><span>${h.day}</span><span>${h.name}</span><span style="color:${String(h.review).startsWith('rave') ? '#e6c34a' : String(h.review).startsWith('bad') ? '#e08a8a' : '#cfd9d0'};">${h.review}</span><span>${h.tickets}</span><span style="color:${h.ticketMoney < 0 ? '#e08a8a' : 'inherit'};">${money(h.ticketMoney)}</span><span>${money(h.drinks)}</span><span>${money(-h.fee)}</span><span style="color:${h.net >= 0 ? '#8fd6a8' : '#e08a8a'};font-weight:bold;">${money(h.net)}</span></div>`).join('');
   }
   html += '<button id="eventsClose" class="hotbarSlot" style="width:100%;margin-top:12px;">Close</button>';
   eventsPanelEl.innerHTML = html;
