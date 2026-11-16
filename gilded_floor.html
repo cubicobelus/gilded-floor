@@ -1768,6 +1768,7 @@ function statusPill(m){
   const r = m.room, [t, c] = r.dirty ? ['Needs cleaning', '#ffb020'] : r.occupant ? ['Occupied', '#ff6b6b'] : ['Vacant', '#5be08a'];
   return `<span style="color:${c};font-size:11px;">&#9679; ${t}</span>`;
 }
+const hotelRowsOpen = new Set();   // room types whose rooms are listed one by one (not saved)
 function updateHotelPanel(){
   const scroll = hotelPanelEl.scrollTop;
   const rooms = hotelRooms(), desk = hotelDesk();
@@ -1785,18 +1786,36 @@ function updateHotelPanel(){
       <input type="range" class="hRate" data-t="${t}" min="60" max="180" value="${Math.round(hotel.rateMult[t]*100)}" ${hotel.dynamic && officeOn('revmgr') ? 'disabled' : ''}>
       <span style="text-align:right;">~$${avg}/night</span></div>`;
   }).join('');
-  const roomRows = rooms.map((m, i)=>{
+  // One line per room type (how many, how many taken, vacant or dirty, average stars and rate); the rooms
+  // themselves open on demand, since a full hotel floor is dozens of near-identical rows.
+  const roomRow = (m, i)=>{
     const T = ROOM_TIERS[m.room.tier];
-    return `<div style="display:grid;grid-template-columns:1.1fr 90px 100px 110px 110px;gap:8px;align-items:center;padding:5px 0;border-top:1px solid #2a4a3c;">
+    return `<div style="display:grid;grid-template-columns:1.1fr 90px 100px 110px 110px;gap:8px;align-items:center;padding:5px 0 5px 14px;border-top:1px solid #1d3a2e;">
       <div><b>${T.name} #${i+1}</b> <span style="color:#9fb3a8;font-size:10px;">${m.level ? 'Upper' : 'Ground'} floor</span>
         <div style="color:#9fb3a8;font-size:10px;">${m.room.nights} night${m.room.nights===1?'':'s'} &middot; lifetime <span style="color:${m.room.revenue>=0?'#8fd6a8':'#e08a8a'};">$${Math.round(m.room.revenue).toLocaleString()}</span></div></div>
       <div style="color:#e6c34a;">${starString(roomStars(m))}</div><div>${statusPill(m)}</div>
       <div>$${roomRate(m)} / night</div>
       <button class="hotbarSlot hEdit" data-i="${i}" style="font-size:11px;${casinoClosed?'':'opacity:.5;'}" title="${casinoClosed?'':'Close the casino first'}">Customize</button></div>`;
+  };
+  const roomRows = Object.entries(ROOM_TIERS).map(([t, T])=>{
+    const rs = rooms.map((m, i) => ({ m, i })).filter(x => x.m.room.tier === t);
+    if(!rs.length) return '';
+    const open = hotelRowsOpen.has(t), n = rs.length;
+    const occ = rs.filter(x => x.m.room.occupant).length, dty = rs.filter(x => x.m.room.dirty).length, vac = n - occ - dty;
+    const stars = rs.reduce((a, x) => a + roomStars(x.m), 0) / n, rev = rs.reduce((a, x) => a + x.m.room.revenue, 0);
+    const seg = (k, col) => k ? `<div style="width:${k / n * 100}%;background:${col};"></div>` : '';
+    return `<div style="display:grid;grid-template-columns:1.1fr 90px 1fr 110px;gap:8px;align-items:center;padding:7px 0;border-top:1px solid #2a4a3c;">
+      <div style="display:flex;align-items:center;gap:8px;"><button class="hotbarSlot hGrp" data-t="${t}" title="${open ? 'Hide' : 'Show'} each room" style="font-size:12px;padding:0;min-width:0;width:22px;height:22px;line-height:1;flex:0 0 22px;">${open ? '&minus;' : '+'}</button>
+        <div><b>${T.name}s</b> <span style="color:#9fb3a8;">&times;${n}</span><div style="color:#9fb3a8;font-size:10px;">lifetime <span style="color:${rev>=0?'#8fd6a8':'#e08a8a'};">$${Math.round(rev).toLocaleString()}</span></div></div></div>
+      <div style="color:#e6c34a;">${starString(stars)}</div>
+      <div><div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:#0d1a14;">${seg(occ, '#e6c34a')}${seg(vac, '#8fd6a8')}${seg(dty, '#e08a8a')}</div>
+        <div style="font-size:10px;color:#9fb3a8;margin-top:3px;"><span style="color:#e6c34a;">${occ} taken</span> &middot; <span style="color:#8fd6a8;">${vac} vacant</span>${dty ? ` &middot; <span style="color:#e08a8a;">${dty} dirty</span>` : ''}</div></div>
+      <div style="text-align:right;">~$${Math.round(rs.reduce((a, x) => a + roomRate(x.m), 0) / n)} / night</div></div>
+      ${open ? rs.map(x => roomRow(x.m, x.i)).join('') : ''}`;
   }).join('');
   hotelPanelEl.innerHTML = `
     <h3 style="margin:0 0 4px 0;color:#e6c34a;font-weight:normal;font-size:13px;">Hotel</h3>
-    <p style="color:#9fb3a8;font-size:11px;margin:0 0 8px 0;">Build a front desk and guest rooms (on any floor). Every room also brings visitors of its own (one per Standard Room, two per Deluxe, three and a half per Suite). Guests check in at the desk, rest in a room, then play bigger. Housekeepers turn rooms around; a clerk keeps the desk moving. Walk up to any vacant room and press <b>F</b> to step inside any time - re-furnishing it still needs the casino closed first.</p>
+    <p style="color:#9fb3a8;font-size:11px;margin:0 0 8px 0;">Build a front desk and guest rooms on any floor. Guests check in, rest, then play bigger. <span title="Every room also brings visitors of its own (one per Standard Room, two per Deluxe, three and a half per Suite). Housekeepers turn rooms around; a clerk keeps the desk moving. Walk up to any vacant room and press F to step inside any time - re-furnishing it still needs the casino closed first." style="color:#e6c34a;cursor:help;">Hover for more.</span></p>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">${card('frontdesk')}${card('room_std')}${card('room_dlx')}${card('room_suite')}</div>
     <div style="margin:10px 0 4px;display:flex;gap:16px;flex-wrap:wrap;font-size:12px;">
       <span>Rooms: <b>${rooms.length}</b> (${occupied} occupied${dirty ? ', ' + dirty + ' dirty' : ''})</span>
@@ -1823,6 +1842,7 @@ function updateHotelPanel(){
     <button id="hotelClose" class="hotbarSlot" style="width:100%;margin-top:10px;">Close</button>`;
   hotelPanelEl.querySelectorAll('.hSel').forEach(b=> b.addEventListener('click', (e)=>{ e.stopPropagation(); const k = b.dataset.key, on = buildType !== k; setBuildType(on ? k : null); hotelPanelEl.style.display = 'none'; if(on) requestPlay(); }));
   hotelPanelEl.querySelectorAll('.hRate').forEach(s=> s.addEventListener('input', ()=>{ hotel.rateMult[s.dataset.t] = parseInt(s.value) / 100; s.parentElement.lastElementChild.textContent = '~$' + Math.round(ROOM_TIERS[s.dataset.t].rate * (parseInt(s.value)/100)) + '/night'; }));
+  hotelPanelEl.querySelectorAll('.hGrp').forEach(b=> b.addEventListener('click', (e)=>{ e.stopPropagation(); const t = b.dataset.t; if(hotelRowsOpen.has(t)) hotelRowsOpen.delete(t); else hotelRowsOpen.add(t); updateHotelPanel(); }));
   hotelPanelEl.querySelectorAll('.hHire').forEach(b=> b.addEventListener('click', (e)=>{ e.stopPropagation(); hireStaff(b.dataset.k); updateHotelPanel(); }));
   hotelPanelEl.querySelectorAll('.hEdit').forEach(b=> b.addEventListener('click', (e)=>{
     e.stopPropagation();
