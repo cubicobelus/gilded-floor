@@ -7757,10 +7757,11 @@ function gainStaffXp(s, dt){
 }
 
 // ---- the roster ----
+const staffOpen = new Set();   // jobs whose roster is showing (not saved)
 function renderStaffPanel(){
   const hr = officeOn('hroffice');
   const wageBill = totalWageBill();
-  let html = `<p style="color:#9fb3a8;font-size:11px;margin:0 0 8px;">Everyone starts Green, turns Seasoned after a week on the job and Expert after two (same wage at every level). Set the rate for each job: pay under the going rate and the mood slides, pay over it and they stay sweet. Too few people for the posts wears them out.</p>${hr ? '' : `<div style="color:#9fb3a8;font-size:10px;margin:0 0 8px;">${officeHint('hroffice')}</div>`}
+  let html = `<p style="color:#9fb3a8;font-size:11px;margin:0 0 8px;">Set the rate for each job and keep the posts covered. <span title="Everyone starts Green, turns Seasoned after a week on the job and Expert after two (same wage at every level). Pay under the going rate and the mood slides, pay over it and they stay sweet. Too few people for the posts wears them out." style="color:#e6c34a;cursor:help;">Hover for how it works.</span></p>${hr ? '' : `<div style="color:#9fb3a8;font-size:10px;margin:0 0 8px;">${officeHint('hroffice')}</div>`}
     <div style="margin-bottom:6px;">Wage bill: <b>$${Math.round(wageBill).toLocaleString()}</b> a day, paid when the day ends${staffNPCs.length ? ` &middot; ${staffNPCs.length} on the books` : ''}</div>
     <div style="display:grid;grid-template-columns:minmax(0,1fr);gap:8px;">`;
   Object.entries(STAFF_TYPES).forEach(([key, st])=>{
@@ -7782,7 +7783,17 @@ function renderStaffPanel(){
         <input type="range" class="sfWage" ${hr ? '' : 'disabled'} data-k="${key}" min="50" max="160" value="${Math.round(ratio*100)}" style="flex:1;">
         <span id="wageStatus${key}" style="color:${ratio < 0.95 ? '#e08a8a' : ratio > 1.05 ? '#8fd6a8' : '#9fb3a8'};white-space:nowrap;">${ratio < 0.95 ? 'under' : ratio > 1.05 ? 'over' : 'going rate'}</span>
       </div>`;
-    crew.forEach((s, i)=>{
+    const open = staffOpen.has(key);
+    if(crew.length){
+      // one summary line per job (average mood and how many at each level); the roster opens on demand
+      const avg = crew.reduce((a, s) => a + (s.morale || 70), 0) / crew.length, avgCol = avg >= 65 ? '#8fd6a8' : avg >= 35 ? '#ffb020' : '#e08a8a';
+      const lvN = STAFF_LEVELS.map((L, i) => ({ L, n: crew.filter(s => staffLevelIndex(s) === i).length })).filter(x => x.n);
+      html += `<div style="display:flex;align-items:center;gap:8px;font-size:11px;margin-top:5px;">
+        <button class="hotbarSlot sfOpen" data-k="${key}" title="${open ? 'Hide' : 'Show'} everyone" style="font-size:12px;padding:0;min-width:0;width:22px;height:22px;line-height:1;flex:0 0 22px;">${open ? '&minus;' : '+'}</button>
+        <span style="color:#9fb3a8;">Mood</span><span style="flex:0 0 90px;"><span style="display:block;height:6px;background:#0d1a14;border-radius:3px;overflow:hidden;"><span style="display:block;height:6px;width:${Math.round(avg)}%;background:${avgCol};border-radius:3px;"></span></span></span>
+        <span style="flex:1;text-align:right;">${lvN.map(x => `<span style="color:${x.L.col};">${x.n} ${x.L.name}</span>`).join(' <span style="color:#9fb3a8;">&middot;</span> ')}</span></div>`;
+    }
+    if(open) crew.forEach((s, i)=>{
       const lv = staffLevel(s), next = STAFF_LEVELS[staffLevelIndex(s) + 1], mood = s.morale || 70;
       const moodCol = mood >= 65 ? '#8fd6a8' : mood >= 35 ? '#ffb020' : '#e08a8a';
       html += `<div style="display:grid;grid-template-columns:minmax(0,1fr) 50px 44px 52px;gap:5px;align-items:center;font-size:11px;padding:2px 0 2px 6px;">
@@ -7793,13 +7804,14 @@ function renderStaffPanel(){
                : '<span style="color:#e6c34a;font-size:10px;text-align:center;">maxed</span>'}
       </div>`;
     });
-    if(crew.length) html += `<button class="hotbarSlot sfFire" data-k="${key}" style="width:100%;margin-top:3px;font-size:10px;color:#e08a8a;">Let one go</button>`;
+    if(crew.length && open) html += `<button class="hotbarSlot sfFire" data-k="${key}" style="width:100%;margin-top:3px;font-size:10px;color:#e08a8a;">Let one go</button>`;
     html += `</div>`;
   });
   html += '</div>';
   const staffScroll = staffListEl.scrollTop;
   staffListEl.innerHTML = html;
   staffListEl.scrollTop = staffScroll; // this panel now redraws every couple seconds, so hold your place in the list
+  staffListEl.querySelectorAll('.sfOpen').forEach(b=> b.addEventListener('click', (e)=>{ e.stopPropagation(); const k = b.dataset.k; if(staffOpen.has(k)) staffOpen.delete(k); else staffOpen.add(k); renderStaffPanel(); }));
   staffListEl.querySelectorAll('.sfHire').forEach(b=> b.addEventListener('click', (e)=>{ e.stopPropagation(); hireStaff(b.dataset.k); }));
   staffListEl.querySelectorAll('.sfFire').forEach(b=> b.addEventListener('click', (e)=>{ e.stopPropagation(); fireStaff(b.dataset.k); }));
   staffListEl.querySelectorAll('.sfTrain').forEach(b=> b.addEventListener('click', (e)=>{ e.stopPropagation(); const s = staffNPCs[parseInt(b.dataset.i)]; if(s && trainStaff(s)) renderStaffPanel(); }));
