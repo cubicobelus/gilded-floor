@@ -341,6 +341,12 @@
   <input type="range" id="bigSpenderSlider" min="0" max="100" value="8" style="width:100%;">
   <div style="font-size:10px;color:#9db8a8;margin:4px 0 12px;line-height:1.35;">How many of your guests are high rollers, out of everyone who walks in. Higher means more money, faster - an easier ride if you want one.</div>
 
+  <div id="perfSection">
+  <div style="color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin:0 0 5px;">Performance</div>
+  <button id="benchBtn" class="hotbarSlot" style="width:100%;margin-bottom:4px;">Run benchmark...</button>
+  <div style="font-size:10px;color:#9db8a8;margin:0 0 12px;line-height:1.35;">Runs a fixed test casino and reports frame rate and stutters. Your casino is saved first and is never touched by the test.</div>
+  </div>
+  <div id="saveSection">
   <div style="color:#9fb3a8;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin:0 0 5px;">Save data</div>
   <button id="saveBtn" class="hotbarSlot" style="width:100%;margin-bottom:6px;"><svg class="ic inl"><use href="#i-save"/></svg>Save</button>
   <button id="loadBtn" class="hotbarSlot" style="width:100%;margin-bottom:6px;"><svg class="ic inl"><use href="#i-load"/></svg>Load</button>
@@ -348,6 +354,31 @@
   <button id="importBtn" class="hotbarSlot" style="width:100%;margin-bottom:6px;"><svg class="ic inl"><use href="#i-upload"/></svg>Import save file</button>
   <input type="file" id="importFile" accept=".json,application/json" style="display:none;">
   <button id="resetBtn" class="hotbarSlot" style="width:100%;border-color:#7a1f2b;color:#e08a8a;"><svg class="ic inl"><use href="#i-reset"/></svg>Reset</button>
+  </div>
+</div>
+<div id="benchChooser" style="display:none;position:fixed;inset:0;z-index:12;background:rgba(6,12,9,0.7);align-items:center;justify-content:center;">
+  <div style="background:rgba(18,36,29,0.98);border:1px solid #c9a227;border-radius:8px;padding:16px 20px;color:#f0e6d2;font-size:12px;width:380px;max-width:92vw;">
+    <h3 style="margin:0 0 4px 0;color:#e6c34a;font-size:14px;font-weight:normal;">Run benchmark</h3>
+    <div style="color:#9fb3a8;font-size:11px;margin-bottom:10px;line-height:1.4;">Each run takes about 35 seconds. Your casino has been saved and is not used.</div>
+    <div id="benchChoices"></div>
+    <button id="benchChooserCancel" class="hotbarSlot" style="width:100%;margin-top:4px;">Cancel</button>
+  </div>
+</div>
+<div id="benchBanner" style="display:none;position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:11;background:rgba(18,36,29,0.92);border:1px solid #c9a227;border-radius:6px;padding:6px 14px;color:#f0e6d2;font-size:12px;align-items:center;gap:14px;white-space:nowrap;">
+  <span id="benchBannerText"></span>
+  <button id="benchBannerBack" class="hotbarSlot" style="padding:2px 10px;">Back to my casino</button>
+</div>
+<div id="benchResults" style="display:none;position:fixed;inset:0;z-index:13;background:rgba(8,16,12,0.97);color:#f0e6d2;font-size:12px;overflow-y:auto;padding:18px 24px;box-sizing:border-box;">
+  <h3 style="margin:0 0 8px 0;color:#e6c34a;font-size:15px;font-weight:normal;">Benchmark results</h3>
+  <div id="benchTable"></div>
+  <div id="benchDevice" style="color:#9fb3a8;font-size:11px;margin:8px 0 10px;"></div>
+  <div id="benchStrips"></div>
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+    <button id="benchCopy" class="hotbarSlot">Copy results</button>
+    <button id="benchJson" class="hotbarSlot">Download JSON</button>
+    <button id="benchAgain" class="hotbarSlot">Run again</button>
+    <button id="benchBack" class="hotbarSlot">Back to my casino</button>
+  </div>
 </div>
 <style>body.photoMode #tipStack, body.photoMode #checklist, body.photoMode #saveGoal, body.photoMode #hud, body.photoMode #eventLog, body.photoMode #speedControls, body.photoMode #modeBtn, body.photoMode #settingsBtn, body.photoMode #helpBtn, body.photoMode #sideTabsLeft, body.photoMode #minimap, body.photoMode #hint, body.photoMode #slotStake, body.photoMode #unlockHint, body.photoMode #closedBanner, body.photoMode #debtBox, body.photoMode #sellProgress, body.photoMode #blackjackPrompt, body.photoMode #crosshair, body.photoMode #inspectorLabel, body.photoMode #unlockPopup, body.photoMode #brokenIndicator { display:none !important; }</style>
 <div id="crosshair" style="display:none;"></div>
@@ -13944,6 +13975,7 @@ function updateHelpPanel(){
 // ---------------- Save / Load (browser localStorage) ----------------
 const SAVE_KEY = 'gildedFloorSave';
 function saveGame(){
+  if(BENCH.on) return false; // a benchmark run never touches the saved game
   try{
     const data = {
       version: 2,
@@ -13989,6 +14021,7 @@ function clearAllStaff(){
   Object.keys(staffCounts).forEach(k => staffCounts[k] = 0);
 }
 function loadGame(){
+  if(BENCH.on) return false;
   const raw = localStorage.getItem(SAVE_KEY);
   if(!raw) return false;
   let data;
@@ -14155,6 +14188,7 @@ function clearTransientState(){
 // A fresh start: an empty, CLOSED casino and STARTING_CASH. Every piece of casino state
 // below is put back to its initial value (sound settings are a preference, so they stay).
 function resetGame(){
+  if(BENCH.on) return;
   // location.reload() is unreliable in this preview sandbox, so reset happens
   // fully in-memory instead.
   localStorage.removeItem(SAVE_KEY);
@@ -14301,6 +14335,7 @@ importFileEl.addEventListener('change', ()=>{
   rd.readAsText(f);
 });
 function importSave(text){
+  if(BENCH.on) return;
   let data;
   try{ data = JSON.parse(text); } catch(e){ data = null; }
   if(!data || typeof data !== 'object' || !Array.isArray(data.machines) || !Number.isFinite(data.cash) || !Number.isFinite(data.currentDay)){
@@ -15573,8 +15608,9 @@ function updateCarLOD(){
     if(near !== car.userData.carNear){ car.userData.carNear = near; for(let i = 0; i < lod.far.length; i++) lod.far[i].visible = near; }
   }
 }
-function animate(){        // machine - a standing banner says so regardless of where the camera's pointed
+function animate(ts){        // machine - a standing banner says so regardless of where the camera's pointed
   requestAnimationFrame(animate);
+  if(BENCH.on){ if(BENCH.stop) return; benchTick(ts); }
   const dt = Math.min(clock.getDelta(), 0.1);
   stepGlowFade(dt);
   updateChasers(dt);
@@ -15711,11 +15747,307 @@ function animate(){        // machine - a standing banner says so regardless of 
   updateCarLOD();
   renderer.render(scene, camera);
 }
+// ---------------- Benchmark ----------------
+// Opened with ?bench=<machines|guests|full|typical|all>, the game skips the save entirely (nothing is
+// loaded, nothing is written), builds one fixed test casino from a seeded random generator, flies a
+// scripted camera round it for 30 measured seconds and shows frame rate and stutter numbers.
+// "all" runs the four in turn, one page load each, carrying the results in sessionStorage.
+const BENCH = (()=>{
+  let mode = null;
+  try{ const q = new URLSearchParams(location.search).get('bench'); if(['machines','guests','full','typical','all'].indexOf(q) >= 0) mode = q; }catch(e){}
+  return {
+    on: !!mode, mode, stop: false, guests: 0, name: '',
+    order: ['machines','guests','full','typical'], warmMs: 5000, runMs: 30000, key: 'gfBenchRun', seed: 20240607,
+    base: location.href.replace(/[?#].*$/, ''),
+    info: {
+      machines: { title:'Machines', guests:0,   desc:'The full casino with its machines and decor, closed, no guests. Shows what the building and machines cost.' },
+      guests:   { title:'Guests',   guests:100, desc:'An empty floor with 100 guests walking about. Shows what guests cost.' },
+      full:     { title:'Full',     guests:100, desc:'The full casino, open, about 100 guests, normal play running.' },
+      typical:  { title:'Typical',  guests:25,  desc:'A mid-game casino: about 90 items, 12 staff, about 25 guests.' },
+    },
+    st: null, run: null,
+  };
+})();
+function benchRng(seed){ // small seeded generator (mulberry32)
+  let a = seed >>> 0;
+  return ()=>{ a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function benchLoadState(){ try{ return JSON.parse(sessionStorage.getItem(BENCH.key)); }catch(e){ return null; } }
+function benchSaveState(){ try{ sessionStorage.setItem(BENCH.key, JSON.stringify(BENCH.st)); }catch(e){ console.warn('bench state not stored', e); } }
+function benchGo(mode){ location.href = BENCH.base + (mode ? '?bench=' + mode : ''); }
+
+// A guest made for the benchmark starts out on the floor, not out in the car park, so the first
+// seconds are not just a queue walking in from the door.
+function benchScatter(n){
+  if(n.state !== 'arriving') return;
+  pickWanderTarget(n);
+  n.pos.copy(n.target);
+  n.mesh.position.copy(n.pos);
+  n.state = 'wander'; n.waitTimer = Math.random() * 1.5;
+  pickWanderTarget(n);
+}
+function benchTopUp(scatter){
+  for(let i = 0; i < 300 && npcs.length < BENCH.guests; i++){
+    const n = makeNPC();
+    if(!n) break;
+    if(scatter) benchScatter(n);
+  }
+}
+function benchBuildTypical(){
+  const put = (key, x, z, rot=0)=>{ if(!thrivingFits(key, x, z, rot, 0)) return false; placeMachine(key, x, z, rot, undefined, 0); return true; };
+  const E = Math.PI/2, W = -Math.PI/2;
+  const rows = [-6,-11,-16,-21,-26,-31,-36,-41,-46];
+  [['slot',-33,E],['fruitslot',-29.5,W],['pennyslot',29.5,E],['videoslot',33,W]].forEach(([k,x,rot])=> rows.forEach(z => put(k, x, z, rot)));
+  [['blackjack',-18,-20],['blackjack',-6,-20],['blackjack',6,-20],['blackjack',18,-20],['roulette',-18,-31],['poker',-6,-31],['baccarat',6,-31],['roulette',18,-31],['craps',-17,-42]].forEach(([k,x,z]) => put(k, x, z));
+  put('bar',-30,-58); put('restroom',-56,-2); put('restroom',56,-2);
+  put('lounge',-50,6); put('restaurant',-44,-4);
+  for(let i = 0; i < 6; i++) put('dinertable', -49 + (i%2)*5, 1 + Math.floor(i/2)*4.5);
+  put('atm',-8,12); put('atm',8,12); put('cashier',-12,10);
+  for(let x = -37.5; x <= 37.5; x += 12.5) for(let z = -50; z <= -10; z += 20) put('chandelier', x, z);
+  [[-57,14],[57,14],[-24,14],[24,14],[-57,-40],[57,-40]].forEach(([x,z])=> put('plant', x, z));
+  put('fountain',0,2); put('statue',-12,2); put('statue',12,2);
+  for(let i = 0; i < 5; i++) put('artwork', -57.3, -60 + 14*i, E);
+  [[-4,7],[4,7]].forEach(([x,z])=> put('ropes', x, z));
+  for(let i = 0; i < 4; i++) put('neon', -38 + 12*i, 12, 0);
+  const roster = { dealer: 5, waitress: 3, security: 1, clerk: 1, housekeeper: 1, chef: 1 };
+  Object.entries(roster).forEach(([k, n])=>{ for(let i = 0; i < n; i++) hireStaff(k); });
+  assignStaffPosts();
+}
+function benchBuild(name){
+  const real = Math.random;
+  Math.random = benchRng(BENCH.seed);   // the same casino on every device
+  try{
+    makeThrivingCasino();               // the floor itself: every expansion, a second storey, the same wallpaper
+    if(name === 'guests' || name === 'typical'){
+      clearActiveGames(); npcs.slice().forEach(removeNPC); clearAllMachines(); clearAllStaff(); regularPool = [];
+    }
+    if(name === 'typical') benchBuildTypical();
+    if(name === 'machines'){ npcs.slice().forEach(removeNPC); setCasinoClosed(true, true); closedBannerEl.style.display = 'none'; }
+    const spare = effectiveParkingCapacity() - parkingCapacity; // valets add spaces
+    parkingCapacity = Math.max(1, BENCH.guests - spare);        // no more guests than the test holds
+    benchTopUp(true);
+    dayTime = 40;
+    assignStaffPosts();
+  } finally { Math.random = real; }
+}
+
+// Camera: 10 s at the entrance, 10 s gliding down the middle while turning, 10 s from the back-left of the floor
+// (the real corner is hemmed in by slot banks, so this is the open spot in the same part of the room).
+function benchCamera(t, warm){
+  const eye = PLAYER_EYE_HEIGHT;
+  const seg = t < 10 ? 0 : t < 20 ? 1 : 2;
+  const s = warm ? 0 : t - seg * 10;
+  const p = player;
+  if(seg === 0){ p.pos.set(0, eye, 12); p.yaw = 0; p.pitch = -0.05; }
+  else if(seg === 1){ p.pos.set(0, eye, 12 - 5 * s); p.yaw = 0.5 * Math.sin(s * Math.PI * 2 / 10); p.pitch = -0.05; }
+  else { p.pos.set(ROOM_LEFT_X + 28, eye, ROOM_BACK_Z + 2); p.yaw = -2.356 + 0.25 * Math.sin(s * Math.PI * 2 / 10); p.pitch = -0.05; }
+  p.velocityY = 0; p.grounded = true;
+}
+function benchMedian(a){ const b = a.slice().sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : 0; }
+function benchStats(frames){
+  const n = frames.length, sum = frames.reduce((a, b) => a + b, 0);
+  const sorted = frames.slice().sort((a, b) => b - a), k = Math.max(1, Math.ceil(n * 0.01));
+  const worst = sorted.slice(0, k).reduce((a, b) => a + b, 0) / k;
+  return { n, fps: n && sum ? 1000 * n / sum : 0, low1: worst ? 1000 / worst : 0, maxMs: sorted[0] || 0, over33: frames.filter(f => f > 33).length, over50: frames.filter(f => f > 50).length, medianMs: benchMedian(frames) };
+}
+function benchBannerSet(text){ document.getElementById('benchBannerText').textContent = text; }
+function benchTick(ts){
+  if(!ts) return;
+  const R = BENCH.run;
+  const idx = BENCH.st.results.length, total = BENCH.mode === 'all' ? 4 : 1;
+  const label = `Benchmark ${BENCH.info[BENCH.name].title}${total > 1 ? ` (${idx + 1} of ${total})` : ''}`;
+  if(!R.start) R.start = ts;
+  if(BENCH.guests && !casinoClosed && npcs.length < BENCH.guests) benchTopUp(false);
+  if(!R.mStart){
+    const el = ts - R.start;
+    if(el < BENCH.warmMs){
+      benchCamera(Math.min(2, Math.floor(el / (BENCH.warmMs / 3))) * 10, true); // a look at each of the three views, so shaders and textures are ready
+      if(ts - R.lastBanner > 250){ R.lastBanner = ts; benchBannerSet(`${label} - warming up, ${Math.ceil((BENCH.warmMs - el) / 1000)} s`); }
+      return;
+    }
+    R.mStart = ts; R.prev = ts; benchCamera(0, false);
+    return;
+  }
+  const t = ts - R.mStart;
+  const ms = ts - R.prev; R.prev = ts;
+  R.frames.push(Math.round(ms * 100) / 100);
+  R.calls += renderer.info.render.calls; R.tris += renderer.info.render.triangles;
+  R.guestSum += npcs.length; R.guestMin = Math.min(R.guestMin, npcs.length); R.guestMax = Math.max(R.guestMax, npcs.length);
+  if(t >= BENCH.runMs){ benchFinish(); return; }
+  benchCamera(t / 1000, false);
+  if(ts - R.lastBanner > 250){ R.lastBanner = ts; benchBannerSet(`${label} - measuring, ${Math.ceil((BENCH.runMs - t) / 1000)} s`); }
+}
+function benchBrowser(){
+  const ua = navigator.userAgent; let m;
+  if((m = ua.match(/Edg\/(\d+)/))) return 'Edge ' + m[1];
+  if((m = ua.match(/OPR\/(\d+)/))) return 'Opera ' + m[1];
+  if((m = ua.match(/Firefox\/(\d+)/))) return 'Firefox ' + m[1];
+  if((m = ua.match(/Chrome\/(\d+)/))) return 'Chrome ' + m[1];
+  if((m = ua.match(/Version\/(\d+).*Safari/))) return 'Safari ' + m[1];
+  return ua.slice(0, 60);
+}
+function benchGpu(){
+  try{
+    const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : 'unknown (not exposed)';
+  }catch(e){ return 'unknown'; }
+}
+function benchFinish(){
+  const R = BENCH.run, S = benchStats(R.frames), n = Math.max(1, R.frames.length);
+  BENCH.stop = true;
+  BENCH.st.results.push({
+    name: BENCH.name, title: BENCH.info[BENCH.name].title,
+    fps: S.fps, low1: S.low1, maxMs: S.maxMs, over33: S.over33, over50: S.over50, medianMs: S.medianMs, frameCount: S.n,
+    calls: R.calls / n, tris: R.tris / n,
+    machines: machines.length, guests: R.guestSum / n, guestsMin: R.guestMin, guestsMax: R.guestMax, staff: staffNPCs.length,
+    frames: R.frames,
+  });
+  BENCH.st.device = { browser: benchBrowser(), gpu: benchGpu(), win: `${innerWidth}x${innerHeight}`, dpr: window.devicePixelRatio || 1 };
+  benchSaveState();
+  const list = BENCH.mode === 'all' ? BENCH.order : [BENCH.mode];
+  if(BENCH.st.results.length < list.length) location.replace(BENCH.base + '?bench=' + BENCH.mode); // next casino, fresh page
+  else benchShowResults();
+}
+
+// ---- result screen ----
+function benchFmt(v, d){ return Number(v).toFixed(d); }
+function benchDeviceLine(){
+  const D = BENCH.st.device || {}, all = [];
+  BENCH.st.results.forEach(r => r.frames.forEach(f => all.push(f)));
+  const med = benchMedian(all);
+  return `${D.browser}; GPU: ${D.gpu}; window ${D.win} at ${Math.round((D.dpr || 1) * 100) / 100}x; screen refresh about ${med ? Math.round(1000 / med) : '?'} Hz (median frame ${benchFmt(med, 1)} ms)`;
+}
+function benchText(){
+  const lines = ['Gilded Floor benchmark ' + new Date().toISOString().slice(0, 10)];
+  BENCH.st.results.forEach(r => lines.push(`${r.title}: ${benchFmt(r.fps, 1)} fps avg, ${benchFmt(r.low1, 1)} fps 1% low, longest ${benchFmt(r.maxMs, 1)} ms, over 33 ms: ${r.over33}, over 50 ms: ${r.over50}, ${Math.round(r.calls)} draw calls, ${Math.round(r.tris / 1000)}k triangles, ${r.machines} items, ${Math.round(r.guests)} guests, ${r.staff} staff`));
+  lines.push('Device: ' + benchDeviceLine());
+  return lines.join('\n');
+}
+function benchDrawStrip(cv, r){
+  const W = cv.width, H = cv.height, g = cv.getContext('2d');
+  const padL = 40, padT = 14, padB = 3, plotW = W - padL - 6, plotH = H - padT - padB;
+  const yMax = Math.max(50, Math.min(200, Math.ceil(r.maxMs / 10) * 10));
+  const X = t => padL + Math.min(t, BENCH.runMs) / BENCH.runMs * plotW;
+  const Y = ms => padT + plotH - Math.min(ms, yMax) / yMax * plotH;
+  g.fillStyle = '#0d1a14'; g.fillRect(0, 0, W, H);
+  ['entrance', 'walk down the middle', 'back corner'].forEach((nm, i)=>{
+    g.fillStyle = i % 2 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.09)';
+    g.fillRect(X(i * 10000), padT, X((i + 1) * 10000) - X(i * 10000), plotH);
+    g.fillStyle = '#9fb3a8'; g.font = '10px sans-serif'; g.textAlign = 'left';
+    g.fillText(nm, X(i * 10000) + 4, 10);
+  });
+  [[1000/60, '#4fae6a', '16.7'], [1000/30, '#e0a040', '33']].forEach(([ms, col, txt])=>{
+    g.strokeStyle = col; g.lineWidth = 1; g.setLineDash([4, 3]);
+    g.beginPath(); g.moveTo(padL, Y(ms)); g.lineTo(W - 6, Y(ms)); g.stroke();
+    g.setLineDash([]); g.fillStyle = col; g.textAlign = 'right'; g.fillText(txt, padL - 4, Y(ms) + 3);
+  });
+  g.strokeStyle = '#e6c34a'; g.lineWidth = 1.2; g.beginPath();
+  let t = 0;
+  r.frames.forEach((f, i)=>{ t += f; if(i) g.lineTo(X(t), Y(f)); else g.moveTo(X(t), Y(f)); });
+  g.stroke();
+  t = 0; g.fillStyle = '#e05050';
+  r.frames.forEach(f => { t += f; if(f > 33){ g.beginPath(); g.arc(X(t), Y(f), 2.2, 0, 6.2832); g.fill(); } });
+  g.fillStyle = '#f0e6d2'; g.textAlign = 'right'; g.fillText(`${r.title}  (top = ${yMax} ms)`, W - 8, 10);
+}
+function benchShowResults(){
+  BENCH.stop = true;
+  document.getElementById('benchBanner').style.display = 'none';
+  const res = BENCH.st.results;
+  const th = 'padding:3px 10px;text-align:right;color:#9fb3a8;font-weight:normal;border-bottom:1px solid #3a5a49;';
+  const td = 'padding:3px 10px;text-align:right;';
+  const cols = ['Casino','Avg fps','1% low fps','Longest ms','Over 33 ms','Over 50 ms','Draw calls','Triangles','Items','Guests','Staff'];
+  let html = `<table style="border-collapse:collapse;"><tr>${cols.map((c, i) => `<th style="${th}${i ? '' : 'text-align:left;'}">${c}</th>`).join('')}</tr>`;
+  res.forEach(r => {
+    const bad = (v, col) => v > 0 ? `color:${col};` : '';
+    html += `<tr><td style="${td}text-align:left;color:#e6c34a;">${r.title}</td><td style="${td}">${benchFmt(r.fps, 1)}</td><td style="${td}">${benchFmt(r.low1, 1)}</td><td style="${td}">${benchFmt(r.maxMs, 1)}</td>` +
+      `<td style="${td}${bad(r.over33, '#e0a040')}">${r.over33}</td><td style="${td}${bad(r.over50, '#e05050')}">${r.over50}</td>` +
+      `<td style="${td}">${Math.round(r.calls)}</td><td style="${td}">${Math.round(r.tris).toLocaleString()}</td><td style="${td}">${r.machines}</td><td style="${td}">${Math.round(r.guests)}</td><td style="${td}">${r.staff}</td></tr>`;
+  });
+  document.getElementById('benchTable').innerHTML = html + '</table>';
+  document.getElementById('benchDevice').textContent = 'Device: ' + benchDeviceLine();
+  const strips = document.getElementById('benchStrips');
+  strips.innerHTML = '<div style="color:#9fb3a8;font-size:11px;margin-bottom:4px;">Frame time over the 30 seconds. Dashed lines: 16.7 ms (60 fps, green) and 33 ms (30 fps, orange). Red dots are frames over 33 ms.</div>';
+  res.forEach(r => {
+    const cv = document.createElement('canvas'); cv.width = 900; cv.height = 78; cv.style.cssText = 'display:block;margin-bottom:5px;max-width:100%;border:1px solid #2a4538;';
+    strips.appendChild(cv); benchDrawStrip(cv, r);
+  });
+  document.getElementById('benchResults').style.display = 'block';
+}
+function benchCopyText(text){
+  const done = ()=>{ const b = document.getElementById('benchCopy'); b.textContent = 'Copied'; setTimeout(()=>{ b.textContent = 'Copy results'; }, 1500); };
+  const fallback = ()=>{
+    const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;left:-999px;top:0;';
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try{ ok = document.execCommand('copy'); }catch(e){}
+    ta.remove(); if(ok) done(); else window.prompt('Copy these results:', text);
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+}
+function benchSetup(){
+  // nothing from the saved game is loaded and nothing is ever written back (see saveGame, loadGame, resetGame, importSave)
+  tipsEnabled = false; unlockPopupsEnabled = false; checklistDone = true; playedAMachine = true; soundMuted = true;
+  document.getElementById('unlockPopupsToggle').checked = false; document.getElementById('soundMuteToggle').checked = true;
+  try{ applyVolumes(); }catch(e){}
+  startOverlay.style.display = 'none'; gameStarted = true;
+  document.getElementById('perfSection').style.display = 'none'; document.getElementById('saveSection').style.display = 'none';
+  checklistEl.style.display = 'none';
+  const back = ()=>{ BENCH.stop = true; benchGo(null); };
+  document.getElementById('benchBannerBack').addEventListener('click', (e)=>{ e.stopPropagation(); back(); });
+  document.getElementById('benchBack').addEventListener('click', (e)=>{ e.stopPropagation(); back(); });
+  document.getElementById('benchAgain').addEventListener('click', (e)=>{ e.stopPropagation(); try{ sessionStorage.removeItem(BENCH.key); }catch(err){} benchGo(BENCH.mode); });
+  document.getElementById('benchCopy').addEventListener('click', (e)=>{ e.stopPropagation(); benchCopyText(benchText()); });
+  document.getElementById('benchJson').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const data = { game: 'Gilded Floor', generated: new Date().toISOString(), device: BENCH.st.device, deviceLine: benchDeviceLine(), results: BENCH.st.results };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type:'application/json' }));
+    a.download = 'gilded-floor-benchmark.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=> URL.revokeObjectURL(a.href), 1000);
+  });
+  document.getElementById('benchResults').addEventListener('click', (e)=> e.stopPropagation());
+  document.getElementById('benchBanner').addEventListener('click', (e)=> e.stopPropagation());
+  let st = benchLoadState();
+  const list = BENCH.mode === 'all' ? BENCH.order : [BENCH.mode];
+  if(!st || st.mode !== BENCH.mode || !Array.isArray(st.results)) st = { mode: BENCH.mode, results: [], device: null };
+  BENCH.st = st; benchSaveState();
+  if(st.results.length >= list.length){ benchShowResults(); return; } // a finished set: show it again
+  BENCH.name = list[st.results.length];
+  BENCH.guests = BENCH.info[BENCH.name].guests;
+  BENCH.run = { start: 0, mStart: 0, prev: 0, frames: [], calls: 0, tris: 0, guestSum: 0, guestMin: 1e9, guestMax: 0, lastBanner: -1e9 };
+  document.getElementById('benchBanner').style.display = 'flex';
+  benchBannerSet('Benchmark ' + BENCH.info[BENCH.name].title + ' - building the casino');
+  benchBuild(BENCH.name);
+}
+// ---- the chooser in Settings (normal play) ----
+(function(){
+  const box = document.getElementById('benchChoices');
+  const items = BENCH.order.map(k => [k, BENCH.info[k].title, BENCH.info[k].desc]).concat([['all', 'Run all four', 'Machines, Guests, Full and Typical one after another, about 3 minutes, then one table to compare.']]);
+  items.forEach(([k, title, desc])=>{
+    const b = document.createElement('button');
+    b.className = 'hotbarSlot'; b.style.cssText = 'display:block;width:100%;text-align:left;margin-bottom:6px;padding:6px 10px;';
+    b.innerHTML = `<div style="color:#e6c34a;">${title}</div><div style="font-size:10px;color:#9db8a8;white-space:normal;line-height:1.35;">${desc}</div>`;
+    b.addEventListener('click', (e)=>{ e.stopPropagation(); try{ sessionStorage.removeItem(BENCH.key); }catch(err){} benchGo(k); });
+    box.appendChild(b);
+  });
+  const chooser = document.getElementById('benchChooser');
+  chooser.addEventListener('click', (e)=>{ e.stopPropagation(); if(e.target === chooser) chooser.style.display = 'none'; });
+  document.getElementById('benchChooserCancel').addEventListener('click', (e)=>{ e.stopPropagation(); chooser.style.display = 'none'; });
+  document.getElementById('benchBtn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    if(!saveGame()){ logEvent('Could not save, so the benchmark was not started', '#e08a8a'); return; }
+    logEvent('Casino saved', '#8fd6a8');
+    chooser.style.display = 'flex';
+  });
+})();
 buildExterior();
 checkTabUnlocks(true);
-if(loadGame()) logEvent('Welcome back, loaded your saved casino', '#e6c34a');
-else logEvent('Welcome! Press 1 to buy your first machines, then click Open Casino.', '#e6c34a');
-warmThumbs();
+if(BENCH.on) benchSetup();
+else{
+  if(loadGame()) logEvent('Welcome back, loaded your saved casino', '#e6c34a');
+  else logEvent('Welcome! Press 1 to buy your first machines, then click Open Casino.', '#e6c34a');
+  warmThumbs();
+}
 animate();
 </script>
 </body>
