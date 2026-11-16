@@ -24,7 +24,7 @@
   }
   /* Shared look for HUD buttons/panels: 6px radius, soft gradient, faint gold hairline, gold on hover/active. */
   .sideTab, .hotbarSlot, #settingsBtn, #helpBtn, #minimap, #checklist, #unlockHint,
-  #staffPanel, #statsPanel, #helpPanel, #machineConfigPanel, #keybindPanel, #settingsPanel, #riggingPanel,
+  #staffPanel, #statsPanel, #moneyPanel, #helpPanel, #machineConfigPanel, #keybindPanel, #settingsPanel, #riggingPanel,
   #hotelPanel, #roomPanel, #buildingPanel, #regularsPanel, #eventsPanel, #clubPanel, #devPanel{
     background:linear-gradient(180deg, rgba(22,42,34,0.94), rgba(12,26,20,0.94)) !important;
     border:1px solid rgba(201,162,39,0.55) !important; border-radius:6px !important;
@@ -32,7 +32,7 @@
   }
   #checklist, #unlockHint{ border-color:rgba(201,162,39,0.35) !important; }
   /* Every side-tab panel has the same width and the same top edge, so flipping through 1 to 9 only changes the content. */
-  #categoryPopup, #clubPanel, #staffPanel, #statsPanel, #buildingPanel, #regularsPanel, #riggingPanel, #eventsPanel, #hotelPanel{
+  #categoryPopup, #clubPanel, #staffPanel, #statsPanel, #moneyPanel, #buildingPanel, #regularsPanel, #riggingPanel, #eventsPanel, #hotelPanel{
     width:min(860px,94vw) !important; top:5vh !important; transform:translateX(-50%) !important; max-height:90vh !important; box-sizing:border-box !important;
   }
   /* Scrollbars in the house style: a thin dark track with a gold thumb, instead of the browser's grey bar. */
@@ -189,7 +189,7 @@
   </div>
 </div>
 
-<svg id="iconSprite" width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="i-build" viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-2 2-5-5z"/><path d="M12.5 6.5L5 14"/><path d="M5 14l-1.5 5.5L9 18l7.5-7.5"/></symbol><symbol id="i-club" viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="2.6"/><path d="M3.5 18c0-3 2.2-5 5-5s5 2 5 5"/><circle cx="16.5" cy="9" r="2.1"/><path d="M15 13.2c3.2-.4 5.5 1.3 5.5 4.3"/></symbol><symbol id="i-staff" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5.5 20c0-3.8 2.8-6 6.5-6s6.5 2.2 6.5 6z"/><path d="M12 14.5l-1.3 1.8 1.3 3.2 1.3-3.2z"/></symbol><symbol id="i-stats" viewBox="0 0 24 24"><path d="M4 20h16"/><rect x="5.5" y="12" width="3" height="8" rx=".6"/><rect x="10.5" y="5" width="3" height="15" rx=".6"/><rect x="15.5" y="9" width="3" height="11" rx=".6"/></symbol><symbol id="i-building" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="1"/><path d="M8.5 7.5h1.5M14 7.5h1.5M8.5 11h1.5M14 11h1.5"/><path d="M10 20.5v-4.5h4v4.5"/></symbol><symbol id="i-regulars" viewBox="0 0 24 24"><path d="M12 3.5l2.5 5.3 5.7.7-4.2 4 1.1 5.7L12 16.4 6.9 19.2 8 13.5l-4.2-4 5.7-.7z"/></symbol><symbol id="i-rigging" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/></symbol><symbol id="i-hotel" viewBox="0 0 24 24"><path d="M12 5v1.5"/><path d="M5 17a7 7 0 0 1 14 0z"/><path d="M3.5 19.5h17"/><path d="M10.5 5h3"/></symbol><symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.5l-5.4 3 1.2-6-4.5-4.2 6.1-.7z"/></symbol><symbol id="i-ticket" viewBox="0 0 24 24"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z"/><path d="M14.5 6.5v2M14.5 11v2M14.5 15.5v2"/></symbol><symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.3 9.4a2.8 2.8 0 0 1 5.4.9c0 1.9-2.7 2.3-2.7 4"/><circle cx="12" cy="17.3" r=".6"/></symbol><symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="11" width="13" height="9" rx="1.8"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></symbol><symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="i-load" viewBox="0 0 24 24"><path d="M3.5 6.5h6l2 2h9v10h-17z"/></symbol><symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></symbol><symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 19.5h14"/></symbol><symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5v1.5A3 3 0 0 0 8 10.5M16 6h3v1.5a3 3 0 0 1-3 3M12 13v4M8.5 20h7M10 17h4"/></symbol><symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M9 17h6M10 20h4M12 3.5a5.5 5.5 0 0 0-3.2 10c.6.5.7 1.1.7 1.8V17h5v-1.7c0-.7.1-1.3.7-1.8A5.5 5.5 0 0 0 12 3.5z"/></symbol><symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5L19 4M16 7l2.5 2.5"/></symbol><symbol id="i-reset" viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.2-5.1M5 4v4h4"/></symbol><symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 15.5H3z"/><path d="M12 10v4.5M12 17v.2"/></symbol><symbol id="i-dice" viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M9 9v.1M15 15v.1M12 12v.1"/></symbol><symbol id="i-sofa" viewBox="0 0 24 24"><path d="M5 11V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3M3.5 12a1.5 1.5 0 0 1 3 0v2h11v-2a1.5 1.5 0 0 1 3 0v5h-17zM6 17v2M18 17v2"/></symbol><symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19C5 10 10 5 19 5c0 9-5 14-14 14zM5 19l8-8"/></symbol><symbol id="i-columns" viewBox="0 0 24 24"><path d="M3.5 8L12 4l8.5 4M5.5 9.5v8M10 9.5v8M14 9.5v8M18.5 9.5v8M3.5 20h17"/></symbol></defs></svg>
+<svg id="iconSprite" width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="i-build" viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-2 2-5-5z"/><path d="M12.5 6.5L5 14"/><path d="M5 14l-1.5 5.5L9 18l7.5-7.5"/></symbol><symbol id="i-club" viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="2.6"/><path d="M3.5 18c0-3 2.2-5 5-5s5 2 5 5"/><circle cx="16.5" cy="9" r="2.1"/><path d="M15 13.2c3.2-.4 5.5 1.3 5.5 4.3"/></symbol><symbol id="i-staff" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5.5 20c0-3.8 2.8-6 6.5-6s6.5 2.2 6.5 6z"/><path d="M12 14.5l-1.3 1.8 1.3 3.2 1.3-3.2z"/></symbol><symbol id="i-stats" viewBox="0 0 24 24"><path d="M4 20h16"/><rect x="5.5" y="12" width="3" height="8" rx=".6"/><rect x="10.5" y="5" width="3" height="15" rx=".6"/><rect x="15.5" y="9" width="3" height="11" rx=".6"/></symbol><symbol id="i-money" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.2c-.5-1-1.5-1.5-2.8-1.5-1.6 0-2.8.8-2.8 2.1 0 3 5.8 1.4 5.8 4.4 0 1.3-1.3 2.1-3 2.1-1.4 0-2.5-.6-3-1.6"/><path d="M12 6v1.7M12 16.3V18"/></symbol><symbol id="i-building" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="1"/><path d="M8.5 7.5h1.5M14 7.5h1.5M8.5 11h1.5M14 11h1.5"/><path d="M10 20.5v-4.5h4v4.5"/></symbol><symbol id="i-regulars" viewBox="0 0 24 24"><path d="M12 3.5l2.5 5.3 5.7.7-4.2 4 1.1 5.7L12 16.4 6.9 19.2 8 13.5l-4.2-4 5.7-.7z"/></symbol><symbol id="i-rigging" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="8.5" cy="8.5" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="15.5" cy="15.5" r=".9"/><circle cx="15.5" cy="8.5" r=".9"/><circle cx="8.5" cy="15.5" r=".9"/></symbol><symbol id="i-hotel" viewBox="0 0 24 24"><path d="M12 5v1.5"/><path d="M5 17a7 7 0 0 1 14 0z"/><path d="M3.5 19.5h17"/><path d="M10.5 5h3"/></symbol><symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.5l-5.4 3 1.2-6-4.5-4.2 6.1-.7z"/></symbol><symbol id="i-ticket" viewBox="0 0 24 24"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z"/><path d="M14.5 6.5v2M14.5 11v2M14.5 15.5v2"/></symbol><symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.3 9.4a2.8 2.8 0 0 1 5.4.9c0 1.9-2.7 2.3-2.7 4"/><circle cx="12" cy="17.3" r=".6"/></symbol><symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/></symbol><symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.5" y="11" width="13" height="9" rx="1.8"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></symbol><symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol><symbol id="i-load" viewBox="0 0 24 24"><path d="M3.5 6.5h6l2 2h9v10h-17z"/></symbol><symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></symbol><symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 19.5h14"/></symbol><symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5v1.5A3 3 0 0 0 8 10.5M16 6h3v1.5a3 3 0 0 1-3 3M12 13v4M8.5 20h7M10 17h4"/></symbol><symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M9 17h6M10 20h4M12 3.5a5.5 5.5 0 0 0-3.2 10c.6.5.7 1.1.7 1.8V17h5v-1.7c0-.7.1-1.3.7-1.8A5.5 5.5 0 0 0 12 3.5z"/></symbol><symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5L19 4M16 7l2.5 2.5"/></symbol><symbol id="i-reset" viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.2-5.1M5 4v4h4"/></symbol><symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 15.5H3z"/><path d="M12 10v4.5M12 17v.2"/></symbol><symbol id="i-dice" viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M9 9v.1M15 15v.1M12 12v.1"/></symbol><symbol id="i-sofa" viewBox="0 0 24 24"><path d="M5 11V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3M3.5 12a1.5 1.5 0 0 1 3 0v2h11v-2a1.5 1.5 0 0 1 3 0v5h-17zM6 17v2M18 17v2"/></symbol><symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19C5 10 10 5 19 5c0 9-5 14-14 14zM5 19l8-8"/></symbol><symbol id="i-columns" viewBox="0 0 24 24"><path d="M3.5 8L12 4l8.5 4M5.5 9.5v8M10 9.5v8M14 9.5v8M18.5 9.5v8M3.5 20h17"/></symbol></defs></svg>
 <div id="hud">
   Cash: <b id="cashDisp">$2,000</b> · Day <b id="dayVal">1</b> · <b id="clockLabel">8:00 AM</b> <span id="peakLabel" style="color:#e6c34a;"></span> <span id="inspectorLabel" style="color:#ffb347;"></span> <span id="parkingLabel" style="color:#ff9f7a;"></span><br>
   Mode: <b id="modeIndicator">UI Mode</b>
@@ -226,12 +226,11 @@
   <button id="staffPanelClose" class="hotbarSlot" style="width:100%;margin-top:8px;">Close</button>
 </div>
 <div id="statsPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.96);border:1px solid #c9a227;border-radius:8px;padding:12px 14px;color:#f0e6d2;font-size:12px;display:none;z-index:6;width:min(720px,94vw);max-height:96vh;overflow-y:auto;box-sizing:border-box;">
-  <div style="display:flex;flex-direction:column;height:min(600px,88vh);">
+  <div style="display:flex;flex-direction:column;max-height:min(600px,88vh);">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
       <h3 style="margin:0;color:#e6c34a;font-size:14px;font-weight:normal;">Stats</h3>
       <div style="display:flex;gap:6px;flex:1;flex-wrap:wrap;">
         <button class="statsTab buildCatTab active" data-pane="overview">Overview</button>
-        <button class="statsTab buildCatTab" data-pane="money">Money</button>
         <button class="statsTab buildCatTab" data-pane="achievements">Achievements</button>
       </div>
       <button id="statsPanelClose" class="hotbarSlot" style="padding:3px 10px;">Close</button>
@@ -268,7 +267,23 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <div class="statsPane" data-pane="achievements" style="display:none;">
+        <p style="margin:0 0 8px 0;"><svg class="ic inl"><use href="#i-trophy"/></svg>Achievements (<span id="achUnlockedCount">0</span>/<span id="achTotalCount">0</span>)</p>
+        <div id="achievementList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;font-size:10px;"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+<div id="moneyPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:14px 16px;color:#f0e6d2;font-size:12px;display:none;z-index:8;width:min(860px,94vw);max-height:90vh;overflow-y:auto;box-sizing:border-box;">
+  <h3 style="margin:0 0 8px 0;color:#e6c34a;font-size:13px;font-weight:normal;">Money</h3>
         <div class="statsCard">
+          <div class="statsH">Today by department</div><div class="acctHint"></div>
+          <div id="deptTable" style="font-size:11px;"></div>
+        </div>
+                <div class="statsCard">
           <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:6px;font-size:11px;">
             <label>Graph <select id="graphMetric"></select></label>
             <label>Over <select id="graphRange"></select></label>
@@ -279,13 +294,6 @@
           </div>
           <p style="margin:4px 0 0 0;color:#9fb3a8;font-size:10px;">Hover the graph to read exact values at any point in time.</p>
         </div>
-      </div>
-
-      <div class="statsPane" data-pane="money" style="display:none;">
-        <div class="statsCard">
-          <div class="statsH">Today by department</div><div class="acctHint"></div>
-          <div id="deptTable" style="font-size:11px;"></div>
-        </div>
         <div class="statsCard">
           <div class="statsH">Borrowing</div><div class="loanHint"></div>
           <p id="loanStatusP" style="margin:2px 0;">No loan</p>
@@ -295,15 +303,7 @@
           </div>
           <button id="loanRepayBtn" class="hotbarSlot" style="width:100%;margin-top:6px;display:none;">Pay it off</button>
         </div>
-      </div>
-
-      <div class="statsPane" data-pane="achievements" style="display:none;">
-        <p style="margin:0 0 8px 0;"><svg class="ic inl"><use href="#i-trophy"/></svg>Achievements (<span id="achUnlockedCount">0</span>/<span id="achTotalCount">0</span>)</p>
-        <div id="achievementList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;font-size:10px;"></div>
-      </div>
-
-    </div>
-  </div>
+  <button id="moneyPanelClose" class="hotbarSlot" style="width:100%;">Close</button>
 </div>
 <div id="helpPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:16px 18px;color:#f0e6d2;font-size:12px;display:none;z-index:9;width:min(780px,95vw);max-height:90vh;overflow-y:auto;box-sizing:border-box;line-height:1.55;"></div>
 <div id="machineConfigPanel" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,36,29,0.97);border:1px solid #c9a227;border-radius:8px;padding:16px 18px;color:#f0e6d2;font-size:12px;display:none;z-index:8;min-width:280px;"></div>
@@ -371,11 +371,12 @@
   <button id="tabClub" title="Club &amp; Guests" class="sideTab locked"><svg class="ic"><use href="#i-club"/></svg><span class="tabName">Club &amp; Guests</span><span class="sideTabKey">[2]</span></button>
   <button id="tabStaff" title="Staff" class="sideTab locked"><svg class="ic"><use href="#i-staff"/></svg><span class="tabName">Staff</span><span class="sideTabKey">[3]</span></button>
   <button id="tabStats" title="Stats" class="sideTab locked"><svg class="ic"><use href="#i-stats"/></svg><span class="tabName">Stats</span><span class="sideTabKey">[4]</span></button>
-  <button id="tabBuilding" title="Building" class="sideTab locked"><svg class="ic"><use href="#i-building"/></svg><span class="tabName">Building</span><span class="sideTabKey">[5]</span></button>
-  <button id="tabRegulars" title="Regulars" class="sideTab locked"><svg class="ic"><use href="#i-regulars"/></svg><span class="tabName">Regulars</span><span class="sideTabKey">[6]</span></button>
-  <button id="tabRigging" title="Rigging" class="sideTab locked"><svg class="ic"><use href="#i-rigging"/></svg><span class="tabName">Rigging</span><span class="sideTabKey">[7]</span></button>
-  <button id="tabEvents" title="Events" class="sideTab locked"><svg class="ic"><use href="#i-ticket"/></svg><span class="tabName">Events</span><span class="sideTabKey">[8]</span></button>
-  <button id="tabHotel" title="Hotel" class="sideTab locked"><svg class="ic"><use href="#i-hotel"/></svg><span class="tabName">Hotel</span><span class="sideTabKey">[9]</span></button>
+  <button id="tabMoney" title="Money" class="sideTab locked"><svg class="ic"><use href="#i-money"/></svg><span class="tabName">Money</span><span class="sideTabKey">[5]</span></button>
+  <button id="tabBuilding" title="Building" class="sideTab locked"><svg class="ic"><use href="#i-building"/></svg><span class="tabName">Building</span><span class="sideTabKey">[6]</span></button>
+  <button id="tabRegulars" title="Regulars" class="sideTab locked"><svg class="ic"><use href="#i-regulars"/></svg><span class="tabName">Regulars</span><span class="sideTabKey">[7]</span></button>
+  <button id="tabRigging" title="Rigging" class="sideTab locked"><svg class="ic"><use href="#i-rigging"/></svg><span class="tabName">Rigging</span><span class="sideTabKey">[8]</span></button>
+  <button id="tabEvents" title="Events" class="sideTab locked"><svg class="ic"><use href="#i-ticket"/></svg><span class="tabName">Events</span><span class="sideTabKey">[9]</span></button>
+  <button id="tabHotel" title="Hotel" class="sideTab locked"><svg class="ic"><use href="#i-hotel"/></svg><span class="tabName">Hotel</span><span class="sideTabKey">[0]</span></button>
 </div>
 <div id="tipStack">
 <div id="checklist" style="width:212px;font-size:11px;color:#cfd9d0;background:rgba(18,36,29,0.88);border:1px solid #2a4a3c;border-radius:6px;padding:6px 8px;display:none;"></div>
@@ -6415,7 +6416,7 @@ function drawStatsGraph(){
     lines.forEach((l,i)=>{ ctx.fillStyle = i === 0 ? '#e6c34a' : (i === 1 ? '#f0e6d2' : '#7fd3e8'); ctx.fillText(l, bx + 8, by + 14 + i*16); });
   }
 }
-setInterval(()=>{ const sp = document.getElementById('statsPanel'); if(sp && sp.style.display === 'block') drawStatsGraph(); }, 2000);
+setInterval(()=>{ const sp = document.getElementById('moneyPanel'); if(sp && sp.style.display === 'block') drawStatsGraph(); }, 2000);
 // ---------------- Day / night cycle ----------------
 const DAY_LENGTH = 180; // seconds per in-game day
 let dayTime = 0;
@@ -8942,11 +8943,12 @@ const BIND_DEFS = [
   { a:'tab2',     group:'Tabs',     name:'Club & Guests',           def:'Digit2' },
   { a:'tab3',     group:'Tabs',     name:'Staff',                   def:'Digit3' },
   { a:'tab4',     group:'Tabs',     name:'Stats',                   def:'Digit4' },
-  { a:'tab5',     group:'Tabs',     name:'Building',                def:'Digit5' },
-  { a:'tab6',     group:'Tabs',     name:'Regulars',                def:'Digit6' },
-  { a:'tab7',     group:'Tabs',     name:'Rigging',                 def:'Digit7' },
-  { a:'tab8',     group:'Tabs',     name:'Events',                  def:'Digit8' },
-  { a:'tab9',     group:'Tabs',     name:'Hotel',                   def:'Digit9' },
+  { a:'tabMoney', group:'Tabs',     name:'Money',                   def:'Digit5' },
+  { a:'tab5',     group:'Tabs',     name:'Building',                def:'Digit6' },
+  { a:'tab6',     group:'Tabs',     name:'Regulars',                def:'Digit7' },
+  { a:'tab7',     group:'Tabs',     name:'Rigging',                 def:'Digit8' },
+  { a:'tab8',     group:'Tabs',     name:'Events',                  def:'Digit9' },
+  { a:'tab9',     group:'Tabs',     name:'Hotel',                   def:'Digit0' },
 ];
 const keybinds = {};
 BIND_DEFS.forEach(b => keybinds[b.a] = b.def);
@@ -9203,18 +9205,20 @@ const TAB_UNLOCKS = [
   // same instant is no longer something that can just happen by chance the way it could before.
   { id:'tabStaff',    name:'Staff',    key:'3', icon:ICON_HTML('staff'), need:'earn $500 in lifetime revenue',                     ok: ()=> lifetimeRevenue() >= 500 },
   { id:'tabStats',    name:'Stats',    key:'4', icon:ICON_HTML('stats'), need:'earn $750 in lifetime revenue',                     ok: ()=> lifetimeRevenue() >= 750 },
-  { id:'tabBuilding', name:'Building', key:'5', icon:ICON_HTML('building'), need:'earn $2,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 2000 },
+  // Money (the day's ledger, the graph and borrowing) has its own tab, so it is one key away instead of sitting behind a Stats sub-tab.
+  { id:'tabMoney',    name:'Money',    key:'5', icon:ICON_HTML('money'), need:'earn $1,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 1000 },
+  { id:'tabBuilding', name:'Building', key:'6', icon:ICON_HTML('building'), need:'earn $2,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 2000 },
   // Regulars now unlocks before Rigging (was the other way around) - a new player used to get the
   // temptation to cheat before ever being introduced to the loyalty system a rigged machine actually
   // puts at risk (a caught-out regular's affinity takes the hit same as anyone's mood does). Understand
   // what you stand to lose before you're handed the tool that risks it, same reasoning as Club-before-
   // Staff above. Key numbers and thresholds swapped together so key order still tracks the thresholds.
-  { id:'tabRegulars', name:'Regulars', key:'6', icon:ICON_HTML('regulars'), need:'earn $3,500 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 3500 },
-  { id:'tabRigging',  name:'Rigging',  key:'7', icon:ICON_HTML('rigging'), need:'earn $5,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 5000 },
+  { id:'tabRegulars', name:'Regulars', key:'7', icon:ICON_HTML('regulars'), need:'earn $3,500 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 3500 },
+  { id:'tabRigging',  name:'Rigging',  key:'8', icon:ICON_HTML('rigging'), need:'earn $5,000 in lifetime revenue',                   ok: ()=> lifetimeRevenue() >= 5000 },
   // Events (money) and Hotel (an upper floor) are both independent of the chain and of each other: whichever
   // is reached first unlocks first, and neither holds the others up.
-  { id:'tabEvents',   name:'Events',   key:'8', icon:ICON_HTML('ticket'), need:'earn $10,000 in lifetime revenue',                  ok: ()=> lifetimeRevenue() >= 10000, independent:true },
-  { id:'tabHotel',    name:'Hotel',    key:'9', icon:ICON_HTML('hotel'), need:'build an upper floor (Building tab)',               ok: ()=> upperBuilt, independent:true },
+  { id:'tabEvents',   name:'Events',   key:'9', icon:ICON_HTML('ticket'), need:'earn $10,000 in lifetime revenue',                  ok: ()=> lifetimeRevenue() >= 10000, independent:true },
+  { id:'tabHotel',    name:'Hotel',    key:'0', icon:ICON_HTML('hotel'), need:'build an upper floor (Building tab)',               ok: ()=> upperBuilt, independent:true },
 ];let unlockedTabs = new Set(['tabBuild']);
 function tabUnlocked(id){ return (typeof devUnlockAll !== 'undefined' && devUnlockAll) || sandbox || unlockedTabs.has(id); }
 const unlockHintEl = document.getElementById('unlockHint');
@@ -9244,12 +9248,12 @@ function checkTabUnlocks(silent){
     if(!u.ok()){ if(!u.independent) chainOpen = false; continue; }
     if(!u.independent && !chainOpen) continue;
     unlockedTabs.add(u.id);
-    if(u.id === 'tabEvents' && !silent) tip('eventsTab', 'The Events tab [8] is open. Put on a Headline show: it finally gives your Stage a job.');
+    if(u.id === 'tabEvents' && !silent) tip('eventsTab', 'The Events tab [9] is open. Put on a Headline show: it finally gives your Stage a job.');
     if(!silent){ logEvent(`New tab unlocked: ${u.name} [${u.key}]`, '#e6c34a'); playSound('achievement'); showUnlockPopup(`${icn('key')}New tab: <b>${u.name}</b> [${u.key}]`); }
   }
   applyTabVisibility();
-  if(!silent && unlockedTabs.has('tabEvents') && lifetimeRevenue() >= HIROLL_UNLOCK) tip('hirollReady', 'The High-roller night is ready to book in the Events tab [8]. Invited big players come for one long night.');
-  if(!silent && unlockedTabs.has('tabEvents') && lifetimeRevenue() >= TOURNEY_UNLOCK) tip('tourneyReady', 'The Poker tournament is ready to book in the Events tab [8]. It runs on your Hold\'em tables.');
+  if(!silent && unlockedTabs.has('tabEvents') && lifetimeRevenue() >= HIROLL_UNLOCK) tip('hirollReady', 'The High-roller night is ready to book in the Events tab [9]. Invited big players come for one long night.');
+  if(!silent && unlockedTabs.has('tabEvents') && lifetimeRevenue() >= TOURNEY_UNLOCK) tip('tourneyReady', 'The Poker tournament is ready to book in the Events tab [9]. It runs on your Hold\'em tables.');
 }
 // An older save (or a fiddled one) might hold tabs out of order - keep only the run from the start.
 function normalizeUnlockedTabs(){
@@ -9269,7 +9273,7 @@ const categoryPopupEl = document.getElementById('categoryPopup');
 
 // Only one of these "manageable" popups should ever be open at once. Day summary,
 // the blackjack/roulette/poker prompt, and sell-progress are system-driven and exempt.
-const MANAGED_POPUP_IDS = ['keybindPanel','riggingPanel','regularsPanel','eventsPanel','buildingPanel','hotelPanel','roomPanel','staffPanel','statsPanel','helpPanel','settingsPanel','categoryPopup','machineConfigPanel','devPanel','clubPanel'];
+const MANAGED_POPUP_IDS = ['keybindPanel','riggingPanel','regularsPanel','eventsPanel','buildingPanel','hotelPanel','roomPanel','staffPanel','statsPanel','moneyPanel','helpPanel','settingsPanel','categoryPopup','machineConfigPanel','devPanel','clubPanel'];
 function closeManagedPopups(exceptId){
   MANAGED_POPUP_IDS.forEach(id=>{
     if(id === exceptId) return;
@@ -9279,7 +9283,7 @@ function closeManagedPopups(exceptId){
 }
 // Side-tab highlight: a tab shows the gold active state while its panel is open. Watching the panels' own
 // style changes covers every way of opening/closing (key, click, Close button, Esc, another tab) with no per-frame work.
-const TAB_PANELS = { tabBuild:['categoryPopup'], tabClub:['clubPanel'], tabStaff:['staffPanel'], tabStats:['statsPanel'], tabBuilding:['buildingPanel'], tabRegulars:['regularsPanel'], tabRigging:['riggingPanel'], tabHotel:['hotelPanel','roomPanel'], tabEvents:['eventsPanel'] };
+const TAB_PANELS = { tabBuild:['categoryPopup'], tabClub:['clubPanel'], tabStaff:['staffPanel'], tabStats:['statsPanel'], tabMoney:['moneyPanel'], tabBuilding:['buildingPanel'], tabRegulars:['regularsPanel'], tabRigging:['riggingPanel'], tabHotel:['hotelPanel','roomPanel'], tabEvents:['eventsPanel'] };
 function syncTabHighlight(){
   for(const tid in TAB_PANELS){
     const on = TAB_PANELS[tid].some(pid => { const el = document.getElementById(pid); return el && el.style.display === 'block'; });
@@ -9473,6 +9477,10 @@ window.addEventListener('keydown', (e)=>{
     if(!tabUnlocked('tabStats')) tabLockedClick('tabStats');
     else { if(pointerLocked) document.exitPointerLock(); toggleManagedPopup('statsPanel', updateStatsPanel); }
   }
+  if(isBind(e, 'tabMoney')){
+    if(!tabUnlocked('tabMoney')) tabLockedClick('tabMoney');
+    else { if(pointerLocked) document.exitPointerLock(); toggleManagedPopup('moneyPanel', updateStatsPanel); }
+  }
   if(isBind(e, 'tab5')){
     if(!tabUnlocked('tabBuilding')) tabLockedClick('tabBuilding');
     else { if(pointerLocked) document.exitPointerLock(); toggleManagedPopup('buildingPanel', updateBuildingPanel); }
@@ -9493,7 +9501,7 @@ window.addEventListener('keydown', (e)=>{
     if(!tabUnlocked('tabHotel')) tabLockedClick('tabHotel');
     else { if(pointerLocked) document.exitPointerLock(); toggleManagedPopup('hotelPanel', updateHotelPanel); }
   }
-  if(e.code === 'Digit0' || e.code === 'Escape' || isBind(e, 'cancel')) setBuildType(null);
+  if(e.code === 'Escape' || isBind(e, 'cancel')) setBuildType(null);   // (0 used to cancel too; it is the Hotel tab's key now)
   if(isBind(e, 'cancel')) closeManagedPopups(null); // Q also backs out of any open tab, straight to look mode
   if(isBind(e, 'cancel') && playerInRoom) leaveRoom(); // a second, independent way out of a room - in case F/interact ever fails to fire for any reason, this doesn't share that path at all
   if(isBind(e, 'grab') && !buildType && pointerLocked && !managerCameraLock) pickUpMachine(raycastClosestMachine());
@@ -11045,7 +11053,7 @@ function resolvePayout(actor, m, houseNet, pos, bet, stake){   // (stake: what w
 // sour. Happy departures feed a pool of "regulars" who return richer, and move a
 // loyalty score that nudges how many guests turn up at all.
 // The roster of regulars: guests who had a great night get remembered by name, come back (richer
-// when they're happy), and can be kept sweet with comps from the Regulars tab (key 6).
+// when they're happy), and can be kept sweet with comps from the Regulars tab (key 7).
 const MAX_REGULARS = 60; // most that will ever be saved
 // Regulars are about a fifth of your parking: a Player's Club draws more, a poor reputation loses some, a great one keeps a few extra.
 function maxRegulars(){
@@ -13715,8 +13723,8 @@ function applyOfficeGates(){
   const loansUnlocked = lifetimeRevenue() >= 2000 || loanOwed > 0;
   document.querySelectorAll('#clubPanel .mktHint').forEach(el => { el.innerHTML = mkt ? '' : `<div style="color:#9fb3a8;font-size:10px;margin-bottom:6px;">${officeHint('mktoffice')}</div>`; });
   if(!mkt) document.getElementById('clubBtn').style.opacity = '0.4';
-  document.querySelectorAll('#statsPanel .acctHint').forEach(el => { el.innerHTML = ''; });
-  document.querySelectorAll('#statsPanel .loanHint').forEach(el => { el.innerHTML = loansUnlocked ? '' : '<div style="color:#9fb3a8;font-size:10px;margin-bottom:6px;">'+icn('lock')+'Unlocks at $2,000 lifetime revenue</div>'; });
+  document.querySelectorAll('.acctHint').forEach(el => { el.innerHTML = ''; });
+  document.querySelectorAll('.loanHint').forEach(el => { el.innerHTML = loansUnlocked ? '' : '<div style="color:#9fb3a8;font-size:10px;margin-bottom:6px;">'+icn('lock')+'Unlocks at $2,000 lifetime revenue</div>'; });
   document.getElementById('deptTable').style.display = acct ? '' : 'none';
   document.getElementById('loanStatusP').style.display = loansUnlocked ? '' : 'none';
   document.getElementById('loanAmount').parentElement.style.display = loansUnlocked ? 'flex' : 'none';
@@ -13820,6 +13828,15 @@ function updateStatsPanel(){
 
 // side tabs for the panels that used to have their own top buttons - every one of
 // these forces UI mode, since they can now be opened by keyboard while locked
+const moneyPanelEl = document.getElementById('moneyPanel');
+moneyPanelEl.addEventListener('click', (e)=> e.stopPropagation());
+document.getElementById('moneyPanelClose').addEventListener('click', (e)=>{ e.stopPropagation(); moneyPanelEl.style.display = 'none'; });
+document.getElementById('tabMoney').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  if(!tabUnlocked('tabMoney')){ tabLockedClick('tabMoney'); return; }
+  if(pointerLocked) document.exitPointerLock();
+  toggleManagedPopup('moneyPanel', ()=>{ updateStatsPanel(); drawStatsGraph(); });
+});
 document.getElementById('tabStats').addEventListener('click', (e)=>{
   e.stopPropagation();
   if(!tabUnlocked('tabStats')){ tabLockedClick('tabStats'); return; }
@@ -15686,7 +15703,7 @@ function animate(){        // machine - a standing banner says so regardless of 
   updateDayNight(simDt);
   updateSellHold(dt); // player interaction, unaffected by game speed
   statsRefreshT -= dt;
-  if(statsPanel.style.display === 'block' && statsRefreshT <= 0){ statsRefreshT = 0.25; updateStatsPanel(); }
+  if((statsPanel.style.display === 'block' || moneyPanelEl.style.display === 'block') && statsRefreshT <= 0){ statsRefreshT = 0.25; updateStatsPanel(); }
   if(document.getElementById('devPanel').style.display === 'block') updateDevDebugInfo();
   updateHint();
   updateDetailLOD();
