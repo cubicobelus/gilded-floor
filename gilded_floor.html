@@ -2021,7 +2021,8 @@ const DINER_SEATS = 4;
 const MEAL_BASE = 22;
 // Menu tiers: THE place to tune them. Each bar (drinks) and kitchen (meals) has a tier 1-3 that sets the range its price slider
 // may use, bought one step at a time in that outlet's config panel. min/max are the slider limits in dollars.
-// cost[i] and unlockRevenue[i] are for reaching tier i+1 (lifetime revenue to unlock it, cash to buy it).
+// cost.drink[i] / cost.meal[i] and unlockRevenue[i] are for reaching tier i+1 (cash to buy it, lifetime revenue to unlock it).
+// Bars are cheaper: a bar sells only a few drinks a day, so at the kitchen prices it took a month to pay back.
 // fairMul[wealth][i]: how far tier i+1 lifts the price a guest finds fair (1 = the old curve), by guest wealth (poor under $200
 // starting wallet, mid $200-499, rich $500+) - the rich take to dear menus, the poor mostly do not.
 // walletNeed[i]: a guest must carry this many times the price to order at tier i+1 (one drink must not clean them out).
@@ -2029,7 +2030,7 @@ const MEAL_BASE = 22;
 const MENU_TIERS = {
   drink: [ { min:4, max:14 }, { min:10, max:28 }, { min:20, max:60 } ],
   meal:  [ { min:8, max:26 }, { min:20, max:55 }, { min:40, max:120 } ],
-  cost:          [0, 1500, 6000],
+  cost:          { drink:[0, 800, 3000], meal:[0, 1500, 6000] },
   unlockRevenue: [0, 5000, 25000],
   fairMul:    { poor:[1, 1.3, 1.3], mid:[1, 1.9, 2.4], rich:[1, 2.3, 3.4] },
   walletNeed: [1, 1.5, 2],
@@ -2062,7 +2063,7 @@ function fitMenuTier(m){
 }
 function nextTierBlock(m){
   const t = menuTier(m); if(t >= 3) return null;
-  const k = menuKind(m), r = MENU_TIERS[k][t], cost = MENU_TIERS.cost[t], need = MENU_TIERS.unlockRevenue[t];
+  const k = menuKind(m), r = MENU_TIERS[k][t], cost = MENU_TIERS.cost[k][t], need = MENU_TIERS.unlockRevenue[t];
   const needsChef = k === 'meal' && t + 1 >= EXPERT_CHEF_TIER && !expertChefOn(m);
   return { tier:t + 1, range:r, cost, need, locked: lifetimeRevenue() < need, needsChef, poor: cash < cost };
 }
