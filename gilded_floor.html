@@ -8119,10 +8119,21 @@ function moraleTarget(s){
   if(casinoClosed) t += 5;
   return Math.max(0, Math.min(100, t));
 }
+// Learning traits: rolled once at hire. quick learners earn XP twice as fast, settled ones stop at Seasoned on the job
+// (paid training still takes them to Expert, at double the price). No trait means steady. The trait stays hidden for the first 2 days on the job.
+const TRAIT_REVEAL_AFTER = DAY_LENGTH * 2;
+const TRAIT_INFO = {
+  quick:   { word:'Quick learner',   col:'#8fd6a8', tip:'Gains experience twice as fast', count:'quick', log:'is a quick learner' },
+  settled: { word:'Found their level', col:'#ffb020', tip:'Will not reach Expert on the job; training still can', count:'found their level', log:'has found their level' },
+};
+function rollTrait(){ const r = Math.random(); return r < 0.25 ? 'quick' : r < 0.75 ? 'steady' : 'settled'; }
+function staffTrait(s){ return s.trait || 'steady'; }
+function traitShown(s){ return !!s.trait && s.trait !== 'steady' && s.traitRevealed !== false && TRAIT_INFO[s.trait]; }
 function trainCost(s){
   const next = staffLevelIndex(s) + 1;
   if(next >= STAFF_LEVELS.length) return 0;
-  return Math.round(STAFF_TYPES[s.type].hireCost * (next === 1 ? 1.2 : 2.2));
+  const base = Math.round(STAFF_TYPES[s.type].hireCost * (next === 1 ? 1.2 : 2.2));
+  return (next === 2 && staffTrait(s) === 'settled') ? base * 2 : base;
 }
 function trainStaff(s){
   if(!officeOn('hroffice')) return false;
@@ -8151,7 +8162,16 @@ function updateStaffMood(){
 }
 function gainStaffXp(s, dt){
   if(casinoClosed) return;
-  s.xp = (s.xp || 0) + dt * (s.atPost || s.job ? 1 : 0.55);
+  const trait = staffTrait(s), before = s.xp || 0;
+  s.xp = before + dt * (s.atPost || s.job ? 1 : 0.55) * (trait === 'quick' ? 2 : 1);
+  if(trait === 'settled' && before < STAFF_LEVELS[2].at) s.xp = Math.min(s.xp, STAFF_LEVELS[1].at);
+  if(s.traitRevealed === false){
+    s.onJob = (s.onJob || 0) + dt;
+    if(s.onJob >= TRAIT_REVEAL_AFTER){
+      s.traitRevealed = true;
+      if(TRAIT_INFO[s.trait]){ logEvent(`${s.name} the ${STAFF_TYPES[s.type].name.toLowerCase()} ${TRAIT_INFO[s.trait].log}`, TRAIT_INFO[s.trait].col); renderStaffPanel(); }
+    }
+  }
   if(!s.notedLevel) s.notedLevel = staffLevelIndex(s);
   const now = staffLevelIndex(s);
   if(now > s.notedLevel){
@@ -8192,16 +8212,18 @@ function renderStaffPanel(){
       // one summary line per job (average mood and how many at each level); the roster opens on demand
       const avg = crew.reduce((a, s) => a + (s.morale || 70), 0) / crew.length, avgCol = avg >= 65 ? '#8fd6a8' : avg >= 35 ? '#ffb020' : '#e08a8a';
       const lvN = STAFF_LEVELS.map((L, i) => ({ L, n: crew.filter(s => staffLevelIndex(s) === i).length })).filter(x => x.n);
+      const trN = Object.keys(TRAIT_INFO).map(k => ({ k, n: crew.filter(s => s.trait === k && s.traitRevealed !== false).length })).filter(x => x.n);
+      const trTxt = trN.length ? `<span style="color:#9fb3a8;font-size:10px;">${trN.map(x => `<span style="color:${TRAIT_INFO[x.k].col};">${x.n} ${TRAIT_INFO[x.k].count}</span>`).join(' &middot; ')}</span>` : '';
       html += `<div style="display:flex;align-items:center;gap:8px;font-size:11px;margin-top:5px;">
         <button class="hotbarSlot sfOpen" data-k="${key}" title="${open ? 'Hide' : 'Show'} everyone" style="font-size:12px;padding:0;min-width:0;width:22px;height:22px;line-height:1;flex:0 0 22px;">${open ? '&minus;' : '+'}</button>
         <span style="color:#9fb3a8;">Mood</span><span style="flex:0 0 90px;"><span style="display:block;height:6px;background:#0d1a14;border-radius:3px;overflow:hidden;"><span style="display:block;height:6px;width:${Math.round(avg)}%;background:${avgCol};border-radius:3px;"></span></span></span>
-        <span style="flex:1;text-align:right;">${lvN.map(x => `<span style="color:${x.L.col};">${x.n} ${x.L.name}</span>`).join(' <span style="color:#9fb3a8;">&middot;</span> ')}</span></div>`;
+        <span style="flex:1;text-align:right;">${lvN.map(x => `<span style="color:${x.L.col};">${x.n} ${x.L.name}</span>`).join(' <span style="color:#9fb3a8;">&middot;</span> ')}</span></div>${trTxt ? `<div style="text-align:right;font-size:10px;margin:1px 0 0;">${trTxt}</div>` : ''}`;
     }
     if(open) crew.forEach((s, i)=>{
       const lv = staffLevel(s), next = STAFF_LEVELS[staffLevelIndex(s) + 1], mood = s.morale || 70;
       const moodCol = mood >= 65 ? '#8fd6a8' : mood >= 35 ? '#ffb020' : '#e08a8a';
       html += `<div style="display:grid;grid-template-columns:minmax(0,1fr) 50px 44px 52px;gap:5px;align-items:center;font-size:11px;padding:2px 0 2px 6px;">
-        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.name} <span style="color:${lv.col};font-size:10px;">${lv.name}</span></span>
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.name} <span style="color:${lv.col};font-size:10px;">${lv.name}</span>${traitShown(s) ? ` <span title="${TRAIT_INFO[s.trait].tip}" style="color:${TRAIT_INFO[s.trait].col};font-size:9px;cursor:help;">${TRAIT_INFO[s.trait].word}</span>` : ''}</span>
         <span title="how they feel about the job"><span style="display:inline-block;width:42px;height:5px;background:#0d1a14;border-radius:3px;vertical-align:middle;"><span style="display:block;height:5px;width:${Math.round(mood*0.42)}px;background:${moodCol};border-radius:3px;"></span></span></span>
         <span style="color:#9fb3a8;">$${Math.round(staffWage(s))}</span>
         ${next && !hr ? '<span style="color:#9fb3a8;font-size:10px;text-align:center;">' + icn('lock') + '</span>' : next ? `<button class="hotbarSlot sfTrain" data-i="${staffNPCs.indexOf(s)}" style="font-size:10px;padding:2px 4px;min-width:0;width:100%;box-sizing:border-box;${cash < trainCost(s) ? 'opacity:.45;' : ''}">$${trainCost(s)}</button>`
@@ -8465,6 +8487,7 @@ function hireStaff(key){
   scene.add(mesh);
   const staffMember = {
     type: key, name: randomGuestName(), xp: 0, morale: 72, notedLevel: 0,
+    trait: rollTrait(), traitRevealed: false, onJob: 0,
     mesh,
     pos: new THREE.Vector3(roomCenterX() + (Math.random()-0.5)*roomWidth()*0.6, 0, roomCenterZ() + (Math.random()-0.5)*roomDepth()*0.6),
     target: new THREE.Vector3(),
@@ -14052,7 +14075,7 @@ function saveGame(){
       unlockedAchievements: Array.from(unlockedAchievements),
       inspectionsSurvived, inspectionsCaught, everMachineBroken,
       staffCounts: {...staffCounts}, roleWage: {...roleWage},
-      staffXpScheme: 2, staffRoster: staffNPCs.map(s => ({ type:s.type, name:s.name, xp:Math.round(s.xp||0), morale:Math.round(s.morale||70) })),
+      staffXpScheme: 2, staffRoster: staffNPCs.map(s => ({ type:s.type, name:s.name, xp:Math.round(s.xp||0), morale:Math.round(s.morale||70), trait:staffTrait(s), traitRevealed:s.traitRevealed !== false, onJob:Math.round(s.onJob||0) })),
       machines: machines.map(machineState),
       jackpot: jackpotSaveState(),
       ...eventsSaveState(),
@@ -14207,6 +14230,9 @@ function loadGame(){
       staffMember.name = saved ? saved.name : randomGuestName();
       staffMember.xp = saved ? (data.staffXpScheme === 2 ? saved.xp : xpFromOldSave(saved.xp)) : 0;
       staffMember.morale = saved ? saved.morale : 72;
+      staffMember.trait = saved && saved.trait ? saved.trait : 'steady';
+      staffMember.traitRevealed = saved && saved.trait ? saved.traitRevealed !== false : true;
+      staffMember.onJob = saved && saved.onJob || 0;
       staffMember.notedLevel = staffLevelIndex(staffMember);
       staffMember.mesh.position.copy(staffMember.pos);
       pickWanderTarget(staffMember);
@@ -15246,7 +15272,7 @@ function makeThrivingCasino(){
   assignStaffPosts();
   // a showcase floor is run by people who know the job, and paid a bit over the odds
   Object.keys(STAFF_TYPES).forEach(r => { roleWage[r] = goingRate(r) * 1.15; });
-  staffNPCs.forEach(s => { s.xp = Math.random() < 0.45 ? STAFF_LEVELS[2].at + Math.random()*800 : STAFF_LEVELS[1].at + Math.random()*1000; s.morale = 78 + Math.random()*18; s.notedLevel = staffLevelIndex(s); });
+  staffNPCs.forEach(s => { s.xp = Math.random() < 0.45 ? STAFF_LEVELS[2].at + Math.random()*800 : STAFF_LEVELS[1].at + Math.random()*1000; s.morale = 78 + Math.random()*18; s.trait = 'steady'; s.traitRevealed = true; s.notedLevel = staffLevelIndex(s); });
 
   // ---- a book of regulars, and a floor full of people ----
   regularPool = [];
