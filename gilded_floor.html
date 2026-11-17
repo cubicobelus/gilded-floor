@@ -1725,7 +1725,7 @@ function floorServeTick(s, dt){ // returns true if the waiter is handled this fr
       let best = null, bd = Infinity;
       npcs.forEach(n=>{
         if(n.state !== 'gambling' || !n.wantsDrink || floorClaimed(n) || !n.machine || n.machine.type === 'holdem' || !machines.includes(n.machine)) return;
-        if((n.machine.level || 0) !== (bar.level || 0) || n.wallet < price) return;
+        if((n.machine.level || 0) !== (bar.level || 0) || n.wallet < price * menuWalletNeed(bar)) return;
         if((n.pos.x-bar.x)**2 + (n.pos.z-bar.z)**2 > FLOOR_RANGE * FLOOR_RANGE) return;
         const d = (n.pos.x-s.pos.x)**2 + (n.pos.z-s.pos.z)**2;
         if(d < bd){ bd = d; best = n; }
@@ -1754,7 +1754,7 @@ function floorServeTick(s, dt){ // returns true if the waiter is handled this fr
   if(s.floorWait < 1) return true;
   const comped = clubComps(g).drink;
   const price = comped ? Math.round(drinkPrice(bar) * 0.5) : drinkPrice(bar), tip = Math.round(price * 0.15);
-  if(Math.random() > drinkAcceptChance(price, g)){ // same look at the price as at the bar
+  if(Math.random() > drinkAcceptChance(price, g, bar)){ // same look at the price as at the bar
     g.wantsDrink = false; g.thirstyAt = 60 + Math.random() * 120;
     if(price > DRINK_BASE * 1.5) gripe('dearDrinks');
   } else if(g.wallet >= price + tip){
@@ -2002,10 +2002,80 @@ setInterval(()=>{ if(hotelPanelEl.style.display === 'block') updateHotelPanel();
 // room as well as the bars: a table with someone waiting on it turns around quicker and gets tipped.
 const DINER_SEATS = 4;
 const MEAL_BASE = 22;
+// Menu tiers: THE place to tune them. Each bar (drinks) and kitchen (meals) has a tier 1-3 that sets the range its price slider
+// may use, bought one step at a time in that outlet's config panel. min/max are the slider limits in dollars.
+// cost[i] and unlockRevenue[i] are for reaching tier i+1 (lifetime revenue to unlock it, cash to buy it).
+// fairMul[wealth][i]: how far tier i+1 lifts the price a guest finds fair (1 = the old curve), by guest wealth (poor under $200
+// starting wallet, mid $200-499, rich $500+) - the rich take to dear menus, the poor mostly do not.
+// walletNeed[i]: a guest must carry this many times the price to order at tier i+1 (one drink must not clean them out).
+// Tier 3 meals need an Expert chef on the kitchen (EXPERT_CHEF_TIER); without one guests treat the kitchen as tier 2.
+const MENU_TIERS = {
+  drink: [ { min:4, max:14 }, { min:10, max:28 }, { min:20, max:60 } ],
+  meal:  [ { min:8, max:26 }, { min:20, max:55 }, { min:40, max:120 } ],
+  cost:          [0, 1500, 6000],
+  unlockRevenue: [0, 5000, 25000],
+  fairMul:    { poor:[1, 1.3, 1.3], mid:[1, 1.9, 2.4], rich:[1, 2.3, 3.4] },
+  walletNeed: [1, 1.5, 2],
+};
+const EXPERT_CHEF_TIER = 3;
+function menuKind(m){ return m && m.type === 'bar' ? 'drink' : m && m.type === 'restaurant' ? 'meal' : null; }
+function menuTier(m){ return Math.max(1, Math.min(3, Math.round(m.menuTier || 1))); }
+function menuRange(m, tier){ return MENU_TIERS[menuKind(m)][(tier || menuTier(m)) - 1]; }
+function expertChefOn(m){ return !!(m && m.staffer && staffLevelIndex(m.staffer) >= STAFF_LEVELS.length - 1); }
+// The tier guests actually experience: a tier-3 kitchen that has lost its Expert chef keeps working, but guests treat it as tier 2.
+function menuEffTier(m){ const t = menuTier(m); return (menuKind(m) === 'meal' && t >= EXPERT_CHEF_TIER && !expertChefOn(m)) ? EXPERT_CHEF_TIER - 1 : t; }
+function menuFairMul(m, npc){
+  const w = npc.startingWallet >= 500 ? 'rich' : npc.startingWallet >= 200 ? 'mid' : 'poor';
+  return MENU_TIERS.fairMul[w][menuEffTier(m) - 1];
+}
+function menuWalletNeed(m){ return MENU_TIERS.walletNeed[menuEffTier(m) - 1]; }
+// Keep an outlet's price inside its tier's range (used by every place that sets or reads a price).
+function clampPrice(m){
+  const k = menuKind(m); if(!k) return;
+  const f = k === 'drink' ? 'drinkPrice' : 'mealPrice', r = menuRange(m);
+  m[f] = Math.max(r.min, Math.min(r.max, Math.round(m[f] === undefined ? (k === 'drink' ? DRINK_BASE : MEAL_BASE) : m[f])));
+}
+// The lowest tier whose range holds the outlet's price (old saves, bots, showcase floors) so nobody's price gets cut.
+function fitMenuTier(m){
+  const k = menuKind(m); if(!k) return;
+  const f = k === 'drink' ? 'drinkPrice' : 'mealPrice', p = m[f] === undefined ? (k === 'drink' ? DRINK_BASE : MEAL_BASE) : m[f];
+  m.menuTier = 1;
+  for(let t = 1; t <= 3; t++){ const r = MENU_TIERS[k][t - 1]; if(p >= r.min && p <= r.max){ m.menuTier = t; break; } }
+  clampPrice(m);
+}
+function nextTierBlock(m){
+  const t = menuTier(m); if(t >= 3) return null;
+  const k = menuKind(m), r = MENU_TIERS[k][t], cost = MENU_TIERS.cost[t], need = MENU_TIERS.unlockRevenue[t];
+  const needsChef = k === 'meal' && t + 1 >= EXPERT_CHEF_TIER && !expertChefOn(m);
+  return { tier:t + 1, range:r, cost, need, locked: lifetimeRevenue() < need, needsChef, poor: cash < cost };
+}
+function buyMenuTier(m){
+  const b = menuKind(m) ? nextTierBlock(m) : null;
+  if(!b || b.locked || b.needsChef || b.poor) return false;
+  spendOn(b.cost);
+  m.menuTier = b.tier; clampPrice(m);
+  logEvent(`${m.nick || m.name}: menu tier ${b.tier} ($${b.range.min}-$${b.range.max}) (-$${b.cost.toLocaleString()})`, '#e6c34a');
+  playSound('achievement');
+  return true;
+}
+function menuTierHtml(m){
+  const k = menuKind(m), t = menuTier(m), r = menuRange(m), b = nextTierBlock(m), unit = k === 'drink' ? 'drink' : 'meal';
+  const tip = `Menu tier sets how much you may charge for a ${unit}. Higher tiers suit richer guests and are bought one at a time. Tier 2 unlocks at $${MENU_TIERS.unlockRevenue[1].toLocaleString()} lifetime revenue, tier 3 at $${MENU_TIERS.unlockRevenue[2].toLocaleString()}.${k === 'meal' ? ' Tier 3 needs an Expert chef.' : ''}`;
+  let h = `<div title="${tip}" style="margin:2px 0 6px;"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px;">${uiChip('Menu', 'Tier ' + t)}${uiChip('Range', '$' + r.min + '-$' + r.max)}</div>`;
+  if(!b) h += `<div style="color:#8fd6a8;font-size:11px;">Top tier</div>`;
+  else {
+    const off = b.locked || b.needsChef || b.poor;
+    h += `<button id="cfgTierBuy" class="hotbarSlot" style="width:100%;${off ? 'opacity:.45;' : ''}" ${off ? 'disabled' : ''} title="Tier ${b.tier}: ${unit}s from $${b.range.min} to $${b.range.max}. Costs $${b.cost.toLocaleString()}, unlocks at $${b.need.toLocaleString()} lifetime revenue.">Tier ${b.tier}: $${b.range.min}-$${b.range.max} ($${b.cost.toLocaleString()})</button>`;
+    if(b.locked) h += `<div style="color:#e0b84a;font-size:11px;">unlocks at $${b.need.toLocaleString()} lifetime revenue</div>`;
+    else if(b.needsChef) h += `<div style="color:#e0b84a;font-size:11px;">needs an Expert chef on this kitchen</div>`;
+  }
+  if(k === 'meal' && t >= EXPERT_CHEF_TIER && !expertChefOn(m)) h += `<div style="color:#e08a8a;font-size:11px;" title="Without an Expert chef guests treat this kitchen as tier 2: they will not pay tier 3 prices as readily.">No Expert chef: guests treat it as tier 2</div>`;
+  return h + '</div>';
+}
 function kitchens(){ return machines.filter(m => m.type === 'restaurant'); }
 function dinerTables(){ return machines.filter(m => m.type === 'dinertable'); }
 function staffedKitchens(){ return kitchens().filter(m => isStaffed(m)); }
-function mealPrice(m){ return Math.max(4, Math.round(m.mealPrice === undefined ? MEAL_BASE : m.mealPrice)); }
+function mealPrice(m){ const r = menuRange(m); return Math.max(4, r.min, Math.min(r.max, Math.round(m.mealPrice === undefined ? MEAL_BASE : m.mealPrice))); }
 // How good the kitchen is: chefs to cover the kitchens, and enough seats for them to cook for.
 function diningQuality(){
   const k = kitchens(); if(!k.length) return 0;
@@ -2039,7 +2109,7 @@ function dinerSeatPos(m, i){
 // Will they pay that for dinner? A good kitchen carries a higher price; a dear one with no chefs does not.
 function mealAcceptChance(m, npc){
   const price = mealPrice(m), q = diningQuality();
-  const fair = MEAL_BASE * (0.6 + q * 1.3) * (npc.startingWallet >= 500 ? 1.6 : npc.startingWallet >= 200 ? 1.1 : 0.8);
+  const fair = MEAL_BASE * (0.6 + q * 1.3) * (npc.startingWallet >= 500 ? 1.6 : npc.startingWallet >= 200 ? 1.1 : 0.8) * menuFairMul(m, npc);
   return Math.max(0.05, Math.min(0.97, 1.15 - (price / Math.max(6, fair)) * 0.75)) * (0.6 + reputation / 250);
 }
 function releaseDiner(npc){
@@ -2054,7 +2124,7 @@ function updateDiningGuest(npc, dt){
     npc.target.set(p.x, 0, p.z);
     if(stepToward(npc, dt, m)){
       const kitchen = nearestKitchen(m.x, m.z);
-      if(!kitchen || Math.random() > mealAcceptChance(kitchen, npc) || npc.wallet < mealPrice(kitchen)){
+      if(!kitchen || Math.random() > mealAcceptChance(kitchen, npc) || npc.wallet < mealPrice(kitchen) * menuWalletNeed(kitchen)){
         releaseDiner(npc); npc.wantsFood = false; npc.state = 'wander'; npc.waitTimer = 0.4; pickWanderTarget(npc);
         return true;
       }
@@ -2141,7 +2211,7 @@ const DRINK_COST = 3, MEAL_COST = 8;
 const DRINK_FAIR = 30;
 function bars(){ return machines.filter(m => m.type === 'bar'); }
 function restrooms(){ return machines.filter(m => m.type === 'restroom'); }
-function drinkPrice(m){ return Math.max(2, Math.round(m.drinkPrice === undefined ? DRINK_BASE : m.drinkPrice)); }
+function drinkPrice(m){ const r = menuRange(m); return Math.max(2, r.min, Math.min(r.max, Math.round(m.drinkPrice === undefined ? DRINK_BASE : m.drinkPrice))); }
 // Same shape as mealAcceptChance: a fair price sells nearly every time, a dear one hardly ever. Fair moves up with the
 // guest's wallet and with the casino's overall star rating (looked up at most every 8 game seconds).
 let drinkStarsAt = -1, drinkStarsVal = 3;
@@ -2150,8 +2220,8 @@ function drinkStarsFactor(){
   if(stamp !== drinkStarsAt){ drinkStarsAt = stamp; drinkStarsVal = computeCasinoStars().overall; }
   return 0.75 + 0.1 * drinkStarsVal;
 }
-function drinkAcceptChance(price, npc){
-  const fair = DRINK_FAIR * drinkStarsFactor() * (npc.startingWallet >= 500 ? 1.6 : npc.startingWallet >= 200 ? 1.1 : 0.8);
+function drinkAcceptChance(price, npc, bar){
+  const fair = DRINK_FAIR * drinkStarsFactor() * (npc.startingWallet >= 500 ? 1.6 : npc.startingWallet >= 200 ? 1.1 : 0.8) * (bar ? menuFairMul(bar, npc) : 1);
   return Math.max(0.05, Math.min(0.97, 1.15 - (price / Math.max(4, fair)) * 0.75));
 }
 function barSeatPos(m, i){ return localToWorld(m, (i - (BAR_SEATS-1)/2) * 0.75, m.radius + 0.55); }
@@ -2171,13 +2241,13 @@ function releaseService(npc){
 function tryGoDrink(npc){
   if(!npc.wantsDrink || casinoClosed) return false;
   const m = freeSpotAt(bars(), npc, BAR_SEATS, 'drinkers');
-  if(!m || npc.wallet < drinkPrice(m)) return false;
+  if(!m || npc.wallet < drinkPrice(m) * menuWalletNeed(m)) return false;
   const taken = npcs.filter(n => n.bar === m).map(n => n.barSeat);
   let seat = 0; while(seat < BAR_SEATS && taken.includes(seat)) seat++;
   if(seat >= BAR_SEATS) return false;
   // one look at the menu: too dear for them and they put it off for a while (club comps halve the price they see)
   const seen = clubComps(npc).drink ? Math.round(drinkPrice(m) * 0.5) : drinkPrice(m);
-  if(Math.random() > drinkAcceptChance(seen, npc)){
+  if(Math.random() > drinkAcceptChance(seen, npc, m)){
     npc.wantsDrink = false; npc.thirstyAt = 60 + Math.random() * 120;
     if(seen > DRINK_BASE * 1.5) gripe('dearDrinks');
     return false;
@@ -5644,7 +5714,7 @@ function placeMachine(key, x, z, rotation=0, nickArg, level=0){
     suspicion: isTableGame ? 0 : undefined,
     lifetimeIncome: 0,                                 // for the stats dashboard
     up: isGambling ? { speed:0, appeal:0, care:0 } : undefined, wear: 0, services: 0, broken: false,
-    mealPrice: type === 'restaurant' ? MEAL_BASE : undefined, covers: 0, diners: type === 'dinertable' ? 0 : undefined,
+    mealPrice: type === 'restaurant' ? MEAL_BASE : undefined, menuTier: (type === 'restaurant' || type === 'bar') ? 1 : undefined, covers: 0, diners: type === 'dinertable' ? 0 : undefined,
     feePct: type === 'cashier' ? CAGE_FEE : undefined, queue: [],
     drinkPrice: type === 'bar' ? DRINK_BASE : undefined, drinkers: type === 'bar' ? 0 : undefined, users: type === 'restroom' ? 0 : undefined,
   });
@@ -9217,7 +9287,7 @@ function machineState(m){
     type: m.key || m.type, x: m.x, z: m.z, rotation: m.rotation || 0, level: m.level || 0,
     payout: m.payout, edge: m.edge, lifetimeIncome: m.lifetimeIncome || 0, colorway: m.colorway || 0, st: m.st,
     denom: m.denom, lines: m.lines, nick: m.nick, closed: !!m.closed, up: m.up, wear: m.wear || 0, services: m.services || 0, broken: !!m.broken,
-    mealPrice: m.mealPrice, drinkPrice: m.drinkPrice, feePct: m.feePct, covers: m.covers || 0,
+    mealPrice: m.mealPrice, drinkPrice: m.drinkPrice, menuTier: menuKind(m) ? menuTier(m) : undefined, feePct: m.feePct, covers: m.covers || 0,
     floorService: m.floorService ? true : undefined, floorOn: m.floorService ? !!m.floorOn : undefined,
     room: m.room ? { opts: m.room.opts, dirty: m.room.dirty, revenue: m.room.revenue, nights: m.room.nights } : undefined,
   };
@@ -9229,6 +9299,7 @@ function applyMachineState(m, md){
   if(md.lines !== undefined && m.lines !== undefined) m.lines = md.lines;
   if(md.mealPrice !== undefined && m.mealPrice !== undefined) m.mealPrice = md.mealPrice;
   if(md.drinkPrice !== undefined && m.drinkPrice !== undefined) m.drinkPrice = md.drinkPrice;
+  if(menuKind(m)){ if(md.menuTier){ m.menuTier = md.menuTier; clampPrice(m); } else fitMenuTier(m); } // an old save has no tier: give the lowest one that holds the saved price
   if(md.feePct !== undefined && m.feePct !== undefined) m.feePct = md.feePct;
   if(md.floorService && m.type === 'bar'){ m.floorService = true; m.floorOn = md.floorOn !== false; }
   if(md.up && m.up) Object.assign(m.up, md.up);
@@ -14535,7 +14606,8 @@ function openMachineConfig(m){
       <div style="display:flex;justify-content:space-between;"><span>Waiter on this bar</span><span style="color:${isStaffed(m)?'#8fd6a8':'#e08a8a'};">${isStaffed(m) ? 'yes' : 'nobody'}</span></div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Drinks poured here</span><span>${m.covers || 0}</span></div>
       <label style="display:flex;justify-content:space-between;gap:10px;">Price of a drink <span id="cfgDrinkVal">$${drinkPrice(m)}</span></label>
-      <input type="range" id="cfgDrink" min="2" max="40" value="${drinkPrice(m)}" style="width:100%;margin:6px 0;">
+      <input type="range" id="cfgDrink" min="${menuRange(m).min}" max="${menuRange(m).max}" value="${drinkPrice(m)}" style="width:100%;margin:6px 0;">
+      ${menuTierHtml(m)}
       <div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:8px 0 2px;">Floor service</div>`;
     if(m.floorService){
       html += `<label style="display:flex;justify-content:space-between;gap:10px;align-items:center;"><span>Waiters sell drinks at the machines</span><input type="checkbox" id="cfgFloorOn" ${m.floorOn ? 'checked' : ''}></label>
@@ -14554,7 +14626,8 @@ function openMachineConfig(m){
       <div style="display:flex;justify-content:space-between;"><span>Kitchen quality</span><span style="color:#e6c34a;">${starString(q * 5)}</span></div>
       <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Covers served here</span><span>${m.covers || 0}</span></div>
       <label style="display:flex;justify-content:space-between;gap:10px;">Price of a meal <span id="cfgMealVal">$${mealPrice(m)}</span></label>
-      <input type="range" id="cfgMeal" min="4" max="90" value="${mealPrice(m)}" style="width:100%;margin:6px 0;">
+      <input type="range" id="cfgMeal" min="${menuRange(m).min}" max="${menuRange(m).max}" value="${mealPrice(m)}" style="width:100%;margin:6px 0;">
+      ${menuTierHtml(m)}
       <p style="color:#9fb3a8;font-size:11px;">Charge what the kitchen is worth. Push it past what the food is like and people walk away hungry; a fair price with a good chef fills every table. Each meal costs you $${MEAL_COST} to cook.</p>`;
   }
   if(m.category === 'gambling'){
@@ -14602,6 +14675,8 @@ function openMachineConfig(m){
   if(feeSl) feeSl.addEventListener('input', (e)=>{ m.feePct = parseInt(e.target.value); document.getElementById('cfgFeeVal').textContent = m.feePct + '%'; });
   const drinkSl = document.getElementById('cfgDrink');
   if(drinkSl) drinkSl.addEventListener('input', (e)=>{ m.drinkPrice = parseInt(e.target.value); document.getElementById('cfgDrinkVal').textContent = '$' + m.drinkPrice; });
+  const tierBuy = document.getElementById('cfgTierBuy');
+  if(tierBuy) tierBuy.addEventListener('click', (e)=>{ e.stopPropagation(); if(buyMenuTier(m)) openMachineConfig(m); });
   const floorBuy = document.getElementById('cfgFloorBuy');
   if(floorBuy) floorBuy.addEventListener('click', (e)=>{ e.stopPropagation(); if(buyFloorService(m)) openMachineConfig(m); });
   const floorOnEl = document.getElementById('cfgFloorOn');
@@ -15340,7 +15415,8 @@ function makeThrivingCasino(){
     rebuildRoomInterior(m); updateRoomLamp(m);
   });
   hotel.dynamic = true; hotel.fromH = 10; hotel.toH = 6;
-  kitchens().forEach(k => { k.mealPrice = 34; });
+  kitchens().forEach(k => { k.mealPrice = 34; fitMenuTier(k); });
+  bars().forEach(fitMenuTier);
 
   // ---- machines: nicely kept and upgraded ----
   machines.filter(m => m.category === 'gambling').forEach(m=>{
