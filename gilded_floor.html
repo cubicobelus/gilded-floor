@@ -283,6 +283,7 @@
             </div>
           </div>
         </div>
+        <div class="statsCard" id="licenceCard" style="margin-top:12px;"></div>
       </div>
 
       <div class="statsPane" data-pane="achievements" style="display:none;">
@@ -833,6 +834,22 @@ function wallpaperTexture(key){
   return (wallTexCache[key] = t);
 }
 // A fresh material per wall so the pattern repeats at the right scale for that wall's size.
+function makeDoorWallMaterial(){   // the wallpaper on an extruded shape, whose UVs are in metres
+  const m = makeWallMaterial(3, 3);
+  if(m.map) m.map.repeat.set(1 / 3, 1 / 3);
+  return m;
+}
+let hlSignTex = null;
+function hlSignTexture(){
+  if(hlSignTex) return hlSignTex;
+  const c = document.createElement('canvas'); c.width = 512; c.height = 136;
+  const x = c.getContext('2d');
+  x.fillStyle = '#1c0f1a'; x.fillRect(0, 0, 512, 136);
+  x.strokeStyle = '#e6c34a'; x.lineWidth = 7; x.strokeRect(8, 8, 496, 120);
+  x.fillStyle = '#e6c34a'; x.font = 'bold 66px Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText('HIGH LIMIT', 256, 72);
+  return (hlSignTex = new THREE.CanvasTexture(c));
+}
 function makeWallMaterial(w, h){
   const wp = WALLPAPERS[wallpaperKey];
   const m = new THREE.MeshStandardMaterial({ color: wp.pattern ? 0xffffff : new THREE.Color(wp.color), roughness: wp.pattern === 'marble' ? 0.3 : 0.8 });
@@ -846,7 +863,7 @@ function makeWallMaterial(w, h){
 function setWallpaper(key){
   wallpaperKey = key;
   buildRoomShell();
-  machines.forEach(m=>{ if(m.type === 'wall' && m.parts && m.parts.wallMesh) m.parts.wallMesh.material = makeWallMaterial(4, 4.2); });
+  machines.forEach(m=>{ if(m.type === 'wall' && m.parts && m.parts.wallMesh) m.parts.wallMesh.material = makeWallMaterial(4, 4.2); else if(m.type === 'hldoor' && m.parts && m.parts.wallMesh) m.parts.wallMesh.material = makeDoorWallMaterial(); });
 }
 
 function makeWall(w,h,x,y,z,ry){
@@ -2776,7 +2793,7 @@ function departmentReport(L){
   get('Bar').out += L.cogsBar || 0;      // what the drinks themselves cost
   get('Dining').out += L.cogsFood || 0;  // what the food itself cost
   get('Investor').inc = 0;
-  get('Events').inc = L.events || 0; get('Events').out += L.eventCost || 0;
+  get('Events').inc = L.events || 0; get('Events').out += (L.eventCost || 0) + (L.licenses || 0);   // (licence fees sit with events)
   get('Gift shop').inc = L.gifts || 0; get('Gift shop').out += L.cogsGifts || 0;  // what the souvenirs cost
   // wages, split by what each role looks after
   Object.entries(staffCounts).forEach(([role, n])=>{
@@ -3009,6 +3026,14 @@ function makeLabel(text){
 
 const machines = []; // {mesh, label, x, z, radius, name, type, cost, income}
 let machGrid = null; // walkers' spatial index of machines (see machGridGet)
+// Licence and High Limit Room state (the logic is further down, after the star rating)
+let licenseHeld = null;            // key of the licence held, or null
+let licenseDayBought = 0, licenseNextAudit = 0, licenseFails = 0, licenseSuspendedUntil = 0;
+let licenseHistory = [];           // the last audits: { day, ok, failed:[check ids] }
+let rigCaughtDay = -999;           // the last day an inspector caught a rigged machine
+let licenseWasSuspended = false;
+let hlRoom = null, hlDirty = true, hlTickN = 0, hlPullAcc = 0;   // the High Limit Room found around the doorway (see hlRecompute)
+const hlVis = { tint: null, leak: null, label: null };
 
 // ==== HOLDEM ENGINE START ====
 // No-Limit Texas Hold'em rules engine. Plain JS: no THREE, no DOM, no game globals.
@@ -3754,6 +3779,8 @@ const BUILD_ITEMS = {
     desc:'Climbs to the upper floor (build one in the Building tab first). Guests and you can walk up; place it with both ends inside the room.' },
   wall:      { name:'Interior Wall',    cost:120, income:0,  radius:1.7,  category:'decoration', tab:'architecture',
     desc:'A 4m partition in your current wallpaper. Build rooms and boundaries; guests walk around it. Boosts Architecture stars.' },
+  hldoor:    { name:'High Limit Doorway', cost:600, income:0, radius:1.7, category:'decoration', tab:'architecture',
+    desc:'A wall segment with a gold-framed opening and a HIGH LIMIT sign. Wall off a room (40 to 400 m2) with this as the only way in: the games inside play at 2x, 3x or 5x minimum bets for big spenders. The sign faces the casino floor and the room is behind it. One per casino; needs the Basic licence (Stats tab).' },
 };
 
 const ROULETTE_POCKETS = 37;
@@ -3793,7 +3820,7 @@ function playerCappedPayout(m, actor){ return actor === null ? Math.min(m.payout
 function effectivePayout(m, actor){ return Math.min(0.99, playerCappedPayout(m, actor) + (m.hotTime > 0 ? 0.08 : 0)); } // a hot machine pays extra
 function bigWheelPayout(m, color, actor){ return BIGWHEEL_COLORS[color].nominal * (playerCappedPayout(m, actor) / 0.95); }
 function isSlotMachine(m){ return !!SLOT_CATALOG[m.type]; }
-function slotUnit(m){ return m.denom * m.lines; } // the smallest possible stake on a machine - your own, when you play
+function slotUnit(m){ return m.denom * m.lines * hlMult(m); } // the smallest possible stake on a machine - your own, when you play
 function slotHitRate(m, lines){ // more lines cover more of the reels, so wins land more often (same average payout)
   const cfg = SLOT_CATALOG[m.type];
   return Math.min(0.55, cfg.pWin * (1 + 0.18 * Math.log2(Math.max(1, lines !== undefined ? lines : m.lines))));
@@ -5485,6 +5512,21 @@ function buildMachineMesh(key, nick, noMerge){
     const capT = new THREE.Mesh(new THREE.BoxGeometry(4.45, 0.15, 0.4), trimMat); capT.position.y = 4.27;
     g.add(wallMesh, baseT, capT);
     mesh = g; radius = 1.7; name = 'Interior Wall'; parts = { wallMesh };
+  } else if(type === 'hldoor'){
+    // A wall-sized partition (4.4 x 4.2, same grid as Interior Wall) with a 2 m opening to the floor, one extruded wall mesh, a merged gold
+    // frame and one sign plane. The sign faces +z (out to the casino floor): the room is behind the doorway, see hlRecompute.
+    const g = new THREE.Group();
+    const sh = new THREE.Shape();
+    sh.moveTo(-2.2, 0); sh.lineTo(-1, 0); sh.lineTo(-1, 3); sh.lineTo(1, 3); sh.lineTo(1, 0); sh.lineTo(2.2, 0); sh.lineTo(2.2, 4.2); sh.lineTo(-2.2, 4.2); sh.lineTo(-2.2, 0);
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.3, bevelEnabled: false }); geo.translate(0, 0, -0.15);
+    const wallMesh = new THREE.Mesh(geo, makeDoorWallMaterial());
+    const bar = (w, h, d, x, y)=>{ const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), trimMat); b.position.set(x, y, 0); g.add(b); };
+    bar(0.12, 3.05, 0.4, -1.0, 1.52); bar(0.12, 3.05, 0.4, 1.0, 1.52); bar(2.24, 0.14, 0.4, 0, 3.07);   // gold frame round the opening
+    bar(1.25, 0.3, 0.36, -1.6, 0.15); bar(1.25, 0.3, 0.36, 1.6, 0.15); bar(4.45, 0.15, 0.4, 0, 4.27);   // skirting and cap, as on a wall
+    const signMat = new THREE.MeshBasicMaterial({ map: hlSignTexture(), toneMapped: false });
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.5), signMat); sign.position.set(0, 3.62, 0.17); sign.userData.keep = true;
+    g.add(wallMesh, sign);
+    mesh = g; radius = 1.7; name = 'High Limit Doorway'; parts = { wallMesh };
 
   } else if(type === 'bench'){
     // Curved banquette for three around a small round table. The arc is centred on (0, BENCH_C) and opens toward +z.
@@ -5630,6 +5672,11 @@ function makeColliders(type, x, z, rotation, radius){
     for(let t = -half; t <= half + 0.01; t += step) out.push({ x: x + t*c, z: z - t*s, r: 0.45 });
     return out;
   }
+  if(type === 'hldoor'){ // two jambs with a ~1.5 m opening between them (guests and you walk through)
+    const out = [], c = Math.cos(rotation), s = Math.sin(rotation);
+    [-1.8, -1.35, 1.35, 1.8].forEach(t => out.push({ x: x + t*c, z: z - t*s, r: 0.42 }));
+    return out;
+  }
   if(type !== 'wall') return [{ x, z, r:radius }];
   const out = [], c = Math.cos(rotation), s = Math.sin(rotation);
   for(let t = -1.8; t <= 1.81; t += 0.9) out.push({ x: x + t*c, z: z - t*s, r: 0.42 });
@@ -5678,7 +5725,7 @@ function placeMachine(key, x, z, rotation=0, nickArg, level=0){
   const yOffset = type === 'lift' ? 0 : level * LEVEL_H;
   mesh.position.set(x, yOffset, z);
   mesh.rotation.y = rotation;
-  if(type !== 'wall' && type !== 'room' && type !== 'stairs' && type !== 'lift' && type !== 'chandelier' && type !== 'ropes' && type !== 'aquarium' && type !== 'trophycase' && type !== 'prizecar'){
+  if(type !== 'wall' && type !== 'room' && type !== 'stairs' && type !== 'lift' && type !== 'chandelier' && type !== 'ropes' && type !== 'hldoor' && type !== 'aquarium' && type !== 'trophycase' && type !== 'prizecar'){
     const sz = Math.max(1.6, radius * 3.4);
     gfLod(mesh).vfar.push(addBlob(mesh, SHADOW_MAT_MACHINE, sz, 0.02, 1));
   }
@@ -5723,7 +5770,7 @@ function placeMachine(key, x, z, rotation=0, nickArg, level=0){
   if(type === 'stairs' || type === 'lift') refreshLevels();
   refreshPilasters();
   if(type === 'room'){ const rm = machines[machines.length-1]; rm.room = newRoomState(item.tier); rebuildRoomInterior(rm); updateRoomLamp(rm); rm.parts.door.visible = !casinoClosed; }
-  gfFreezeMachine(machines[machines.length-1]); machGrid = null;
+  gfFreezeMachine(machines[machines.length-1]); machGrid = null; hlDirty = true;
   // The desk comes with Bronze already running - there's no reason to sell someone the stand and then
   // separately charge them to switch it on. Only bumps clubLevel up, never down, so re-placing a second
   // desk (or loading a save where it's already ahead) can never undo further upgrades.
@@ -5735,7 +5782,7 @@ function removeMachine(m){
   scene.remove(m.label);
   const idx = machines.indexOf(m);
   if(idx !== -1) machines.splice(idx, 1);
-  machGrid = null;
+  machGrid = null; hlDirty = true;
   if(m.type === 'wall') recomputeWallChains();
   if(m.type === 'stairs' || m.type === 'lift') refreshLevels();
   refreshPilasters();
@@ -6299,7 +6346,7 @@ function settleDayFinances(dayNet){
 addCash(0);
 
 // Running ledger for the end-of-day breakdown: where money came from and where it went.
-function newLedger(){ return { slotWon:0, slotPaid:0, tableWon:0, tablePaid:0, atmFees:0, wages:0, upkeep:0, bribes:0, theft:0, debtRepaid:0, personalWon:0, personalLost:0, rooms:0, food:0, drinks:0, cage:0, purchases:0, cogs:0, cogsBar:0, cogsFood:0, events:0, eventCost:0, gifts:0, cogsGifts:0 }; }
+function newLedger(){ return { slotWon:0, slotPaid:0, tableWon:0, tablePaid:0, atmFees:0, wages:0, upkeep:0, bribes:0, theft:0, debtRepaid:0, personalWon:0, personalLost:0, rooms:0, food:0, drinks:0, cage:0, purchases:0, cogs:0, cogsBar:0, cogsFood:0, events:0, eventCost:0, licenses:0, gifts:0, cogsGifts:0 }; }
 let ledger = newLedger();
 // Money spent buying things (machines, hires, training, upgrades, floor, parking, wallpaper, club tiers, room furnishing). Only used so the day report can say how much of a day's net went on purchases.
 function spendOn(amount){ addCash(-amount); ledger.purchases += amount; }
@@ -6648,6 +6695,7 @@ function updatePeakLabel(){
 }
 function updateDayNight(dt){
   dayTime += dt;
+  licenseTick();
   updatePeakLabel();
   const cyclePos = dayTime / DAY_LENGTH;
   hemi.intensity = 0.3 + 0.15*Math.sin(cyclePos*Math.PI*2 - Math.PI/2) + 0.15;
@@ -6656,6 +6704,7 @@ function updateDayNight(dt){
     dayTime = 0;
     ageRegulars();
     payDay();
+    licenseDayEnd();
     settleDayFinances(dayCashChange()); // investor repayment / days-in-the-red bookkeeping first, so the report includes it
     const dayNet = Math.round(dayCashChange());
     const guestsToday = totalGuestsServed - dayStartGuestsServed;
@@ -6686,10 +6735,10 @@ function showDaySummary(day, net, guests, L, S){
   const plain = (label, value)=> `<div style="display:flex;justify-content:space-between;gap:16px;"><span>${label}</span><span>${value}</span></div>`;
   const slotNet = L.slotWon - L.slotPaid, tableNet = L.tableWon - L.tablePaid;
   const personalNet = L.personalWon - L.personalLost; // your own bets come out of / go into your cash directly
-  const known = slotNet + tableNet + L.atmFees + L.rooms + L.food + L.drinks + L.cage + (L.events || 0) + (L.gifts || 0) - L.wages - L.upkeep - L.bribes - L.theft - L.debtRepaid - L.purchases - (L.eventCost || 0) - (L.cogs || 0) + personalNet;
+  const known = slotNet + tableNet + L.atmFees + L.rooms + L.food + L.drinks + L.cage + (L.events || 0) + (L.gifts || 0) - L.wages - L.upkeep - L.bribes - L.theft - L.debtRepaid - L.purchases - (L.eventCost || 0) - (L.licenses || 0) - (L.cogs || 0) + personalNet;
   const other = net - known; // building, selling, expanding, ads, etc.
   const takenIn = L.slotWon + L.tableWon, paidOut = L.slotPaid + L.tablePaid;
-  const otherMinus = (L.cogs || 0) + (L.eventCost || 0) + L.wages + L.upkeep + L.bribes + L.theft + L.debtRepaid + L.purchases + Math.max(0, -other) + Math.max(0, -personalNet);
+  const otherMinus = (L.cogs || 0) + (L.eventCost || 0) + (L.licenses || 0) + L.wages + L.upkeep + L.bribes + L.theft + L.debtRepaid + L.purchases + Math.max(0, -other) + Math.max(0, -personalNet);
   const otherPlus = L.atmFees + L.rooms + L.food + L.drinks + L.cage + (L.events || 0) + (L.gifts || 0) + Math.max(0, other) + Math.max(0, personalNet);
   const barBonus = (L.slotWon + L.tableWon) * (1 - 1/amenitySpendMultiplier());
   const repDelta = reputation - S.repStart;
@@ -6748,6 +6797,7 @@ function showDaySummary(day, net, guests, L, S){
       ${L.debtRepaid > 0 ? row('Investor repayment', L.debtRepaid, -1) : ''}
       ${L.purchases > 0 ? row('Purchases', L.purchases, -1) : ''}
       ${(L.eventCost || 0) > 0 ? row('Event fees', L.eventCost, -1) : ''}
+      ${(L.licenses || 0) > 0 ? row('Licence fees', L.licenses, -1) : ''}
       ${Math.abs(other) >= 1 ? row('Ads, comps, loans &amp; other', other, other > 0 ? 1 : -1) : ''}
     </div>
     <div style="${box}">${sh('By department')}${departmentTable(L)}</div>`;
@@ -7938,7 +7988,7 @@ let densityAvg = null, densityAt = 0;
 const STAR_CAP_GAP = 1.5;   // overall rating may be at most this many stars above the weakest category
 function computeCasinoStars(){
   const amenityCount = machines.filter(m=>m.category==='amenity' && !OFFICE_INFO[m.type]).length;
-  const decorationCount = machines.filter(m=>m.category==='decoration' && m.type!=='wall' && m.type!=='stairs' && m.type!=='lift').length;
+  const decorationCount = machines.filter(m=>m.category==='decoration' && m.type!=='wall' && m.type!=='stairs' && m.type!=='lift' && m.type!=='hldoor').length;
   const wallCount = machines.filter(m=>m.type==='wall').length;
   const gamblingMachines = machines.filter(m=>m.category==='gambling');
   const distinctTypes = new Set(gamblingMachines.map(m=>m.type)).size;
@@ -7984,6 +8034,414 @@ function computeCasinoStars(){
 function starString(value){
   const rounded = Math.max(0, Math.min(5, Math.round(value)));
   return '\u2605'.repeat(rounded) + '\u2606'.repeat(5-rounded);
+}
+
+// ----- Licences: paid permits that open new content (only the Basic class is on sale in this build) -----
+// A licence is bought once, cannot be sold, costs a fee every day and is audited every 7 days. It only gates NEW things:
+// nothing a save already has is ever locked by it. Gaming, Premium and Royal are listed with their prices but not for sale yet.
+const LICENSES = {
+  basic:   { name:'Basic',   revenue:40000,  stars:3.5, cost:5000,   fee:100,  opens:'the High Limit Room', onSale:true },
+  gaming:  { name:'Gaming',  revenue:100000, stars:4,   cost:15000,  fee:250,  opens:'Penthouse suites and a VIP host' },
+  premium: { name:'Premium', revenue:250000, stars:4.5, cost:40000,  fee:600,  opens:"The Main Event and a New Year's gala" },
+  royal:   { name:'Royal',   revenue:500000, stars:4.5, cost:100000, fee:1500, opens:'A Private Salon and invitations' },
+};
+const LICENSE_ORDER = ['basic', 'gaming', 'premium', 'royal'];
+const LICENSE_AUDIT_DAYS = 7, LICENSE_AUDIT_TIME = DAY_LENGTH * 6 / 24, LICENSE_SUSPEND_DAYS = 3, LICENSE_PASS_REP = 2;   // audits run at 14:00 (the day starts at 8:00)
+// ===== High Limit Room numbers: tune here =====
+// Everything the licence and the room do to money and crowds is in this block (the doorway's price is its BUILD_ITEMS entry).
+const HL = {
+  MULTS: [2, 3, 5],       // the minimum-bet multipliers the owner can pick on the doorway panel
+  MIN_AREA: 40, MAX_AREA: 400,   // m2 of floor the walls must enclose for the room to count
+  CELL: 0.5,              // size of a cell of the grid the room is found on, in metres
+  MIN_BETS: 6,            // a guest needs this many minimum bets in the wallet to sit down at a room game (higher multiplier = fewer qualify)
+  CROWD_SHIFT: 0.03,      // licence in force: arrivals skew this much richer (added to the VIP-lounge shift in makeNPC)
+  PULL_PER_GAME: 0.25,    // extra rich guests drawn to the casino per day for each game inside a valid room (x 1 + comfort/2)
+  PULL_MAX: 4,            // ...but never more than this many a day
+  STAY: 1.15, STAY_COMFORT: 0.5,    // rich guests at a room game stay this much longer (the comfort of the room adds up to STAY_COMFORT)
+  DRINK: 1.3, DRINK_COMFORT: 1.2,   // ...and get thirsty this much faster while they play there
+  COMFORT_BAR: 0.4, COMFORT_DECOR: 0.1,   // comfort 0..1 = bars inside x this + decorations inside x this
+  PREFER: 0.9,            // chance a big spender heads for a room game first when one is free
+  RICH_WALLET: 350,       // starting wallet under this never plays in the room
+};
+// ===============================================
+
+function licenseSuspended(){ return licenseHeld !== null && currentDay < licenseSuspendedUntil; }
+function licenseInForce(){ return licenseHeld !== null && currentDay >= licenseSuspendedUntil; }
+function licenseDailyFee(){ return licenseHeld !== null ? LICENSES[licenseHeld].fee : 0; }
+function licenseLastAudit(){ return licenseHistory.length ? licenseHistory[licenseHistory.length - 1] : null; }
+function securityOnDuty(){ return staffNPCs.filter(s => s.type === 'security').length >= 1 && roleLoad('security') <= 1; }
+// What a licence needs before it can be bought: lifetime revenue and the overall star rating.
+function licenseRequirements(key){
+  const L = LICENSES[key], rev = lifetimeRevenue(), stars = computeCasinoStars().overall;
+  const revOk = sandbox || rev >= L.revenue, starsOk = sandbox || stars >= L.stars;
+  return { rev, stars, revOk, starsOk, ok: revOk && starsOk };
+}
+// The four things an audit looks at, judged on the floor as it is right now.
+function licenseChecks(){
+  const noDealer = machines.filter(m => needsDealer(m) && !(m.staffer || houseDealerOn())).length;
+  // Rooms waiting for a housekeeper are normal turnover at 14:00, so the audit asks whether housekeeping is staffed for the rooms
+  // (one per 15, the Staff tab's own rule), not for spotless rooms.
+  const dirty = hotelRooms().length && roleLoad('housekeeper') > 1 ? 1 : 0;
+  const noLoo = !machines.some(m => m.type === 'restroom');
+  const since = currentDay - rigCaughtDay, secOk = securityOnDuty();
+  return [
+    { id:'dealers', label:'Every table has its dealer', ok: noDealer === 0,
+      note: noDealer ? noDealer + (noDealer === 1 ? ' table has' : ' tables have') + ' no dealer' : '', gripe:'a table had no dealer' },
+    { id:'security', label:'Enough security for the crowd', ok: secOk,
+      note: secOk ? '' : 'too few security guards', gripe:'too few security guards for the crowd' },
+    { id:'rigging', label:'No rigging caught this week', ok: since >= LICENSE_AUDIT_DAYS,
+      note: since >= LICENSE_AUDIT_DAYS ? '' : 'caught ' + (since <= 0 ? 'today' : since + (since === 1 ? ' day ago' : ' days ago')), gripe:'rigging was caught this week' },
+    { id:'clean', label:'Restrooms on the floor, housekeeping staffed', ok: dirty === 0 && !noLoo,
+      note: noLoo ? 'no restrooms' : dirty ? 'too few housekeepers for the rooms' : '', gripe: noLoo ? 'there were no restrooms' : 'too few housekeepers for the hotel rooms' },
+  ];
+}
+function buyLicense(key){
+  const L = LICENSES[key];
+  if(!L || !L.onSale || licenseHeld !== null || !licenseRequirements(key).ok || cash < L.cost) return false;
+  spendOn(L.cost);
+  licenseHeld = key; licenseDayBought = currentDay; licenseNextAudit = currentDay + LICENSE_AUDIT_DAYS; licenseFails = 0; licenseSuspendedUntil = 0; licenseHistory = [];
+  logEvent(`${L.name} licence bought: ${L.opens} can now be built (Build, Architecture). First audit on Day ${licenseNextAudit}`, '#e6c34a');
+  playSound('achievement');
+  hlDirty = true;
+  return true;
+}
+function runLicenseAudit(){
+  const failed = licenseChecks().filter(c => !c.ok);
+  licenseHistory.push({ day: currentDay, ok: failed.length === 0, failed: failed.map(c => c.id) });
+  if(licenseHistory.length > 12) licenseHistory.shift();
+  licenseNextAudit = currentDay + LICENSE_AUDIT_DAYS;
+  if(!failed.length){
+    licenseFails = 0; reputation = Math.min(100, reputation + LICENSE_PASS_REP);
+    logEvent(`Licence audit passed on Day ${currentDay}: reputation +${LICENSE_PASS_REP}`, '#8fd6a8'); playSound('ding');
+    return;
+  }
+  const names = failed.map(c => c.gripe).join('; ');
+  licenseFails++;
+  if(licenseFails >= 2){
+    licenseFails = 0; licenseSuspendedUntil = currentDay + LICENSE_SUSPEND_DAYS;
+    logEvent(`Licence audit failed again (${names}). The licence is suspended until Day ${licenseSuspendedUntil}: the High Limit Room is closed`, '#e08a8a');
+  } else logEvent(`Licence audit failed: ${names}. This is a warning: fail the next one and the licence is suspended`, '#e08a8a');
+  playSound('lose');
+}
+// Called from the day rollover, before the day's ledger is closed: the fee is due whether or not the licence is suspended.
+function licenseDayEnd(){
+  const fee = licenseDailyFee();
+  if(fee > 0){ addCash(-fee); ledger.licenses = (ledger.licenses || 0) + fee; }
+}
+function licenseTick(){
+  if(licenseHeld === null && hlTickN % 60 === 0 && !tipsSeen.has('licenseReady') && lifetimeRevenue() >= LICENSES.basic.revenue && licenseRequirements('basic').ok) tip('licenseReady', `The Basic licence is on sale in the Stats tab [4]: it brings a richer crowd and lets you build a High Limit Room.`);
+  if(licenseHeld !== null){
+    if(currentDay >= licenseNextAudit && dayTime >= LICENSE_AUDIT_TIME){
+      if(casinoClosed){ licenseNextAudit = currentDay + 1; logEvent('The licence audit was put off a day: the casino was closed at 14:00', '#9fb3a8'); }
+      else runLicenseAudit();
+    }
+    const sus = licenseSuspended();
+    if(licenseWasSuspended && !sus){ logEvent('The licence suspension is over: the High Limit Room is open again', '#8fd6a8'); hlDirty = true; }
+    if(sus !== licenseWasSuspended) hlDirty = true;
+    licenseWasSuspended = sus;
+  } else licenseWasSuspended = false;
+  hlTick();
+}
+function licenseSaveState(){ return { license: { held: licenseHeld, bought: licenseDayBought, next: licenseNextAudit, fails: licenseFails, susp: licenseSuspendedUntil, history: licenseHistory, rig: rigCaughtDay } }; }
+function licenseResetState(){ licenseHeld = null; licenseDayBought = 0; licenseNextAudit = 0; licenseFails = 0; licenseSuspendedUntil = 0; licenseHistory = []; rigCaughtDay = -999; licenseWasSuspended = false; hlDirty = true; }
+function licenseLoadState(data){
+  licenseResetState();
+  const L = data.license;
+  if(!L || typeof L !== 'object' || !LICENSES[L.held]) return;   // a save from before licences: none held
+  const n = (v, d) => Number.isFinite(v) ? v : d;
+  licenseHeld = L.held; licenseDayBought = n(L.bought, 1); licenseNextAudit = n(L.next, currentDay + LICENSE_AUDIT_DAYS);
+  licenseFails = Math.max(0, n(L.fails, 0)); licenseSuspendedUntil = n(L.susp, 0); rigCaughtDay = n(L.rig, -999);
+  licenseHistory = Array.isArray(L.history) ? L.history.filter(h => h && Number.isFinite(h.day)).slice(-12).map(h => ({ day: h.day, ok: !!h.ok, failed: Array.isArray(h.failed) ? h.failed.filter(x => typeof x === 'string') : [] })) : [];
+  licenseWasSuspended = licenseSuspended();
+}
+
+// ----- The High Limit Room -----
+// The owner walls a room off with Interior Walls and puts ONE High Limit Doorway in the wall. The room is whatever the doorway
+// opens into, found like this: the floor is cut into 0.5 m cells, the walls and the doorway's own frame (its opening counts as
+// closed) block cells, and a flood fill starts on the doorway's INSIDE face. The inside is the side BEHIND the sign: the sign and
+// the gold frame face the casino floor, so the room is on the far side of them (turn the doorway round with R/E, a half turn flips it).
+// The room is valid when the fill (a) never reaches the cell just outside the doorway, i.e. no gap in the walls, and (b) covers
+// HL.MIN_AREA..HL.MAX_AREA m2. A gap is shown with a red marker where the fill escapes. Only walls on the doorway's own floor count.
+function hlDoor(){ for(let i = 0; i < machines.length; i++) if(machines[i].type === 'hldoor') return machines[i]; return null; }
+function hlGame(m){ return m.category === 'gambling' && m.type !== 'holdem'; }   // every game in the room except Hold'em (its stakes are blinds between guests)
+function hlMultOf(door){ return HL.MULTS.includes(door.hlMult) ? door.hlMult : HL.MULTS[0]; }
+function hlRoomNow(){ if(hlDirty) hlRecompute(); return hlRoom; }
+function inHighLimit(m){
+  if(licenseHeld === null) return false;
+  if(hlDirty) hlRecompute();
+  return m.hlIn === true && licenseInForce();
+}
+function hlMult(m){ return inHighLimit(m) ? hlMultOf(hlRoom.door) : 1; }
+function hlRich(npc){ return !!(npc.isVIP || npc.wantsMaxBet || npc.archetype === 'highroller'); }
+// The wallet that covers HL.MIN_BETS minimum bets at this game, at the room's multiplier.
+function hlBaseStake(m){
+  if(isSlotMachine(m)) return m.denom * m.lines;
+  return m.income * BET_SCALE * (m.stakeMult || 1) * ((!isSlotLike(m) && !(m.limitMult > 1)) ? 2 : 1) * 0.6;   // the low end of a normal bet at that table
+}
+function hlWalletNeeded(m){ return HL.MIN_BETS * hlBaseStake(m) * hlMultOf(hlRoom.door); }
+function hlStay(){ return HL.STAY + HL.STAY_COMFORT * (hlRoom ? hlRoom.comfort : 0); }
+function hlDrink(){ return HL.DRINK + HL.DRINK_COMFORT * (hlRoom ? hlRoom.comfort : 0); }
+function hlPullPerDay(){
+  if(!hlRoomNow() || !hlRoom.valid || !licenseInForce()) return 0;
+  return Math.min(HL.PULL_MAX, HL.PULL_PER_GAME * hlRoom.games * (1 + hlRoom.comfort / 2));
+}
+function hlRecompute(){
+  hlDirty = false;
+  const before = hlRoom ? hlRoom.sig : '';
+  machines.forEach(m => { m.hlIn = false; });
+  const door = hlDoor();
+  if(!door){ hlRoom = null; hlRefreshVisuals(); return; }
+  const lvl = door.level || 0, C = HL.CELL, x0 = ROOM_LEFT_X, z0 = ROOM_BACK_Z;
+  const nx = Math.ceil((ROOM_RIGHT_X - ROOM_LEFT_X) / C), nz = Math.ceil((ROOM_FRONT_Z - ROOM_BACK_Z) / C);
+  const blocked = new Uint8Array(nx * nz);
+  machines.forEach(m => {
+    if((m.type !== 'wall' && m.type !== 'hldoor') || (m.level || 0) !== lvl) return;
+    const c = Math.cos(m.rotation || 0), s = Math.sin(m.rotation || 0), hl = 2.2, ht = 0.38, R = hl + ht;
+    const i0 = Math.max(0, Math.floor((m.x - R - x0) / C)), i1 = Math.min(nx - 1, Math.floor((m.x + R - x0) / C));
+    const j0 = Math.max(0, Math.floor((m.z - R - z0) / C)), j1 = Math.min(nz - 1, Math.floor((m.z + R - z0) / C));
+    for(let j = j0; j <= j1; j++) for(let i = i0; i <= i1; i++){
+      const dx = x0 + (i + 0.5) * C - m.x, dz = z0 + (j + 0.5) * C - m.z;
+      if(Math.abs(dx * c - dz * s) <= hl && Math.abs(dx * s + dz * c) <= ht) blocked[j * nx + i] = 1;
+    }
+  });
+  const sn = Math.sin(door.rotation || 0), cs = Math.cos(door.rotation || 0);
+  const cellAt = (x, z) => { const i = Math.floor((x - x0) / C), j = Math.floor((z - z0) / C); return (i < 0 || j < 0 || i >= nx || j >= nz) ? -1 : j * nx + i; };
+  const sIn = cellAt(door.x - sn, door.z - cs), sOut = cellAt(door.x + sn, door.z + cs);   // one metre behind and in front of the doorway
+  const R = { door, level: lvl, valid: false, reason: '', area: 0, leak: null, mask: null, nx, nz, x0, z0, C, games: 0, tables: 0, slots: 0, bars: 0, decor: 0, comfort: 0, centre: { x: door.x, z: door.z }, sig: '' };
+  if(sIn < 0 || sOut < 0 || blocked[sIn] || blocked[sOut]){
+    R.reason = 'The doorway needs open floor on both sides: move it so you can walk straight through.';
+  } else {
+    const fill = start => {
+      const seen = new Uint8Array(nx * nz), par = new Int32Array(nx * nz).fill(-1), q = new Int32Array(nx * nz);
+      let qh = 0, qt = 0; q[qt++] = start; seen[start] = 1;
+      while(qh < qt){
+        const c = q[qh++], i = c % nx, j = (c - i) / nx;
+        const go = n => { if(!seen[n] && !blocked[n]){ seen[n] = 1; par[n] = c; q[qt++] = n; } };
+        if(i > 0) go(c - 1); if(i < nx - 1) go(c + 1); if(j > 0) go(c - nx); if(j < nz - 1) go(c + nx);
+      }
+      return { seen, par, area: Math.round(qt * C * C) };
+    };
+    const F = fill(sIn), seen = F.seen, par = F.par;
+    R.area = F.area;
+    if(seen[sOut]){
+      // The fill walked out through a gap. Of the cells on the shortest way out, the leak is the one in the narrowest opening (the least
+      // floor across it, along either axis); the marker goes in the middle of that opening.
+      const path = []; for(let c = sOut; c !== -1; c = par[c]) path.push(c); path.reverse();   // from the inside start to the outside start
+      const free = (i, j) => i >= 0 && j >= 0 && i < nx && j < nz && !blocked[j * nx + i];
+      let best = null;
+      path.forEach(c => {
+        const i = c % nx, j = (c - i) / nx;
+        [[1, 0], [0, 1]].forEach(([dx, dz]) => {
+          let a = 0, b = 0, hitA = false, hitB = false;
+          while(a < 20){ if(!free(i - dx * (a + 1), j - dz * (a + 1))){ hitA = true; break; } a++; }
+          while(b < 20){ if(!free(i + dx * (b + 1), j + dz * (b + 1))){ hitB = true; break; } b++; }
+          if(!hitA || !hitB) return;   // open on one side: not an opening between two walls
+          const w = (a + b + 1) * C;
+          if(!best || w < best.w - 1e-6) best = { w, x: x0 + (i + 0.5 + dx * (b - a) / 2) * C, z: z0 + (j + 0.5 + dz * (b - a) / 2) * C };
+        });
+      });
+      if(!best){ const c = path[path.length >> 1]; best = { x: x0 + ((c % nx) + 0.5) * C, z: z0 + (Math.floor(c / nx) + 0.5) * C }; }
+      R.leak = { x: best.x, z: best.z };
+      R.reason = "There's a gap in the walls here: the room is open to the casino floor. Close it with Interior Walls (the red marker shows where).";
+    } else if(F.area < HL.MIN_AREA || F.area > HL.MAX_AREA){
+      const O = fill(sOut);   // is the walled-off room on the other side? then the doorway is just facing the wrong way
+      if(O.area >= HL.MIN_AREA && O.area <= HL.MAX_AREA && !O.seen[sIn]) R.reason = `The doorway is facing the wrong way: the room is behind the sign, and behind it is open floor. Turn the doorway half a turn (R or E twice) so the sign faces the casino.`;
+      else if(F.area < HL.MIN_AREA) R.reason = `The room is only ${R.area} m2: it needs at least ${HL.MIN_AREA} m2 (about ${Math.ceil(Math.sqrt(HL.MIN_AREA * 1.4))} x ${Math.ceil(Math.sqrt(HL.MIN_AREA / 1.4))} m).`;
+      else R.reason = `The room is ${R.area} m2: it can be at most ${HL.MAX_AREA} m2. Wall off a smaller area.`;
+    } else { R.valid = true; R.mask = seen; }
+  }
+  if(R.valid){
+    let sx = 0, sz = 0, n = 0;
+    for(let c = 0; c < R.mask.length; c++) if(R.mask[c]){ sx += x0 + ((c % nx) + 0.5) * C; sz += z0 + (Math.floor(c / nx) + 0.5) * C; n++; }
+    R.centre = { x: sx / n, z: sz / n };
+    machines.forEach(m => {
+      if((m.level || 0) !== lvl || m === door) return;
+      const c = cellAt(m.x, m.z); if(c < 0 || !R.mask[c]) return;
+      if(hlGame(m)){ m.hlIn = true; R.games++; if(isSlotLike(m)) R.slots++; else R.tables++; }
+      else if(m.type === 'bar') R.bars++;
+      else if(m.category === 'decoration' && m.type !== 'wall' && m.type !== 'stairs' && m.type !== 'lift' && m.type !== 'ropes' && m.type !== 'chandelier') R.decor++;
+    });
+    R.comfort = Math.min(1, R.bars * HL.COMFORT_BAR + R.decor * HL.COMFORT_DECOR);
+  }
+  R.sig = [R.valid, R.reason, R.games, hlMultOf(door), licenseInForce(), R.leak ? R.leak.x + ',' + R.leak.z : '', R.area].join('|');
+  hlRoom = R;
+  hlRefreshVisuals();
+  if(licenseHeld !== null && before !== R.sig && R.valid !== (before.startsWith('true'))){
+    if(R.valid && licenseInForce()) logEvent(`High Limit Room open: ${R.area} m2, ${R.games} ${R.games === 1 ? 'game' : 'games'} at ${hlMultOf(door)}x minimum bets`, '#e6c34a');
+    else if(!R.valid) logEvent("The High Limit Room is not closed in: see the doorway's panel", '#e08a8a');
+  }
+}
+// The room's cell test for a point on its floor (used for "guests inside").
+function hlInside(x, z, level){
+  const R = hlRoom; if(!R || !R.valid || (level || 0) !== R.level) return false;
+  const i = Math.floor((x - R.x0) / R.C), j = Math.floor((z - R.z0) / R.C);
+  return i >= 0 && j >= 0 && i < R.nx && j < R.nz && R.mask[j * R.nx + i] === 1;
+}
+function hlRoomStats(){
+  const R = hlRoomNow();
+  const s = { guests: 0, take: 0, pulled: DS().hlPulled || 0 };
+  if(!R || !R.valid) return s;
+  npcs.forEach(n => { if(hlInside(n.pos.x, n.pos.z, n.level)) s.guests++; });
+  machines.forEach(m => { if(m.hlIn) s.take += m.dayNet || 0; });
+  return s;
+}
+// ---- what the owner sees: a gold tint on the floor, a floating label, and a red marker at a leak ----
+function hlLabelSprite(lines, w, h){
+  const c = document.createElement('canvas'); c.width = 512; c.height = 112;
+  const x = c.getContext('2d');
+  x.fillStyle = 'rgba(14,26,20,0.82)'; x.fillRect(0, 0, 512, 112);
+  x.strokeStyle = lines.border; x.lineWidth = 5; x.strokeRect(5, 5, 502, 102);
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillStyle = lines.fg; x.font = 'bold 44px Georgia, serif';
+  let size = 44; while(x.measureText(lines.a).width > 470 && size > 14){ size -= 2; x.font = 'bold ' + size + 'px Georgia, serif'; }
+  x.fillText(lines.a, 256, lines.b ? 40 : 56);
+  if(lines.b){ x.fillStyle = '#cfd9d0'; x.font = '24px Arial'; x.fillText(lines.b, 256, 84); }
+  const tex = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sp.scale.set(w, h, 1); sp.renderOrder = 5;
+  return sp;
+}
+function hlDropVisual(k){
+  const o = hlVis[k]; if(!o) return;
+  scene.remove(o);
+  o.traverse(n => { if(n.geometry) n.geometry.dispose(); if(n.material){ if(n.material.map) n.material.map.dispose(); n.material.dispose(); } });
+  hlVis[k] = null;
+}
+function hlRefreshVisuals(){
+  const R = hlRoom;
+  hlDropVisual('tint'); hlDropVisual('leak'); hlDropVisual('label');
+  if(!R) return;
+  const y0 = R.level * LEVEL_H, force = licenseInForce(), mult = hlMultOf(R.door);
+  if(R.valid){
+    // one merged mesh: each row of the room's cells becomes runs of quads
+    const pos = [], idx = [];
+    for(let j = 0; j < R.nz; j++){
+      let i = 0;
+      while(i < R.nx){
+        if(!R.mask[j * R.nx + i]){ i++; continue; }
+        let k = i; while(k < R.nx && R.mask[j * R.nx + k]) k++;
+        const xa = R.x0 + i * R.C, xb = R.x0 + k * R.C, za = R.z0 + j * R.C, zb = za + R.C, b = pos.length / 3;
+        pos.push(xa, 0, za, xb, 0, za, xb, 0, zb, xa, 0, zb); idx.push(b, b + 2, b + 1, b, b + 3, b + 2);
+        i = k;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3)); geo.setIndex(idx);
+    const mat = new THREE.MeshBasicMaterial({ color: force ? 0xe6c34a : 0x8a8f94, transparent: true, opacity: force ? 0.17 : 0.12, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide });
+    const tint = new THREE.Mesh(geo, mat); tint.position.y = y0 + 0.05; tint.frustumCulled = false; tint.renderOrder = 1;
+    scene.add(tint); hlVis.tint = tint;
+    const lab = hlLabelSprite({ a: `High Limit Room (${mult}x)`, b: force ? `${R.games} ${R.games === 1 ? 'game' : 'games'} · ${R.area} m2` : 'closed: licence suspended', fg: force ? '#e6c34a' : '#9fb3a8', border: force ? '#c9a227' : '#6b7d70' }, 4.6, 1.0);
+    lab.position.set(R.centre.x, y0 + 3.2, R.centre.z); scene.add(lab); hlVis.label = lab;
+  } else if(R.leak){
+    const g = new THREE.Group();
+    const m1 = new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 3.4, 14, 1, true), m1); beam.position.y = 1.7;
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 1.05, 24), new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06;
+    g.add(beam, ring); g.position.set(R.leak.x, y0, R.leak.z); g.renderOrder = 2;
+    scene.add(g); hlVis.leak = g;
+    const lab = hlLabelSprite({ a: 'Gap in the walls', b: 'the High Limit Room is open here', fg: '#ff8a7a', border: '#ff3b30' }, 4.2, 0.92);
+    lab.position.set(R.leak.x, y0 + 3.9, R.leak.z); scene.add(lab); hlVis.label = lab;
+  } else {
+    const lab = hlLabelSprite({ a: 'High Limit Room', b: R.reason.length > 52 ? R.reason.slice(0, 50) + '...' : R.reason, fg: '#ff8a7a', border: '#ff3b30' }, 4.6, 1.0);
+    lab.position.set(R.door.x, y0 + 4.6, R.door.z); scene.add(lab); hlVis.label = lab;
+  }
+}
+// Per frame: re-find the room after anything was built or sold, and keep the floor markings to the floor you are on.
+function hlTick(){
+  if(hlDirty) hlRecompute();
+  if(++hlTickN % 10 !== 0) return;
+  const pl = playerLevel();
+  ['tint', 'leak', 'label'].forEach(k => { const o = hlVis[k]; if(o) o.visible = hlRoom ? hlRoom.level === pl : false; });
+  if(hlVis.label && hlRoom) hlVis.label.visible = hlRoom.level === pl && Math.hypot(player.pos.x - hlVis.label.position.x, player.pos.z - hlVis.label.position.z) < 45;
+}
+// ---- the doorway's panel (press F at it, or click it) ----
+function openHlDoorPanel(m){
+  closeManagedPopups('machineConfigPanel');
+  const R = hlRoomNow(), force = licenseInForce(), mult = hlMultOf(m), st = hlRoomStats();
+  const box = (col, bg, txt) => `<div style="margin:6px 0;padding:8px 10px;border-radius:6px;background:${bg};border:1px solid ${col};color:${col};font-size:12px;">${txt}</div>`;
+  let html = `<h3 style="margin:0 0 8px 0;color:#e6c34a;font-weight:normal;">High Limit Doorway</h3>`;
+  if(licenseHeld === null) html += box('#e0b84a', 'rgba(224,184,74,0.1)', 'No licence: the room stays closed until you hold the Basic licence (Stats tab, [4]).');
+  else if(!force) html += box('#e08a8a', 'rgba(224,138,138,0.1)', `The licence is suspended until Day ${licenseSuspendedUntil}: the room is closed and plays at normal stakes.`);
+  if(R && R.valid) html += box('#8fd6a8', 'rgba(60,140,90,0.14)', `${icn('stats')}Room closed in: ${R.area} m2, ${R.tables} ${R.tables === 1 ? 'table' : 'tables'} and ${R.slots} ${R.slots === 1 ? 'slot' : 'slots'} inside.`);
+  else if(R) html += box('#ff8a7a', 'rgba(255,59,48,0.12)', `${R.reason}${R.leak ? '' : ''}`);
+  html += `<div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:10px 0 4px;">Minimum bet</div>
+    <div style="display:flex;gap:6px;">${HL.MULTS.map(v => `<button class="hotbarSlot hlMultBtn" data-v="${v}" style="flex:1;${v === mult ? 'border-color:#e6c34a;background:rgba(201,162,39,0.28);color:#e6c34a;' : ''}">${v}x</button>`).join('')}</div>
+    <p style="color:#9fb3a8;font-size:11px;margin:6px 0 0;">Every game in the room takes bets ${mult} times its normal stake, so wins and losses are ${mult} times as big. Higher means fewer guests can afford a seat.</p>`;
+  if(R && R.valid){
+    const sample = R.games ? machines.find(x => x.hlIn) : null;
+    html += `<div style="color:#9fb3a8;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:12px 0 4px;">The room</div>
+      <div style="display:flex;justify-content:space-between;"><span>Tables / slots</span><span>${R.tables} / ${R.slots}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Guests inside now</span><span>${st.guests}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Today's take</span><span style="color:${st.take >= 0 ? '#8fd6a8' : '#e08a8a'};">${st.take >= 0 ? '' : '-'}$${Math.abs(Math.round(st.take)).toLocaleString()}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Bars / decorations inside</span><span>${R.bars} / ${R.decor} (comfort ${Math.round(R.comfort * 100)}%)</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Big spenders drawn in today</span><span>${st.pulled}</span></div>
+      ${sample ? `<div style="display:flex;justify-content:space-between;"><span>Wallet to sit at ${sample.nick || sample.name}</span><span>about $${Math.round(hlWalletNeeded(sample)).toLocaleString()}</span></div>` : ''}`;
+  }
+  html += `<p style="color:#9fb3a8;font-size:11px;margin:10px 0 0;">The room is the area behind the sign: the sign and gold frame face the casino floor (turn the doorway with R or E while placing it, two turns flips it). Close the rest of the room in with Interior Walls, with this doorway as the only way in. Big spenders head for these games first; guests who cannot afford ${HL.MIN_BETS} minimum bets stay out. Rich guests inside stay longer and drink more, and a bar or decorations inside help; a working room also draws extra big spenders to the casino.</p>
+    <button id="cfgClose" class="hotbarSlot" style="width:100%;margin-top:8px;">Close</button>`;
+  machineConfigPanel.innerHTML = html;
+  machineConfigPanel.style.display = 'block';
+  if(pointerLocked) document.exitPointerLock();
+  machineConfigPanel.querySelectorAll('.hlMultBtn').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); m.hlMult = parseInt(b.dataset.v); hlDirty = true; openHlDoorPanel(m); }));
+  document.getElementById('cfgClose').addEventListener('click', e => { e.stopPropagation(); machineConfigPanel.style.display = 'none'; });
+  machineConfigPanel.addEventListener('click', e => e.stopPropagation());
+}
+// ---- the licence card in the Stats tab ----
+function licenseCardHtml(){
+  const L = LICENSES.basic, held = licenseHeld !== null, sus = licenseSuspended();
+  const money = n => '$' + Math.round(n).toLocaleString();
+  const rules = `A licence is bought once and cannot be sold. Its fee is charged every day, even while it is suspended. Every ${LICENSE_AUDIT_DAYS} days at 14:00 an auditor checks the four things listed on the card (if the casino is closed at 14:00 the audit moves to the next day). `
+    + `Pass all four and reputation goes up by ${LICENSE_PASS_REP}. Fail any and the first time is only a warning; fail the next audit as well and the licence is suspended for ${LICENSE_SUSPEND_DAYS} days: its benefits stop (what you built stays) until the suspension ends. `
+    + `The Basic licence brings a richer crowd and lets you build a High Limit Doorway: wall off a room around it and every game inside plays at 2x, 3x or 5x minimum bets for big spenders.`;
+  const tip = rules.replace(/"/g, '&quot;');
+  const q = `<span title="${tip}" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;border:1px solid #9fb3a8;color:#9fb3a8;font-size:11px;cursor:help;margin-left:6px;">?</span>`;
+  const line = (ok, label, note) => `<div style="font-size:11px;margin-top:3px;"><span style="color:${ok ? '#8fd6a8' : '#e08a8a'};font-weight:bold;">${ok ? '&#10003;' : '&#10007;'}</span> ${label}${!ok && note ? ` <span style="color:#9fb3a8;font-size:10px;">(${note})</span>` : ''}</div>`;
+  let h = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><div class="statsH" style="margin:0;">Licence: ${L.name}${q}</div>`;
+  if(!held){
+    const rq = licenseRequirements('basic');
+    const bar = (label, cur, need, fmt, ok) => `<div style="display:flex;align-items:center;gap:8px;margin-top:5px;font-size:11px;"><span style="flex:0 0 112px;">${label}</span><span style="flex:1;">${uiBar(cur / need, ok ? '#8fd6a8' : '#e6c34a', 7)}</span><span style="flex:0 0 130px;text-align:right;color:${ok ? '#8fd6a8' : '#cfd9d0'};">${ok ? '&#10003; ' : ''}${fmt(cur)} / ${fmt(need)}</span></div>`;
+    const why = !rq.revOk ? `Needs ${money(L.revenue)} lifetime revenue` : !rq.starsOk ? `Needs ${L.stars} stars overall` : cash < L.cost ? `Needs ${money(L.cost)} in cash` : '';
+    h += `<b style="font-size:11px;color:#9fb3a8;">Not held</b></div>
+      <div style="font-size:11px;color:#cfd9d0;margin-top:4px;">Opens ${L.opens}, plus a richer crowd. ${money(L.cost)} once, then ${money(L.fee)} a day; audited every ${LICENSE_AUDIT_DAYS} days.</div>
+      ${bar('Lifetime revenue', Math.min(rq.rev, L.revenue), L.revenue, money, rq.revOk)}
+      ${bar('Casino rating', Math.min(rq.stars, L.stars), L.stars, v => v.toFixed(1) + ' stars', rq.starsOk)}
+      <div style="display:flex;gap:8px;align-items:center;margin-top:9px;"><button class="hotbarSlot licBuy" style="font-size:12px;${why ? 'opacity:.4;' : ''}" ${why ? 'disabled' : ''}>Buy for ${money(L.cost)}</button>${why ? `<span style="color:#9fb3a8;font-size:11px;">${why}</span>` : ''}</div>
+      <div style="color:#6b7d70;font-size:10px;margin-top:6px;">Gaming, Premium and Royal licences: in a later update.</div>`;
+    return h;
+  }
+  const checks = licenseChecks(), left = licenseNextAudit - currentDay, last = licenseLastAudit();
+  const status = sus ? ['Suspended until Day ' + licenseSuspendedUntil, '#e08a8a'] : licenseFails >= 1 ? ['Warning: one failed audit', '#e6c34a'] : ['Good standing', '#8fd6a8'];
+  h += `<b style="font-size:12px;color:${status[1]};">${status[0]}</b></div>
+    <div style="font-size:11px;color:#cfd9d0;margin-top:4px;">Fee ${money(licenseDailyFee())} a day &middot; opens ${LICENSES[licenseHeld].opens}${sus ? ' (closed while suspended)' : ''}</div>
+    <div style="font-size:12px;margin-top:7px;">Next audit: <b>Day ${licenseNextAudit}</b> <span style="color:#9fb3a8;">(${left <= 0 ? 'today at 14:00' : 'in ' + left + (left === 1 ? ' day' : ' days')})</span></div>
+    <div style="font-size:11px;margin-top:3px;color:#9fb3a8;">Last audit: ${last ? `Day ${last.day}, <b style="color:${last.ok ? '#8fd6a8' : '#e08a8a'};">${last.ok ? 'passed' : 'failed'}</b>${last.ok ? '' : ' (' + last.failed.map(id => (checks.find(c => c.id === id) || { id }).id).join(', ') + ')'}` : 'none yet'}</div>
+    <div style="margin-top:6px;">${checks.map(c => line(c.ok, c.label, c.note)).join('')}</div>
+    <div style="color:#6b7d70;font-size:10px;margin-top:6px;">The ticks show what an audit would find right now, so you can fix things ahead of time.</div>`;
+  return h;
+}
+let licenseCardHtmlLast = null;
+(function(){
+  const el = document.getElementById('licenceCard');
+  if(el) el.addEventListener('click', e => { const b = e.target.closest && e.target.closest('.licBuy'); if(b && !b.disabled){ e.stopPropagation(); if(buyLicense('basic')){ licenseCardHtmlLast = null; updateStatsPanel(); } } });
+})();
+function updateLicenceCard(){
+  const el = document.getElementById('licenceCard'); if(!el) return;
+  const h = licenseCardHtml();
+  if(h !== licenseCardHtmlLast){ el.innerHTML = h; licenseCardHtmlLast = h; }
+}
+function hlMinimap(c, mx, mz, floor){
+  const R = hlRoom; if(!R || !R.valid || R.level !== floor) return;
+  c.fillStyle = 'rgba(230,195,74,0.22)';
+  for(let j = 0; j < R.nz; j++){
+    let i = 0;
+    while(i < R.nx){
+      if(!R.mask[j * R.nx + i]){ i++; continue; }
+      let k = i; while(k < R.nx && R.mask[j * R.nx + k]) k++;
+      c.fillRect(mx(R.x0 + i * R.C), mz(R.z0 + j * R.C), mx(R.x0 + k * R.C) - mx(R.x0 + i * R.C), mz(R.z0 + (j + 1) * R.C) - mz(R.z0 + j * R.C) + 0.5);
+      i = k;
+    }
+  }
 }
 
 // ---------------- Real per-game math ----------------
@@ -9251,6 +9709,7 @@ function lifetimeRevenue(){
 const VIP_LOUNGE_REP_REQUIREMENT = 70;
 function isUnlocked(key){
   if(typeof devUnlockAll !== 'undefined' && devUnlockAll) return true;
+  if(key === 'hldoor') return licenseInForce();   // only while the Basic licence is in good standing
   if(sandbox && !((key === 'stairs' || key === 'lift') && !upperBuilt)) return true;
   if(OFFICE_INFO[key]) return officeUnlocked.has(key) || officesGranted;
   if(key === 'viplounge' && reputation < VIP_LOUNGE_REP_REQUIREMENT) return false;
@@ -9258,6 +9717,7 @@ function isUnlocked(key){
   return lifetimeRevenue() >= (UNLOCK_THRESHOLDS[key] || 0);
 }
 function unlockNoteFor(key){
+  if(key === 'hldoor') return licenseSuspended() ? 'The Basic licence is suspended' : 'Needs the Basic licence (Stats tab)';
   if(key === 'viplounge' && reputation < VIP_LOUNGE_REP_REQUIREMENT){
     return `Requires ${VIP_LOUNGE_REP_REQUIREMENT}+ reputation (currently ${Math.round(reputation)})`;
   }
@@ -9290,9 +9750,11 @@ function machineState(m){
     mealPrice: m.mealPrice, drinkPrice: m.drinkPrice, menuTier: menuKind(m) ? menuTier(m) : undefined, feePct: m.feePct, covers: m.covers || 0,
     floorService: m.floorService ? true : undefined, floorOn: m.floorService ? !!m.floorOn : undefined,
     room: m.room ? { opts: m.room.opts, dirty: m.room.dirty, revenue: m.room.revenue, nights: m.room.nights } : undefined,
+    hlMult: m.type === 'hldoor' ? m.hlMult : undefined,
   };
 }
 function applyMachineState(m, md){
+  if(md.hlMult !== undefined && m.type === 'hldoor') m.hlMult = md.hlMult;
   if(md.payout !== undefined) m.payout = md.payout;
   if(md.edge !== undefined) m.edge = md.edge;
   if(md.denom !== undefined && m.denom !== undefined) m.denom = md.denom;
@@ -9349,7 +9811,7 @@ function returnMovedMachine(){
   applyMachineState(machines[machines.length - 1], md);
 }
 // Offices and the hotel Front Desk are one-per-casino: a second one would just sit there redundant.
-function isSingleInstance(key){ return !!OFFICE_INFO[key] || key === 'frontdesk'; }
+function isSingleInstance(key){ return !!OFFICE_INFO[key] || key === 'frontdesk' || key === 'hldoor'; }
 // Valet parking stops helping after 3 (effectiveParkingCapacity counts at most 9 spots), so it is limited to 3.
 const VALET_LIMIT = 3;
 function buildLimit(key){ return key === 'valet' ? VALET_LIMIT : isSingleInstance(key) ? 1 : Infinity; }
@@ -9714,13 +10176,13 @@ const SNAP_MAGNET = 2.4; // how close a big footprint has to get before it click
 // neighbor-relative magnet system below - see snapPlacement for why.
 const WALL_GRID = 4;
 function axisAligned(rot){ const s = Math.abs(Math.sin(rot)), c = Math.abs(Math.cos(rot)); return s < 0.01 || c < 0.01; }
-function quarterTurnItem(key){ const it = BUILD_ITEMS[key]; return !!it && (it.base === 'room' || key === 'stairs' || key === 'wall' || key === 'ropes'); }
+function quarterTurnItem(key){ const it = BUILD_ITEMS[key]; return !!it && (it.base === 'room' || key === 'stairs' || key === 'wall' || key === 'ropes' || key === 'hldoor'); }
 function itemHalfExtents(key, rot){
   const it = BUILD_ITEMS[key] || {};
   let w = it.radius * 2, d = it.radius * 2;
   if(it.base === 'room'){ const T = ROOM_TIERS[it.tier]; w = T.w; d = T.d; }
   else if(key === 'stairs'){ w = STAIR_W; d = STAIR_L; }
-  else if(key === 'wall'){ w = 4; d = 0.4; }
+  else if(key === 'wall' || key === 'hldoor'){ w = 4; d = 0.4; }
   else if(key === 'ropes'){ w = 4; d = 0.3; }
   else if(key === 'aquarium'){ w = 4.2; d = 1.0; }
   else if(key === 'trophycase'){ w = 1.8; d = 0.8; }
@@ -9748,7 +10210,7 @@ function snapPlacement(key, px, pz, rot){
   // v56 fix only covered the unrotated case). A rigid grid sidesteps the whole problem: since every
   // wall/rope is exactly WALL_GRID long, two of them on the same grid line are automatically exactly
   // WALL_GRID apart, correct by construction, in every rotation, with no neighbor lookup needed.
-  if(key === 'wall' || key === 'ropes'){
+  if(key === 'wall' || key === 'ropes' || key === 'hldoor'){
     // Anchored to the room's own back-left corner, not world 0 - otherwise a wall placed flush
     // against the boundary and a wall placed further out on the "pure" grid can land out of phase
     // with each other (the boundary point isn't guaranteed to fall on a plain multiple-of-4 line),
@@ -9847,7 +10309,7 @@ function updateGhost(){
     // placed on the other floor, and (per the same gap on the other placement-validity function
     // below) a lift's presence wasn't being checked at all when placing on its *other* floor.
     if(!(isStairs || isLift || m.type === 'stairs' || m.type === 'lift' || (m.level || 0) === lvl)) return;
-    const boxy = (quarterTurnItem(buildType) || m.type === 'room' || m.type === 'wall' || m.type === 'stairs' || m.type === 'ropes')
+    const boxy = (quarterTurnItem(buildType) || m.type === 'room' || m.type === 'wall' || m.type === 'stairs' || m.type === 'ropes' || m.type === 'hldoor')
       && axisAligned(rot) && axisAligned(m.rotation || 0);
     let hit;
     if(boxy){
@@ -9860,7 +10322,7 @@ function updateGhost(){
       // for a different reason: a wall's true surface sits half its own thickness off the grid line
       // it's centered on, but a room can only land its edge exactly on a grid line - so the closest
       // fit is always a small overlap into the wall's thickness, never a perfect zero-gap touch.
-      const wallLike = t => t === 'wall' || t === 'ropes';
+      const wallLike = t => t === 'wall' || t === 'ropes' || t === 'hldoor';
       const pad = (wallLike(buildType) || wallLike(m.type)) ? -0.25 : -0.12;
       hit = Math.abs(cx - m.x) < ext.hx + B.hx + pad && Math.abs(cz - m.z) < ext.hz + B.hz + pad;
     } else hit = gcols.some(a => (m.pcols || m.cols).some(b => Math.hypot(a.x - b.x, a.z - b.z) < a.r + b.r));
@@ -9970,7 +10432,8 @@ document.addEventListener('mousedown', (e)=>{
   { const g = aimedGuest(); if(g && g.rid){ openRegularProfile(g.rid); return; } } // click a regular to see who they are
   // not building: click a machine to open it - stakes, rigging, upgrades, prices
   const target = raycastClosestMachine();
-  if(target && (target.category === 'gambling' || target.type === 'restaurant' || target.type === 'bar' || target.type === 'cashier')) openMachineConfig(target);
+  if(target && target.type === 'hldoor') openHlDoorPanel(target);
+  else if(target && (target.category === 'gambling' || target.type === 'restaurant' || target.type === 'bar' || target.type === 'cashier')) openMachineConfig(target);
 });
 document.addEventListener('mouseup', (e)=>{
   if(e.button === 2) mouseHeldSell = false;
@@ -10154,9 +10617,9 @@ function startBetChoice(m){
     const unit = slotUnit(m), cfg = SLOT_CATALOG[m.type];
     game = { kind:'betChoice', m, bet: unit*2, step: unit, minBet: unit, maxBet: unit*cfg.maxCredits, unit };
   } else {
-    const mult = m.stakeMult || 1;
+    const mult = (m.stakeMult || 1) * hlMult(m);
     const base = Math.max(5, Math.round(m.income * 2 * mult));
-    game = { kind:'betChoice', m, bet: base, step: Math.max(5, Math.round(base*0.25)), maxBet: Math.max(base*8, m.income * 60 * (m.limitMult || 1)) };
+    game = { kind:'betChoice', m, bet: base, step: Math.max(5, Math.round(base*0.25)), maxBet: Math.max(base*8, m.income * 60 * (m.limitMult || 1) * hlMult(m)) };
   }
   // keep whatever stake you last played at this machine instead of resetting it every round
   if(m.lastBet !== undefined){
@@ -10189,6 +10652,7 @@ window.addEventListener('keydown', (e)=>{
     { const rm = roomUnderPlayer(); if(rm){ openRoomCustomizer(rm); return; } }
     if(tryEnterRoom()) return;
     const m = raycastClosestMachine();
+    if(m && m.type === 'hldoor'){ openHlDoorPanel(m); return; }
     if(m && m.category === 'gambling' && m.closed){ unrigAndReopen(m); return; } // walk up + F = unrig and reopen
     if(m && m.category === 'gambling' && (m.broken || needsService(m))){ repairMachine(m); return; } // walk up + F = pay for a repair
     if(m && m.category === 'gambling'){
@@ -10535,7 +10999,7 @@ function makeNPC(opts = {}){
   // the richer branches below) so a bigger share of new guests skew high-roller.
   const vipLounges = machines.filter(m=>m.type==='viplounge').length;
   const peak = getPeakPeriod();
-  const vipShift = Math.min(0.35, vipLounges*0.15) + (peak ? peak.vipBias : 0) + (hrOutreachTimeLeft > 0 ? HR_OUTREACH.vipShift : 0);
+  const vipShift = Math.min(0.35, vipLounges*0.15) + (peak ? peak.vipBias : 0) + (hrOutreachTimeLeft > 0 ? HR_OUTREACH.vipShift : 0) + (licenseInForce() ? HL.CROWD_SHIFT : 0);
   let wallet, betStyle, tier, isWhale = false;
   if(!opts.regular && (opts.whale || (!opts.vip && Math.random() < WHALE_CHANCE))){
     // about 1 in 100: tens of thousands to spend, always betting the casino's current maximum
@@ -10674,6 +11138,7 @@ function guestSuitsMachine(npc, m){
   if(needsService(m) && Math.random() < 0.45){ gripe('brokenKit', 0.12); return false; } // it looks rough - most guests walk past
   if(isSlotLike(m) && managerAtMachine(m)) return false; // you're sitting there
   if(isHighRollerMachine(m) && npc.startingWallet < 350) return false;
+  if(inHighLimit(m) && (npc.startingWallet < HL.RICH_WALLET || npc.wallet < hlWalletNeeded(m))) return false;   // the room is for guests who can afford its stakes
   if(m.type === 'holdem' && npc.wallet < holdemBB(m) * HOLDEM_MIN_BUYIN_BB) return false; // can't cover a buy-in
   if(m.type === 'holdem' && m.hd && m.hd.tour) return false; // reserved for the Poker tournament
   if(npc.hiroll && (!isSeatedTable(m) || m.type === 'holdem')) return false; // a High-roller night's guests of honour play tables, never slots
@@ -10705,7 +11170,8 @@ function findGambleSpot(npc){
   if(candidates.length === 0){ gripe('nothingNew', 0.12); return null; }
   // a whale specifically seeks out High Roller tables and high-limit slots when there are any free -
   // falls back to the normal pool if the floor doesn't have one yet, rather than standing idle
-  const hrOnly = (npc.wantsMaxBet || npc.hiroll) ? candidates.filter(isHighRollerMachine) : null;   // (a High-roller night's guests of honour head for the High Roller tables too)
+  let hrOnly = (npc.wantsMaxBet || npc.hiroll) ? candidates.filter(isHighRollerMachine) : null;
+  if(hlRich(npc) && Math.random() < HL.PREFER){ const room = candidates.filter(m => m.hlIn === true); if(room.length) hrOnly = room; }   // big spenders try the High Limit Room's games first   // (a High-roller night's guests of honour head for the High Roller tables too)
   const pool0 = hrOnly && hrOnly.length ? hrOnly : candidates;
   pool0.sort((a,b)=>{
     // tables with a dealer standing at them feel "closer" - guests are drawn to them
@@ -11076,7 +11542,8 @@ const BET_SCALE = 3.2; // overall stake size; tuned so a modest floor comfortabl
 function computeBet(actor, m, play){
   if(isSlotMachine(m)){
     // slot stakes are always whole multiples of (denomination x lines); guests pick 1..maxCredits credits
-    const cfg = SLOT_CATALOG[m.type], p = play || pickSlotPlay(actor, m), unit = p.denom * p.lines;
+    const hl = hlMult(m);   // High Limit Room: every stake is this many times the normal one
+    const cfg = SLOT_CATALOG[m.type], p = play || pickSlotPlay(actor, m), unit = p.denom * p.lines * hl;
     const capCredits = Math.max(1, Math.round(cfg.maxCredits * (0.4 + 0.6 * stakeStage()))); // a young casino's limits start low - even a whale can't bypass that
     let credits;
     if(actor && actor.wantsMaxBet) credits = capCredits; // always the biggest stake the casino currently allows
@@ -11086,16 +11553,17 @@ function computeBet(actor, m, play){
       credits *= amenitySpendMultiplier() * (actor && actor.isMember ? clubTierOf(actor.points).bet : 1) * chaseFactor(actor);
       credits = Math.max(1, Math.min(capCredits, Math.round(credits)));
     }
-    if(actor) credits = Math.max(1, Math.min(credits, Math.floor(bankBetLimit() / unit)));
+    if(actor) credits = Math.max(1, Math.min(credits, Math.floor(bankBetLimit() * hl / unit)));
     let bet = unit * credits;
     if(actor && bet > actor.wallet) bet = Math.floor(actor.wallet / unit) * unit; // can't afford a single credit -> 0
     return bet;
   }
   const tableStake = (!isSlotLike(m) && !(m.limitMult > 1)) ? 2 : 1; // regular table games play for twice the stake (High Roller tables have their own)
-  let tableCap = Math.min(m.income * 6 * (m.limitMult || 1), (30 + 470 * stakeStage()) * (m.limitMult || 1)) * tableStake; // table limit, and a young casino's limits start low
-  if(actor) tableCap = Math.min(tableCap, bankBetLimit());
+  const hl = hlMult(m);   // High Limit Room: stakes and limits are this many times the table's own
+  let tableCap = Math.min(m.income * 6 * (m.limitMult || 1), (30 + 470 * stakeStage()) * (m.limitMult || 1)) * tableStake * hl; // table limit, and a young casino's limits start low
+  if(actor) tableCap = Math.min(tableCap, bankBetLimit() * hl);
   if(actor && actor.wantsMaxBet) return Math.min(tableCap, actor.wallet);
-  let bet = m.income * BET_SCALE * (m.stakeMult || 1) * tableStake * (0.6 + Math.random()*0.9);
+  let bet = m.income * BET_SCALE * (m.stakeMult || 1) * tableStake * hl * (0.6 + Math.random()*0.9);
   if(!isSlotLike(m)) bet *= 1 + (isStaffed(m) ? 0.15 * machinePower(m) : 0); // a dealer at the table matters most
   bet *= chaseFactor(actor);
   bet *= amenitySpendMultiplier();
@@ -12929,7 +13397,7 @@ function updateNPCs(dt){
     }
 
     if(!npc.fed && !npc.wantsFood){ npc.hungryAt -= dt; if(npc.hungryAt <= 0){ npc.wantsFood = true; if(!kitchens().length || !dinerTables().length) gripe('noFood'); else if(!staffedKitchens().length) gripe('noChef'); } }
-    if(!npc.wantsDrink){ npc.thirstyAt -= dt; if(npc.thirstyAt <= 0){ npc.wantsDrink = true; if(!bars().length) gripe('noDrink'); } }
+    if(!npc.wantsDrink){ npc.thirstyAt -= (npc.state === 'gambling' && npc.machine && npc.machine.hlIn === true && hlRich(npc) && inHighLimit(npc.machine)) ? dt * hlDrink() : dt; if(npc.thirstyAt <= 0){ npc.wantsDrink = true; if(!bars().length) gripe('noDrink'); } }
     if(!npc.needsLoo){ npc.looAt -= dt; if(npc.looAt <= 0) npc.needsLoo = true; }
     if(npc.state === 'toBar' || npc.state === 'drinking' || npc.state === 'toLoo' || npc.state === 'inLoo'){ if(updateServiceGuest(npc, dt)) return; }
     if(npc.state === 'toBench' || npc.state === 'onBench' || npc.state === 'toGift' || npc.state === 'atGift'){ if(updateBenchGiftGuest(npc, dt)) return; }
@@ -13062,6 +13530,7 @@ function updateNPCs(dt){
           // waitresses extend how long a guest sticks around playing
           npc.gambleTimeLeft = sessionBase * tableFactor * amenityDurationMultiplier() * machineAppeal(npc.machine) * (npc.isMember ? clubTierOf(npc.points).stay : 1);
           npc.playTimer = 0.3;
+          if(hlRich(npc) && inHighLimit(npc.machine)){ npc.gambleTimeLeft *= hlStay(); npc.visitLeft += (hlStay() - 1) * 90; const ds = DS(); ds.hlSeated = (ds.hlSeated || 0) + 1; }   // a big spender settles in at the room's games
           if(npc.machine.type === 'holdem') npc.gambleTimeLeft = 1200; // a Hold'em guest stays for a number of hands, not a number of minutes
         } else {
           if(npc.needsLoo && tryGoLoo(npc)) return;   // first things first
@@ -13112,6 +13581,13 @@ function updatePopulation(dt){
     const e = regularPool.find(r => !r.onFloor && r.affinity > 40 && Math.random() < dt * REGULAR_EXTRA_VISITS * (r.affinity - 40) / 60 / DAY_LENGTH);
     if(e){ const n = makeNPC({ regular: e }); if(n) n.dropIn = true; const ds = DS(); ds.regularDropIns = (ds.regularDropIns || 0) + 1; }
   }
+  { // a working High Limit Room draws a few extra big spenders (on top of the crowd target, like a regular dropping in)
+    const rate = hlPullPerDay();
+    if(rate > 0 && !casinoClosed && carsOnLot() < effectiveParkingCapacity() && (DS().hlPulled || 0) < HL.PULL_MAX){
+      hlPullAcc += dt * rate / DAY_LENGTH;
+      if(hlPullAcc >= 1){ hlPullAcc -= 1; const n = makeNPC({ vip: true }); if(n){ n.dropIn = true; n.wantsMaxBet = false; const ds = DS(); ds.hlPulled = (ds.hlPulled || 0) + 1; } }
+    } else if(rate <= 0) hlPullAcc = 0;
+  }
   if(carsOnLot() >= effectiveParkingCapacity()){ gripe('crowded', dt * 0.05); } // overcrowded, guests turned away (a complaint only; no reputation drain)
   if(campaignTimeLeft > 0){ campaignTimeLeft -= dt; if(campaignTimeLeft <= 0){ campaignTimeLeft = 0; campaignKey = null; } }
   if(hrOutreachTimeLeft > 0){ hrOutreachTimeLeft -= dt; if(hrOutreachTimeLeft <= 0) hrOutreachTimeLeft = 0; }
@@ -13123,7 +13599,7 @@ function updatePopulation(dt){
 
 function updateReputation(dt){
   const amenityCount = machines.filter(m=>m.category==='amenity' && !OFFICE_INFO[m.type]).length;
-  const decorationCount = machines.filter(m=>m.category==='decoration' && m.type!=='wall' && m.type!=='stairs' && m.type!=='lift').length;
+  const decorationCount = machines.filter(m=>m.category==='decoration' && m.type!=='wall' && m.type!=='stairs' && m.type!=='lift' && m.type!=='hldoor').length;
   const rigged = machines.filter(m => m.category === 'gambling');
   const avgEdge = rigged.length ? rigged.reduce((s,m)=>s+rigLevel(m),0)/rigged.length : 0;
   const vipLounges = machines.filter(m=>m.type==='viplounge').length;
@@ -13244,7 +13720,7 @@ function inspectMachine(m){
   const at = new THREE.Vector3(m.x, 2.7, m.z);
   inspector.checked++;
   if(Math.random() < catchChance(m)){
-    inspector.caught++; inspectionsCaught++;
+    inspector.caught++; inspectionsCaught++; rigCaughtDay = currentDay;
     const rig = rigLevel(m);
     const fine = Math.round(150 + rig * 1800);
     addCash(-fine); ledger.bribes += fine;
@@ -13997,6 +14473,7 @@ function updateStatsPanel(){
   updateBusinessPanel();
   applyOfficeGates();
   drawStatsGraph();
+  updateLicenceCard();
   document.getElementById('statsGuestNow').textContent = npcs.length;
   document.getElementById('statsGuestServed').textContent = totalGuestsServed - dayStartGuestsServed;
   document.getElementById('statsLifeDay').textContent = currentDay;
@@ -14198,7 +14675,7 @@ function saveGame(){
       staffXpScheme: 2, staffRoster: staffNPCs.map(s => ({ type:s.type, name:s.name, xp:Math.round(s.xp||0), morale:Math.round(s.morale||70), trait:staffTrait(s), traitRevealed:s.traitRevealed !== false, onJob:Math.round(s.onJob||0) })),
       machines: machines.map(machineState),
       jackpot: jackpotSaveState(),
-      ...eventsSaveState(),
+      ...eventsSaveState(), ...licenseSaveState(),
       autoMarketingEnabled, autoMarketingSmart, autoMarketingBudget, autoCompEnabled, autoCompSmart, autoCompThreshold, autoCompBudget,
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
@@ -14314,7 +14791,7 @@ function loadGame(){
   if(!!data.casinoClosed !== casinoClosed) setCasinoClosed(!!data.casinoClosed);
   ledger = Object.assign(newLedger(), data.ledger || {});
   jackpotLoadState(data.jackpot);
-  eventsLoadState(data);
+  eventsLoadState(data); licenseLoadState(data);
   daysInRed = data.daysInRed || 0;
   investorDebt = data.investorDebt || 0;
   bailoutsUsed = data.bailoutsUsed || 0;
@@ -14427,7 +14904,7 @@ function resetGame(){
   parkingUpgradeCost = 500;
   clubLevel = 0;
   campaignTimeLeft = 0; campaignStrength = 0; campaignKey = null;
-  eventsResetState();
+  eventsResetState(); licenseResetState();
   hrOutreachTimeLeft = 0; prPushCooldown = 0; winbackCooldown = 0;
   autoMarketingEnabled = false; autoMarketingSmart = true; autoMarketingBudget = 300; autoMarketingSpentToday = 0; marketingEventLog = []; lastSettleRev = null; avgDayGamblingRev = 0; smartHrLastT = -Infinity;
   autoCompEnabled = false; autoCompSmart = true; autoCompThreshold = 50; autoCompBudget = 200; autoCompSpentToday = 0; autoCompTimer = 0; autoMarketingTimer = 0;
@@ -15300,11 +15777,11 @@ function thrivingFits(key, x, z, rot, level){
   const gcols = makePlacementCols(key, x, z, rot, it.radius);
   for(const m of machines){
     if(!(key === 'stairs' || key === 'lift' || m.type === 'stairs' || m.type === 'lift' || (m.level || 0) === level)) continue;
-    const boxy = (quarterTurnItem(key) || m.type === 'room' || m.type === 'wall' || m.type === 'stairs' || m.type === 'ropes') && axisAligned(rot) && axisAligned(m.rotation || 0);
+    const boxy = (quarterTurnItem(key) || m.type === 'room' || m.type === 'wall' || m.type === 'stairs' || m.type === 'ropes' || m.type === 'hldoor') && axisAligned(rot) && axisAligned(m.rotation || 0);
     let hit;
     if(boxy){
       const B = itemHalfExtents(m.key, m.rotation || 0);
-      const wallLike = t => t === 'wall' || t === 'ropes';
+      const wallLike = t => t === 'wall' || t === 'ropes' || t === 'hldoor';
       const pad = (wallLike(key) || wallLike(m.type)) ? -0.25 : 0.6; // wall/rope corners, and anything flush against a wall/rope, deliberately overlap a little now - see updateGhost
       hit = Math.abs(x - m.x) < ext.hx + B.hx + pad && Math.abs(z - m.z) < ext.hz + B.hz + pad;
     } else hit = gcols.some(a => (m.pcols || m.cols).some(b => Math.hypot(a.x - b.x, a.z - b.z) < a.r + b.r + 0.5));
@@ -15571,6 +16048,10 @@ function updateHint(){
     if(closest.broken){ hintEl.textContent = `${text} - BROKEN DOWN. Press F to repair ($${repairCost(closest)})`; hintEl.style.opacity = 1; return; }
     if(needsService(closest)){ hintEl.textContent = `${text} - needs a service (${Math.round(machineCondition(closest))}% condition). Press F to repair ($${repairCost(closest)})`; hintEl.style.opacity = 1; return; }
     if(closest.closed){ hintEl.textContent = `${text} - CLOSED by inspectors. Press F to unrig it and reopen`; hintEl.style.opacity = 1; return; }
+    if(closest.type === 'hldoor'){
+      const R = hlRoomNow();
+      hintEl.textContent = `${text} · ${R && R.valid ? (licenseInForce() ? 'room open at ' + hlMultOf(closest) + 'x' : 'room closed (licence)') : 'there is a gap in the walls or the room is the wrong size'} · press F for settings`; hintEl.style.opacity = 1; return;
+    }
     if(closest.type === 'room'){
       // Aiming at a hotel room from outside used to just show its bare name ("Standard Room") with no
       // indication F does anything at all - tryEnterRoom() already lets you walk into any vacant one,
@@ -15638,6 +16119,7 @@ function updateMinimap(dt){
     c.beginPath(); c.moveTo(mx(a.x), mz(a.z)); c.lineTo(mx(b.x), mz(b.z)); c.stroke();
     c.fillStyle = '#e6c34a'; c.beginPath(); c.arc(mx(b.x), mz(b.z), 2.5, 0, Math.PI*2); c.fill();
   });
+  hlMinimap(c, mx, mz, floor);
   machines.forEach(m=>{
     if(m.type === 'stairs' || m.type === 'lift' || m.type === 'chandelier' || (m.level || 0) !== floor) return; // ceiling decoration - just clutter on a floor plan
     if(m.type === 'room'){
@@ -15646,6 +16128,11 @@ function updateMinimap(dt){
       c.beginPath(); pts.forEach(([px,pz],i)=> i ? c.lineTo(px,pz) : c.moveTo(px,pz)); c.closePath();
       c.fillStyle = m.room.dirty ? 'rgba(255,176,32,0.35)' : m.room.occupant ? 'rgba(255,90,90,0.35)' : 'rgba(80,220,140,0.3)'; c.fill();
       c.strokeStyle = '#e8d9a8'; c.lineWidth = 1.5; c.stroke(); return;
+    }
+    if(m.type === 'hldoor'){
+      const a = Math.cos(m.rotation || 0), b = -Math.sin(m.rotation || 0);
+      c.strokeStyle = '#e6c34a'; c.lineWidth = 3; c.beginPath();
+      c.moveTo(mx(m.x - a*2), mz(m.z - b*2)); c.lineTo(mx(m.x - a*1), mz(m.z - b*1)); c.moveTo(mx(m.x + a*1), mz(m.z + b*1)); c.lineTo(mx(m.x + a*2), mz(m.z + b*2)); c.stroke(); return;
     }
     if(m.type === 'wall' || m.type === 'ropes'){
       c.strokeStyle = m.type === 'ropes' ? '#c25a6a' : '#d8d8d0'; c.lineWidth = m.type === 'ropes' ? 2 : 3; c.beginPath();
