@@ -8961,30 +8961,42 @@ const figArm = (sleeve, skin, short, cuff) => figOnce(['a', sleeve, skin, short,
 // o: { skin, trousers, shirt, outfit: tee|dress|jacket|whale|uniform, jacket, tie, bow, style, hair, hat, cap, glasses }
 // Faces +z. Extra hats and the like can still be added to rig.head. Parts are pre-merged per look, so a
 // figure is 8 meshes (blob, torso, head, face, 2 legs, 2 arms) instead of 13+.
-function buildHumanoid(o){
+function buildHumanoid(o, inst){
   o = Object.assign({ outfit: 'tee', style: 'bald', hair: 0x3b2314, tie: 0, bow: 0, hat: 0, cap: 0, jacket: FIG_JACKETS[0] }, o);
   if(typeof o.shirt !== 'number') o.shirt = new THREE.Color(o.shirt).getHex();
   const g = new THREE.Group();
-  const personBlob = addBlob(g, SHADOW_MAT_PERSON, 1.1, 0.02, 1); // contact shadow; group y is the floor surface, sitting only moves the body
+  // inst: guests. The same joint hierarchy is built, but with empty nodes instead of meshes; giSync() draws
+  // each node's part through shared InstancedMeshes (see "Guest instancing"). Everything else is identical.
+  const gi = inst ? { parts: [] } : null;
+  let personBlob;
+  if(inst){ personBlob = new THREE.Object3D(); personBlob.position.set(0, 0.02, 0); personBlob.scale.set(1.1, 1, 1.1); g.add(personBlob); gi.parts.push(giPart('blob', personBlob)); }
+  else personBlob = addBlob(g, SHADOW_MAT_PERSON, 1.1, 0.02, 1); // contact shadow; group y is the floor surface, sitting only moves the body
   const body = new THREE.Group(); g.add(body);
-  const torso = new THREE.Mesh(figTorso(o), FIG_MAT); torso.castShadow = true; body.add(torso);
+  if(inst) gi.parts.push(giPart(giTorsoKey(o), body, giTorsoCols(o)));
+  else { const torso = new THREE.Mesh(figTorso(o), FIG_MAT); torso.castShadow = true; body.add(torso); }
   const head = new THREE.Group(); body.add(head);
-  const skull = new THREE.Mesh(figHead(o), FIG_MAT); skull.castShadow = true; head.add(skull);
+  if(inst){ gi.parts.push(giPart(giHeadKey(o), head, giHeadCols(o))); if(o.hat) gi.parts.push(giPart('hat', head, giCols([o.hat]))); }
+  else { const skull = new THREE.Mesh(figHead(o), FIG_MAT); skull.castShadow = true; head.add(skull); }
   const detail = []; // small parts that are dropped when the figure is far from the camera
   const detail2 = [personBlob]; // shadow and arms: dropped beyond ~32 m (arms are added below)
-  const face = new THREE.Mesh(FIG_FACE[o.glasses ? 1 : 0], FIG_MAT); detail.push(face); head.add(face);
+  let face;
+  if(inst){ face = new THREE.Object3D(); gi.parts.push(giPart(o.glasses ? 'face1' : 'face0', face)); }
+  else face = new THREE.Mesh(FIG_FACE[o.glasses ? 1 : 0], FIG_MAT);
+  detail.push(face); head.add(face);
   const legHex = o.outfit === 'dress' ? o.skin : o.trousers;
   const mkLeg = x => {
     const l = new THREE.Group(); l.position.set(x, 0.66, 0);
-    const p = new THREE.Mesh(figLeg(legHex), FIG_MAT); p.castShadow = true;
-    l.add(p); g.add(l); return l;
+    if(inst) gi.parts.push(giPart('leg', l, giCols([legHex])));
+    else { const p = new THREE.Mesh(figLeg(legHex), FIG_MAT); p.castShadow = true; l.add(p); }
+    g.add(l); return l;
   };
   const long = o.outfit === 'jacket' || o.outfit === 'whale' || o.outfit === 'uniform';
   const sleeve = (o.outfit === 'jacket' || o.outfit === 'whale') ? o.jacket : o.shirt;
   const cuff = o.outfit === 'whale' ? FIG_GOLD : o.outfit === 'jacket' ? FIG_CREAM : 0;
   const mkArm = x => {
     const a = new THREE.Group(); a.position.set(x, 1.27, 0);
-    a.add(new THREE.Mesh(figArm(sleeve, o.skin, !long, cuff), FIG_MAT));
+    if(inst) gi.parts.push(giPart(giArmKey(!long, cuff), a, giCols([sleeve, o.skin, cuff])));
+    else a.add(new THREE.Mesh(figArm(sleeve, o.skin, !long, cuff), FIG_MAT));
     a.rotation.z = x < 0 ? -0.09 : 0.09; body.add(a); return a;
   };
   g.userData.rig = {
@@ -8993,6 +9005,11 @@ function buildHumanoid(o){
     cur: { lL: 0, lR: 0, aL: 0, aR: 0, zR: 0.09, hx: 0 },
   };
   detail2.push(g.userData.rig.armL, g.userData.rig.armR);
+  if(inst){
+    // invisible pick proxy: no draw call (material.visible = false), but raycasts (aimedGuest) still hit it
+    const proxy = new THREE.Mesh(GI_PROXY_GEO, GI_PROXY_MAT); g.add(proxy);
+    gi.proxy = proxy; g.userData.gi = gi;
+  }
   return g;
 }
 // pose: '' (just stand / walk), 'slot', 'table', 'eat', 'drink', 'clip'. dt is real time.
@@ -9046,6 +9063,118 @@ function guestPose(npc){
   if(npc.state === 'onBench') return 'sit';
   if(npc.state === 'watchShow') return ((npc.showT || 0) + (npc.showStay || 0)) % 6 < 1.3 ? 'clap' : '';
   return '';
+}
+
+// ---------------- Guest instancing ----------------
+// Guests (not staff, the inspector or the house dealers) are drawn through a few shared InstancedMeshes
+// instead of 8 meshes each. The guest keeps a real Group + joint hierarchy (npc.mesh), so movement,
+// animateFigure(), seating, LOD flags and visibility all work as before; the nodes just have no meshes.
+// Once per frame giSync() writes every visible guest's node matrices into one InstancedMesh per part
+// variant (torso per outfit, head per hair/hat style, face, legs, arms, contact shadow). Colours that vary
+// per guest (skin, shirt, jacket, tie, bow, hair, hat, trousers) are up to 5 per-instance colour slots: the
+// part geometry is built with sentinel colours (one pure channel pattern per slot, scaled by any shade the
+// builder applied) which giDecode() turns into a shade factor plus an aSlot id; the shader multiplies the
+// factor by the instance's slot colour. Constant colours (shoes, eyes, collars, gold) stay in the vertices.
+// The rebuild is per frame, so hiding (rooms, loo), removal and the upper floor need no bookkeeping.
+const GI_S = [0, 0xb30000, 0x00b300, 0x0000b3, 0xb3b300, 0xb300b3], GI_AMP = 179 / 255;
+const GI_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, flatShading: true, emissive: 0xffffff });
+GI_MAT.emissiveIntensity = 0.2;
+GI_MAT.onBeforeCompile = sh => {
+  sh.vertexShader = sh.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute float aSlot;\nattribute vec3 iC0;\nattribute vec3 iC1;\nattribute vec3 iC2;\nattribute vec3 iC3;\nattribute vec3 iC4;')
+    .replace('#include <color_vertex>', '#include <color_vertex>\n if(aSlot > 0.5){ vColor.xyz *= aSlot < 1.5 ? iC0 : aSlot < 2.5 ? iC1 : aSlot < 3.5 ? iC2 : aSlot < 4.5 ? iC3 : iC4; }');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance *= vColor;');
+};
+const GI_PROXY_GEO = new THREE.BoxGeometry(0.7, 1.95, 0.55).translate(0, 0.975, 0);
+const GI_PROXY_MAT = new THREE.MeshBasicMaterial({ visible: false });
+const giDefs = {}, giPools = {}, giTmpl = {};
+function giDecode(src){
+  const g = src.clone(), col = g.attributes.color, n = col.count, slot = new Float32Array(n);
+  for(let i = 0; i < n; i++){
+    const r = col.getX(i), gg = col.getY(i), b = col.getZ(i), R = r > 0.02, G = gg > 0.02, B = b > 0.02;
+    const s = (R && !G && !B) ? 1 : (!R && G && !B) ? 2 : (!R && !G && B) ? 3 : (R && G && !B) ? 4 : (R && !G && B) ? 5 : 0;
+    if(s){ const k = Math.max(r, gg, b) / GI_AMP; col.setXYZ(i, k, k, k); slot[i] = s; }
+  }
+  g.setAttribute('aSlot', new THREE.BufferAttribute(slot, 1));
+  return g;
+}
+const giHex = new THREE.Color();
+function giCols(hexes){ const a = new Float32Array(15); hexes.forEach((h, i) => { if(h){ giHex.setHex(h); a[i*3] = giHex.r; a[i*3+1] = giHex.g; a[i*3+2] = giHex.b; } }); return a; }
+const giTorsoKey = o => ['t', o.outfit, !!o.tie, !!o.bow].join('|');
+const giTorsoCols = o => giCols([o.skin, o.shirt, o.jacket, o.tie, o.bow]);
+const giHeadKey = o => ['h', o.style].join('|');   // hats are their own pool (one draw call instead of one per hair style)
+const giHeadCols = o => giCols([o.skin, o.hair]);
+const giArmKey = (short, cuff) => ['a', short, !!cuff].join('|');
+// Registers (once) how to build and draw the pool for a part key, and returns the part record a guest keeps.
+function giPart(key, node, cols){
+  if(!giDefs[key]){
+    const [k, a, b, c] = key.split('|'), S = GI_S;
+    let make, cast = false, mat = GI_MAT, order = 0;
+    if(k === 't'){ make = () => figTorso({ outfit: a, skin: S[1], shirt: S[2], jacket: S[3], tie: b === 'true' ? S[4] : 0, bow: c === 'true' ? S[5] : 0 }); cast = true; }
+    else if(k === 'h'){ make = () => figHead({ skin: S[1], hair: S[2], style: a, hat: 0, cap: 0 }); cast = true; }
+    else if(k === 'hat'){ // same three pieces as the hat in figHead
+      make = () => gfMerge([fp(figCyl(0.25, 0.25, 0.02, 10), S[1], 0, 1.7, 0), fp(figCyl(0.135, 0.15, 0.13, 10), S[1], 0, 1.77, 0), fp(figCyl(0.152, 0.152, 0.035, 10), figShade(S[1], 0.6), 0, 1.74, 0)]); cast = true; }
+    else if(k === 'a') make = () => figArm(S[1], S[2], a === 'true', b === 'true' ? S[3] : 0);
+    else if(k === 'leg'){ make = () => figLeg(S[1]); cast = true; }
+    else if(k === 'face0' || k === 'face1') make = () => FIG_FACE[k === 'face1' ? 1 : 0];
+    else if(k === 'blob'){ make = () => BLOB_GEO; mat = SHADOW_MAT_PERSON; order = 1; }
+    giDefs[key] = { make, cast, mat, order, slots: k === 't' || k === 'h' || k === 'a' || k === 'leg' || k === 'hat', cols: k !== 'blob' };
+  }
+  return { key, node, cols: cols || null };
+}
+function giBuildPool(key, cap, old){
+  const d = giDefs[key];
+  if(!giTmpl[key]) giTmpl[key] = d.cols ? giDecode(d.make()) : d.make();
+  const geo = giTmpl[key].clone();
+  const p = { key, cap, n: 0, geo, ca: [] };
+  if(d.cols) for(let i = 0; i < 5; i++){ const at = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3); at.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('iC' + i, at); p.ca.push(at); }
+  const m = new THREE.InstancedMesh(geo, d.mat, cap);
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  m.frustumCulled = false; m.castShadow = d.cast; m.renderOrder = d.order; m.matrixAutoUpdate = false; m.visible = false;
+  p.mesh = m; scene.add(m);
+  if(old){
+    p.n = old.n; m.instanceMatrix.array.set(old.mesh.instanceMatrix.array.subarray(0, old.n * 16));
+    old.ca.forEach((at, i) => p.ca[i].array.set(at.array.subarray(0, old.n * 3)));
+    scene.remove(old.mesh); old.mesh.dispose(); old.geo.dispose();
+  }
+  return giPools[key] = p;
+}
+// Called once per frame just before rendering: rewrite every pool from the live, visible guests.
+const giFrustum = new THREE.Frustum(), giFrM = new THREE.Matrix4(), giSph = new THREE.Sphere();
+function giSync(){
+  for(const k in giPools) giPools[k].n = 0;
+  // the pools are not frustum-culled (their instances are spread over the whole floor), so guests outside the view are skipped here
+  camera.updateMatrixWorld(); camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+  giFrM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); giFrustum.setFromProjectionMatrix(giFrM);
+  for(let gi = 0; gi < npcs.length; gi++){
+    const g = npcs[gi].mesh, info = g.userData.gi;
+    if(!info || !g.visible) continue;
+    const sc = g.scale.x; giSph.center.set(g.position.x, g.position.y + 0.95 * sc, g.position.z); giSph.radius = 1.3 * sc;
+    if(!giFrustum.intersectsSphere(giSph)) continue;
+    g.updateMatrixWorld(true);
+    const parts = info.parts;
+    for(let i = 0; i < parts.length; i++){
+      const pt = parts[i];
+      if(pt.node.visible === false) continue;           // LOD-dropped (face / arms / contact shadow)
+      let p = giPools[pt.key];
+      if(!p) p = giBuildPool(pt.key, 32);
+      else if(p.n >= p.cap) p = giBuildPool(pt.key, p.cap * 2, p);
+      p.mesh.instanceMatrix.array.set(pt.node.matrixWorld.elements, p.n * 16);
+      if(pt.cols && giDefs[pt.key].slots){
+        const c = pt.cols, o = p.n * 3;
+        for(let s = 0; s < 5; s++){ const a = p.ca[s].array; a[o] = c[s*3]; a[o+1] = c[s*3+1]; a[o+2] = c[s*3+2]; }
+      }
+      p.n++;
+    }
+  }
+  for(const k in giPools){
+    const p = giPools[k], m = p.mesh;
+    m.count = p.n; m.visible = p.n > 0;
+    if(p.n){
+      m.instanceMatrix.updateRange.count = p.n * 16; m.instanceMatrix.needsUpdate = true;
+      if(giDefs[k].slots) p.ca.forEach(at => { at.updateRange.count = p.n * 3; at.needsUpdate = true; });
+    }
+  }
 }
 
 function makeStaffMesh(color){
@@ -10882,7 +11011,7 @@ function figShirtIndex(h){ // palette entry nearest to a look's shirt hue
   figShirtHues.forEach((x, i) => { const d = Math.abs(x - h), dd = Math.min(d, 1 - d); if(dd < bd){ bd = dd; best = i; } });
   return best;
 }
-function makeGuestMesh(tier=1, look=makeLook(), whale=false){
+function makeGuestMesh(tier=1, look=makeLook(), whale=false, inst=true){  // inst=false builds the plain meshed figure (used by tools/instancing_check.py to compare looks)
   // Guests share one jointed body; wallet tier (0=cautious..3=high roller) shows in the clothes: tees for
   // the low tiers, jacket and tie (or a dress) for the better-off, gold trim for whales.
   // Skin, hair and accessory come from the guest's look. Everything is pre-merged and cached (figTorso etc).
@@ -10897,7 +11026,7 @@ function makeGuestMesh(tier=1, look=makeLook(), whale=false){
     else { o.outfit = 'jacket'; o.jacket = FIG_JACKETS[si % FIG_JACKETS.length]; o.tie = bow ? 0 : shirt; o.bow = bow; }
   } else { if(tier >= 1 && (style === 'long' || style === 'bun' || style === 'bob')) o.outfit = 'dress'; o.bow = bow; }
   if(look.acc === 'hat') o.hat = figShade(FIG_SHIRTS[(si + 4) % FIG_SHIRTS.length], 0.7);
-  const g = buildHumanoid(o);
+  const g = buildHumanoid(o, inst);
   g.scale.setScalar(0.92 + tier*0.06);
   return g;
 }
@@ -16484,6 +16613,7 @@ function animate(ts){        // machine - a standing banner says so regardless o
   updateDetailLOD();
   updateDecorAnim();
   updateCarLOD();
+  giSync();
   renderer.render(scene, camera);
 }
 // ---------------- Benchmark ----------------
